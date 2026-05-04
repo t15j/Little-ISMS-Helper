@@ -16,7 +16,7 @@ services:
         - linux/amd64
     container_name: little-isms-app-prod
     restart: always
-    # ✅ Security: Nur App-Ports öffentlich (HTTP & HTTPS)
+    # ✅ Security: App-Port nur intern für Reverse Proxy bereitstellen
     # Port 80 zur Verfügung stellen
     expose:
       - "80"
