@@ -14,13 +14,14 @@ services:
       target: production
       platforms:
         - linux/amd64
-    container_name: isms-app-prod
+    container_name: little-isms-app-prod
     restart: always
     # ✅ Security: Nur App-Ports öffentlich (HTTP & HTTPS)
-    # Defaults: Port 80 und 443 - kann via APP_PORT/APP_PORT_HTTPS überschrieben werden
-    ports:
-      - "${APP_PORT:-80}:80"
-      - "${APP_PORT_HTTPS:-443}:443"
+    # Port 80 zur Verfügung stellen
+    expose:
+      - "80"
+    networks:
+      - little-isms
     volumes:
       # ✅ REQUIRED: Persistente Daten (inkl. embedded MariaDB)
       # Ohne dieses Volume gehen alle Daten bei Container-Neustart verloren!
@@ -65,3 +66,7 @@ volumes:
   # REQUIRED: Enthält App-Daten UND embedded MariaDB!
   isms_data:
     driver: local
+
+networks:
+  little-isms:
+    external: true
