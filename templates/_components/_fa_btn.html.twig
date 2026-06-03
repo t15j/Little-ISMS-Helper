@@ -8,7 +8,7 @@
  # Usage:
  #   {% import '_components/_fa_btn.html.twig' as _fa_btn %}
  #   {{ _fa_btn.render({ label: 'Speichern', variant: 'primary' }) }}
- #   {{ _fa_btn.render({ label: 'Abbrechen', variant: 'ghost', icon: 'x-lg' }) }}
+ #   {{ _fa_btn.render({ label: 'Abbrechen', variant: 'ghost', icon: 'ui-close' }) }}
  #   {{ _fa_btn.render({ label: 'Löschen', variant: 'danger', size: 'sm', type: 'submit' }) }}
  #
  # Parameters:
@@ -46,11 +46,8 @@
         {% for k, v in props.attrs|default({}) %} {{ k }}="{{ v|e('html_attr') }}"{% endfor %}
     >
         {% if props.icon is defined and props.icon %}
-            {% if props.icon starts with 'bi-' %}
-                <i class="bi {{ props.icon }}" aria-hidden="true"></i>
-            {% else %}
-                <i class="fa-icon fa-icon--{{ props.icon }}" aria-hidden="true"></i>
-            {% endif %}
+            {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+            <i class="fa-icon fa-icon--{{ (props.icon starts with 'bi-') ? props.icon[3:] : props.icon }}" aria-hidden="true"></i>
         {% endif %}
         <span class="fa-cyber-btn__label">{{ props.label }}</span>
     </{{ tag }}>

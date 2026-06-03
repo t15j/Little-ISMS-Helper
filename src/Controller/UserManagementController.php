@@ -23,14 +23,19 @@ use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsCsrfTokenValid;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\String\Slugger\SluggerInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
+use App\Util\CsvSanitizer;
 
 class UserManagementController extends AbstractController
 {
@@ -43,12 +48,14 @@ class UserManagementController extends AbstractController
         private readonly string $uploadsDirectory = 'uploads/users',
     ) {
     }
-    #[Route('/admin/users', name: 'user_management_index')]
+    #[Route('/admin/users', name: 'user_management_index', methods: ['GET'])]
     #[IsGranted(UserVoter::VIEW_ALL)]
     public function index(UserRepository $userRepository): Response
     {
 
-        $users = $userRepository->findAll();
+        // findAllWithRoles() eager-loads customRoles via LEFT JOIN, eliminating
+        // the N+1 pattern (before: 1+N queries, after: 2 queries).
+        $users = $userRepository->findAllWithRoles();
         $statistics = $userRepository->getUserStatistics();
 
         // Identify the initial admin for UI display
@@ -61,7 +68,7 @@ class UserManagementController extends AbstractController
             'initial_admin_id' => $initialAdminId,
         ]);
     }
-    #[Route('/admin/users/new', name: 'user_management_new')]
+    #[Route('/admin/users/new', name: 'user_management_new', methods: ['GET', 'POST'])]
     #[IsGranted(UserVoter::CREATE)]
     public function new(
         Request $request,
@@ -123,15 +130,19 @@ class UserManagementController extends AbstractController
                 sprintf('User "%s %s" (%s) created', $user->getFirstName(), $user->getLastName(), $user->getEmail())
             );
 
-            $this->addFlash('success', $translator->trans('user.success.created'));
+            $this->addFlash('success', $translator->trans('user.success.created', [], 'messages'));
 
             return $this->redirectToRoute('user_management_index');
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('user_management/new.html.twig', [
             'user' => $user,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/admin/users/bulk-actions', name: 'user_management_bulk_actions', methods: ['POST'])]
     #[IsGranted(UserVoter::VIEW_ALL)]
@@ -152,7 +163,7 @@ class UserManagementController extends AbstractController
         $userIds = $request->request->all('user_ids') ?? [];
 
         if ($userIds === []) {
-            $this->addFlash('error', $translator->trans('user.error.no_users_selected'));
+            $this->addFlash('error', $translator->trans('user.error.no_users_selected', [], 'messages'));
             return $this->redirectToRoute('user_management_index');
         }
 
@@ -263,7 +274,7 @@ class UserManagementController extends AbstractController
             $this->addFlash('success', $translator->trans('user.success.bulk_action_completed', [
                 'count' => $count,
                 'action' => $action,
-            ]));
+            ], 'messages'));
         }
 
         // Detailed feedback for skipped users
@@ -306,8 +317,13 @@ class UserManagementController extends AbstractController
     public function export(
         UserRepository $userRepository
     ): StreamedResponse {
-
-        $users = $userRepository->findAll();
+        // Scope export to current user's tenant (audit M-7: cross-tenant leak via findAll()).
+        // SUPER_ADMIN cross-tenant export requires a dedicated privileged endpoint.
+        $currentUser = $this->getUser();
+        $tenant = ($currentUser instanceof User) ? $currentUser->getTenant() : null;
+        $users = $tenant !== null
+            ? $userRepository->findBy(['tenant' => $tenant])
+            : $userRepository->findAll();
 
         $streamedResponse = new StreamedResponse(function () use ($users): void {
             $handle = fopen('php://output', 'w');
@@ -345,7 +361,7 @@ class UserManagementController extends AbstractController
                     $user->getCreatedAt()?->format('Y-m-d H:i:s'),
                     $user->getLastLoginAt()?->format('Y-m-d H:i:s'),
                 ];
-                fputcsv($handle, array_map([$this, 'sanitizeCsvValue'], $row), escape: '\\');
+                fputcsv($handle, array_map([CsvSanitizer::class, 'sanitize'], $row), escape: '\\');
             }
 
             fclose($handle);
@@ -356,6 +372,101 @@ class UserManagementController extends AbstractController
 
         return $streamedResponse;
     }
+
+    /**
+     * Async wrapper around {@see self::export()}: dispatches an
+     * {@see \App\Job\ExportUsersJob} that writes the user CSV to
+     * var/exports/<jobId>.csv in the background and renders a polling
+     * progress page with a Download CTA once the worker reports succeeded.
+     *
+     * The legacy sync GET route is kept for back-compat (bookmarks, external
+     * automation, tests); new UI traffic should use this dispatch endpoint
+     * to avoid PHP-FPM timeouts on large user lists (10k+).
+     *
+     * Phase 3 of the async admin-jobs rollout.
+     */
+    #[Route('/admin/users/export/dispatch', name: 'user_management_export_dispatch', methods: ['POST'])]
+    #[IsGranted(UserVoter::VIEW_ALL)]
+    #[IsCsrfTokenValid('user_management_export_dispatch')]
+    public function exportDispatch(
+        Request $request,
+        \App\Service\Job\JobStatusService $jobStatusService,
+        \App\Service\Job\JobDispatcher $jobDispatcher,
+        TranslatorInterface $translator,
+    ): Response {
+        $jobId = $jobStatusService->create('user_management.export', [
+            '_label' => $translator->trans('user.export.progress_title', [], 'user'),
+            '_subtitle' => $translator->trans('user.export.progress_subtitle', [], 'user'),
+            '_download_label' => $translator->trans('user.export.download_button', [], 'user'),
+        ]);
+        $jobStatusService->updatePayload($jobId, [
+            '_download_url' => $this->generateUrl('user_management_export_download', ['id' => $jobId]),
+        ]);
+
+        $progressResponse = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('user_management_index'),
+        ], Response::HTTP_SEE_OTHER);
+
+        // Dispatch through the configured runner (in_request by default —
+        // runs in this request, no worker needed; messenger mode queues it).
+        return $jobDispatcher->dispatch(
+            \App\Job\ExportUsersJob::class,
+            [],
+            $jobId,
+            $progressResponse,
+            $request->getSession(),
+        );
+    }
+
+    /**
+     * Streams the file produced by {@see \App\Job\ExportUsersJob} and removes
+     * it from disk afterwards. The job ID UUID-v4 is the canonical filename
+     * stem so we can derive the path without any user-controlled string.
+     */
+    #[Route('/admin/users/export/download/{id}', name: 'user_management_export_download', methods: ['GET'])]
+    #[IsGranted(UserVoter::VIEW_ALL)]
+    public function exportDownload(
+        string $id,
+        \App\Service\Job\JobStatusService $jobStatusService,
+        KernelInterface $kernel,
+        TranslatorInterface $translator,
+    ): Response {
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $id)) {
+            throw $this->createNotFoundException('Invalid export ID.');
+        }
+        if (!$jobStatusService->exists($id)) {
+            throw $this->createNotFoundException(
+                $translator->trans('user.export.file_not_found', [], 'user'),
+            );
+        }
+        $record = $jobStatusService->read($id);
+        if (($record['status'] ?? '') !== 'succeeded') {
+            throw $this->createNotFoundException(
+                $translator->trans('user.export.file_not_found', [], 'user'),
+            );
+        }
+
+        $path = $kernel->getProjectDir() . '/var/exports/' . $id . '.csv';
+        if (!is_file($path)) {
+            throw $this->createNotFoundException(
+                $translator->trans('user.export.file_not_found', [], 'user'),
+            );
+        }
+
+        $filename = sprintf('users_export_%s.csv', date('Y-m-d_H-i-s'));
+
+        $response = new BinaryFileResponse($path);
+        $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
+        $response->setContentDisposition(
+            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            $filename,
+        );
+        $response->deleteFileAfterSend(true);
+
+        return $response;
+    }
+
     #[Route('/admin/users/import', name: 'user_management_import', methods: ['GET', 'POST'])]
     #[IsGranted(UserVoter::CREATE)]
     public function import(
@@ -367,10 +478,15 @@ class UserManagementController extends AbstractController
     ): Response {
 
         if ($request->isMethod('POST')) {
+            if (!$this->isCsrfTokenValid('user_import', $request->request->get('_token'))) {
+                $this->addFlash('danger', $translator->trans('common.csrf_error', [], 'messages'));
+                return $this->redirectToRoute('user_management_import');
+            }
+
             $file = $request->files->get('import_file');
 
             if (!$file) {
-                $this->addFlash('error', $translator->trans('user.error.no_file_uploaded'));
+                $this->addFlash('error', $translator->trans('user.error.no_file_uploaded', [], 'messages'));
                 return $this->redirectToRoute('user_management_import');
             }
 
@@ -440,7 +556,7 @@ class UserManagementController extends AbstractController
 
             $entityManager->flush();
 
-            $this->addFlash('success', $translator->trans('user.success.imported', ['count' => $imported]));
+            $this->addFlash('success', $translator->trans('user.success.imported', ['count' => $imported], 'messages'));
 
             foreach ($errors as $error) {
                 $this->addFlash('warning', $error);
@@ -451,7 +567,7 @@ class UserManagementController extends AbstractController
 
         return $this->render('user_management/import.html.twig');
     }
-    #[Route('/admin/users/{id}', name: 'user_management_show', requirements: ['id' => '\d+'])]
+    #[Route('/admin/users/{id}', name: 'user_management_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(User $user): Response
     {
         $this->denyAccessUnlessGranted(UserVoter::VIEW, $user);
@@ -464,7 +580,7 @@ class UserManagementController extends AbstractController
             'is_initial_admin' => $isInitialAdmin,
         ]);
     }
-    #[Route('/admin/users/{id}/edit', name: 'user_management_edit', requirements: ['id' => '\d+'])]
+    #[Route('/admin/users/{id}/edit', name: 'user_management_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     public function edit(
         User $user,
         Request $request,
@@ -536,7 +652,7 @@ class UserManagementController extends AbstractController
 
                 // Warn user if they changed their own password
                 if ($isEditingSelf) {
-                    $this->addFlash('warning', $translator->trans('user.warning.own_password_changed'));
+                    $this->addFlash('warning', $translator->trans('user.warning.own_password_changed', [], 'messages'));
                 }
             }
 
@@ -606,20 +722,24 @@ class UserManagementController extends AbstractController
                 }
 
                 if ($criticalChanges || $plainPassword) {
-                    $this->addFlash('warning', $translator->trans('user.warning.session_will_be_invalidated'));
+                    $this->addFlash('warning', $translator->trans('user.warning.session_will_be_invalidated', [], 'messages'));
                 }
             }
 
-            $this->addFlash('success', $translator->trans('user.success.updated'));
+            $this->addFlash('success', $translator->trans('user.success.updated', [], 'messages'));
 
             return $this->redirectToRoute('user_management_show', ['id' => $user->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('user_management/edit.html.twig', [
             'user' => $user,
             'form' => $form,
             'is_initial_admin' => $isInitialAdmin,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/admin/users/{id}/delete', name: 'user_management_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function delete(
@@ -672,7 +792,7 @@ class UserManagementController extends AbstractController
                 sprintf('User "%s" (%s) deleted', $userName, $userEmail)
             );
 
-            $this->addFlash('success', $translator->trans('user.success.deleted'));
+            $this->addFlash('success', $translator->trans('user.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('user_management_index');
@@ -723,12 +843,12 @@ class UserManagementController extends AbstractController
                 )
             );
 
-            $this->addFlash('success', $user->isActive() ? $translator->trans('user.success.activated') : $translator->trans('user.success.deactivated'));
+            $this->addFlash('success', $user->isActive() ? $translator->trans('user.success.activated', [], 'messages') : $translator->trans('user.success.deactivated', [], 'messages'));
         }
 
         return $this->redirectToRoute('user_management_show', ['id' => $user->getId()]);
     }
-    #[Route('/admin/users/{id}/activity', name: 'user_management_activity', requirements: ['id' => '\d+'])]
+    #[Route('/admin/users/{id}/activity', name: 'user_management_activity', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function activity(
         User $user,
         AuditLogRepository $auditLogRepository,
@@ -767,7 +887,7 @@ class UserManagementController extends AbstractController
             'total_activities' => count($activities),
         ]);
     }
-    #[Route('/admin/users/{id}/mfa', name: 'user_management_mfa', requirements: ['id' => '\d+'])]
+    #[Route('/admin/users/{id}/mfa', name: 'user_management_mfa', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function mfa(
         User $user,
         MfaTokenRepository $mfaTokenRepository
@@ -809,7 +929,7 @@ class UserManagementController extends AbstractController
         $token = $mfaTokenRepository->find($tokenId);
 
         if (!$token || $token->getUser()->getId() !== $user->getId()) {
-            $this->addFlash('error', $translator->trans('mfa.error.token_not_found'));
+            $this->addFlash('error', $translator->trans('mfa.error.token_not_found', [], 'mfa'));
             return $this->redirectToRoute('user_management_mfa', ['id' => $user->getId()]);
         }
 
@@ -817,12 +937,12 @@ class UserManagementController extends AbstractController
             $entityManager->remove($token);
             $entityManager->flush();
 
-            $this->addFlash('success', $translator->trans('mfa.success.token_reset'));
+            $this->addFlash('success', $translator->trans('mfa.success.token_reset', [], 'mfa'));
         }
 
         return $this->redirectToRoute('user_management_mfa', ['id' => $user->getId()]);
     }
-    #[Route('/admin/users/{id}/impersonate', name: 'user_management_impersonate', requirements: ['id' => '\d+'])]
+    #[Route('/admin/users/{id}/impersonate', name: 'user_management_impersonate', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_SUPER_ADMIN')]
     public function impersonate(User $user): Response
     {
@@ -901,20 +1021,5 @@ class UserManagementController extends AbstractController
                 'error' => $e->getMessage(),
             ]);
         }
-    }
-
-    /**
-     * Sanitize a CSV cell value to prevent formula injection (OWASP - Injection).
-     * Prefixes values starting with =, +, -, @, TAB or CR with a single quote.
-     */
-    private function sanitizeCsvValue(mixed $value): mixed
-    {
-        if (!is_string($value)) {
-            return $value;
-        }
-        if ($value !== '' && in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
-            return "'" . $value;
-        }
-        return $value;
     }
 }

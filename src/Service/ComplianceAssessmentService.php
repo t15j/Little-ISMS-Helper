@@ -7,6 +7,7 @@ namespace App\Service;
 use DateTimeImmutable;
 use App\Entity\ComplianceFramework;
 use App\Entity\ComplianceRequirement;
+use App\Enum\ComplianceRequirementFulfillmentStatus;
 use App\Repository\ComplianceRequirementRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -36,7 +37,9 @@ class ComplianceAssessmentService
      */
     public function assessFramework(ComplianceFramework $complianceFramework): array
     {
-        $requirements = $this->complianceRequirementRepository->findByFramework($complianceFramework);
+        // Top-level requirements only — sub-requirements roll up via their parent
+        // and must not be counted separately in the assessment totals.
+        $requirements = $this->complianceRequirementRepository->findTopLevelByFramework($complianceFramework);
         $assessmentResults = [];
         $tenant = $this->tenantContext->getCurrentTenant();
 
@@ -55,11 +58,11 @@ class ComplianceAssessmentService
 
                 // Auto-update status based on percentage
                 if ($result['calculated_fulfillment'] >= 100) {
-                    $fulfillment->setStatus('implemented');
+                    $fulfillment->setStatus(ComplianceRequirementFulfillmentStatus::Implemented);
                 } elseif ($result['calculated_fulfillment'] > 0) {
-                    $fulfillment->setStatus('in_progress');
+                    $fulfillment->setStatus(ComplianceRequirementFulfillmentStatus::InProgress);
                 } else {
-                    $fulfillment->setStatus('not_started');
+                    $fulfillment->setStatus(ComplianceRequirementFulfillmentStatus::NotStarted);
                 }
 
                 if (!$fulfillment->getId()) {

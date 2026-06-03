@@ -171,13 +171,38 @@ export default class extends Controller {
 
         let html = '';
 
-        // Group results by category
+        // Group results by category — navigation FIRST so admins find settings fast
         const categories = [
-            { key: 'assets', label: 'Assets', icon: 'bi-server', color: 'primary' },
-            { key: 'risks', label: 'Risiken', icon: 'bi-exclamation-triangle', color: 'warning' },
-            { key: 'controls', label: 'Controls', icon: 'bi-shield-check', color: 'success' },
-            { key: 'incidents', label: 'Vorfälle', icon: 'bi-exclamation-circle', color: 'danger' },
-            { key: 'trainings', label: 'Trainings', icon: 'bi-mortarboard', color: 'info' }
+            { key: 'navigation',             label: 'Navigation',          icon: 'util-arrow-right', color: 'primary' },
+            { key: 'assets',                 label: 'Assets',              icon: 'asset-server',     color: 'primary' },
+            { key: 'risks',                  label: 'Risiken',             icon: 'status-warning',   color: 'warning' },
+            { key: 'controls',               label: 'Controls',            icon: 'nav-shield-check', color: 'success' },
+            { key: 'incidents',              label: 'Vorfälle',            icon: 'status-critical',  color: 'danger' },
+            { key: 'trainings',              label: 'Trainings',           icon: 'nav-mortarboard',  color: 'info' },
+            { key: 'documents',              label: 'Dokumente',           icon: 'nav-document',     color: 'info' },
+            { key: 'suppliers',              label: 'Lieferanten',         icon: 'nav-truck',        color: 'info' },
+            { key: 'processing_activities',  label: 'Verarbeitungstätigkeiten', icon: 'nav-shield-lock', color: 'primary' },
+            { key: 'dpias',                  label: 'DSFA',                icon: 'nav-shield-lock',      color: 'primary' },
+            { key: 'data_breaches',          label: 'Datenpannen',         icon: 'nav-shield-lock',      color: 'danger' },
+            { key: 'audit_findings',         label: 'Audit-Findings',      icon: 'nav-clipboard-check',        color: 'warning' },
+            { key: 'corrective_actions',     label: 'Korrekturmaßnahmen',  icon: 'nav-clipboard-check',        color: 'warning' },
+            { key: 'change_requests',        label: 'Change Requests',     icon: 'nav-change',       color: 'info' },
+            { key: 'internal_audits',        label: 'Audits',              icon: 'nav-clipboard-check',        color: 'info' },
+            { key: 'business_processes',     label: 'Geschäftsprozesse',   icon: 'nav-flow',          color: 'info' },
+            { key: 'bc_plans',               label: 'BC-Pläne',            icon: 'nav-flow',          color: 'info' },
+            { key: 'bc_exercises',           label: 'BC-Übungen',          icon: 'nav-flow',          color: 'info' },
+            { key: 'crisis_teams',           label: 'Krisenteams',         icon: 'nav-flow',          color: 'warning' },
+            { key: 'management_reviews',     label: 'Management-Reviews',  icon: 'nav-reports',       color: 'info' },
+            { key: 'objectives',             label: 'Ziele',               icon: 'nav-target',       color: 'primary' },
+            { key: 'vulnerabilities',        label: 'Schwachstellen',      icon: 'status-critical',  color: 'danger' },
+            { key: 'patches',                label: 'Patches',             icon: 'nav-wrench',       color: 'info' },
+            { key: 'threat_intelligence',    label: 'Threat Intel',        icon: 'status-warning',   color: 'warning' },
+            { key: 'persons',                label: 'Personen',            icon: 'nav-people',       color: 'info' },
+            { key: 'interested_parties',     label: 'Stakeholder',         icon: 'nav-people',       color: 'info' },
+            { key: 'consents',               label: 'Einwilligungen',      icon: 'nav-shield-lock',      color: 'info' },
+            { key: 'data_subject_requests',  label: 'Betroffenenanfragen', icon: 'nav-shield-lock',      color: 'warning' },
+            { key: 'compliance_frameworks',  label: 'Compliance-Frameworks', icon: 'compliance-shield', color: 'primary' },
+            { key: 'compliance_requirements', label: 'Compliance-Anforderungen', icon: 'compliance-shield', color: 'primary' }
         ];
 
         categories.forEach(category => {
@@ -194,7 +219,7 @@ export default class extends Controller {
         let html = `
             <div class="search-category">
                 <div class="search-category-header">
-                    <i class="${category.icon} text-${category.color}"></i>
+                    <i class="fa-icon fa-icon--${category.icon} text-${category.color}" aria-hidden="true"></i>
                     <span>${category.label}</span>
                     <span class="badge bg-${category.color}">${items.length}</span>
                 </div>
@@ -202,13 +227,17 @@ export default class extends Controller {
         `;
 
         items.forEach((item, index) => {
+            // Prefer per-item icon (backend already returns full class for navigation results)
+            const iconClass = item.icon
+                ? (item.icon.startsWith('fa-icon--') ? item.icon : `fa-icon--${item.icon}`)
+                : `fa-icon--${category.icon}`;
             html += `
                 <a href="${item.url}"
                    class="search-result-item"
                    data-index="${index}"
                    data-action="click->search#handleResultClick">
                     <div class="search-result-icon">
-                        <i class="${category.icon} text-${category.color}"></i>
+                        <i class="fa-icon ${iconClass} text-${category.color}" aria-hidden="true"></i>
                     </div>
                     <div class="search-result-content">
                         <div class="search-result-title">${this.highlight(item.title, query)}</div>
@@ -237,7 +266,7 @@ export default class extends Controller {
     displayEmpty(query) {
         this.resultsTarget.innerHTML = `
             <div class="search-empty">
-                <i class="bi-search" style="font-size: 3rem; color: #ccc;"></i>
+                <i class="fa-icon fa-icon--ui-search" style="font-size: 3rem; color: #ccc;" aria-hidden="true"></i>
                 <p class="mt-3 mb-0">Keine Ergebnisse für "${query}"</p>
                 <p class="text-muted small">Versuchen Sie andere Suchbegriffe</p>
             </div>
@@ -247,7 +276,7 @@ export default class extends Controller {
     displayError() {
         this.resultsTarget.innerHTML = `
             <div class="search-error">
-                <i class="bi-exclamation-triangle text-danger" style="font-size: 3rem;"></i>
+                <i class="fa-icon fa-icon--status-warning text-danger" style="font-size: 3rem;" aria-hidden="true"></i>
                 <p class="mt-3 mb-0">Fehler bei der Suche</p>
                 <p class="text-muted small">Bitte versuchen Sie es erneut</p>
             </div>

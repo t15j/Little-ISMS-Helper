@@ -46,7 +46,7 @@
         <form method="get" class="mt-md" data-controller="ui-actions">
             <div class="form-group">
                 <label for="type">{{ 'document.field.document_type'|trans({}, 'document') }}</label>
-                <select name="type" id="type" class="form-select"
+                <select name="type" id="type" class="form-select fa-cyber-input__field"
                         data-action="change->ui-actions#autoSubmit"
                         aria-label="{{ 'document.field.document_type'|trans({}, 'document') }}">
                     <option value="">{{ 'document.option.all_types'|trans({}, 'document') }}</option>
@@ -86,7 +86,7 @@
             </div>
 
             <div class="mt-3">
-                <a href="{{ path('app_document_by_type', {type: type.id}) }}" class="btn btn-sm">
+                <a href="{{ path('app_document_by_type', {type: type.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
                     {{ 'common.view_all'|trans({}, 'messages') }}
                 </a>
             </div>
@@ -162,10 +162,10 @@
                 {% endif %}
             </td>
             <td class="text-center">
-                <a href="{{ path('app_document_show', {id: document.id}) }}" class="btn btn-sm mr-025">
+                <a href="{{ path('app_document_show', {id: document.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost mr-025">
                     👁 {{ 'common.view'|trans({}, 'messages') }}
                 </a>
-                <a href="{{ path('app_document_download', {id: document.id}) }}" class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost">
+                <a href="{{ path('app_document_download', {id: document.id}) }}" class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost" data-turbo="false">
                     📥 {{ 'common.download'|trans({}, 'messages') }}
                 </a>
             </td>
@@ -224,7 +224,7 @@
         <ul class="list-unstyled-mt-md">
             {% for doc in selectedType.recentDocuments|slice(0, 5) %}
             <li class="li-border-item">
-                <strong>{{ doc.title }}</strong>
+                <strong>{{ doc.originalFilename|default(doc.filename|default('Document #' ~ doc.id)) }}</strong>
                 <br><small class="text-muted">
                     {{ 'document.field.updated'|trans({}, 'document') }}: {{ doc.updatedAt|date('d.m.Y H:i') }}
                 </small>
@@ -293,7 +293,7 @@
                 {% endif %}
             </td>
             <td class="text-center">
-                <a href="{{ path('app_document_by_type', {type: type.id}) }}" class="btn btn-sm">
+                <a href="{{ path('app_document_by_type', {type: type.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
                     👁 {{ 'common.view'|trans({}, 'messages') }}
                 </a>
             </td>

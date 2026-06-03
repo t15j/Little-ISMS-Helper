@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
-
+{% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
 {% block title %}{{ 'mapping_review.title'|trans({}, 'compliance') }} #{{ mapping.id }}{% endblock %}
 
 {% block body %}
@@ -105,26 +105,17 @@
                     <div class="card-header"><h3 class="mb-0 h5"><i class="fa-icon fa-icon--ui-star" aria-hidden="true"></i> {{ 'mapping_review.section.quality_confidence'|trans({}, 'compliance') }}</h3></div>
                 {% endblock %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     {% if mapping.qualityScore is not null %}
                     <div class="mb-3">
                         <small class="text-muted">{{ 'mapping_review.field.quality_score'|trans({}, 'compliance') }}</small>
-                        <div class="progress progress-h-25">
-                            <div class="progress-bar {% if mapping.qualityScore >= 75 %}bg-success{% elseif mapping.qualityScore >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
-                                 style="width: {{ mapping.qualityScore }}%">
-                                <strong>{{ mapping.qualityScore }}</strong>
-                            </div>
-                        </div>
+                        {{ _fa_progress.render({ value: mapping.qualityScore, tone: mapping.qualityScore >= 75 ? 'success' : (mapping.qualityScore >= 50 ? 'warning' : 'danger'), showText: true }) }}
                     </div>
                     {% endif %}
                     {% if mapping.analysisConfidence is not null %}
                     <div class="mb-3">
                         <small class="text-muted">{{ 'mapping_review.field.analysis_confidence'|trans({}, 'compliance') }}</small>
-                        <div class="progress progress-h-25">
-                            <div class="progress-bar {% if mapping.analysisConfidence >= 80 %}bg-success{% elseif mapping.analysisConfidence >= 60 %}bg-warning{% else %}bg-danger{% endif %}"
-                                 style="width: {{ mapping.analysisConfidence }}%">
-                                <strong>{{ mapping.analysisConfidence }}</strong>
-                            </div>
-                        </div>
+                        {{ _fa_progress.render({ value: mapping.analysisConfidence, tone: mapping.analysisConfidence >= 80 ? 'success' : (mapping.analysisConfidence >= 60 ? 'warning' : 'danger'), showText: true }) }}
                     </div>
                     {% endif %}
                     <hr>
@@ -134,7 +125,7 @@
                     </div>
                     {% if mapping.requiresReview %}
                         <div class="mt-2">
-                            {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'bi-exclamation-triangle', content: 'mapping_review.field.requires_review'|trans({}, 'compliance') } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'status-warning', content: 'mapping_review.field.requires_review'|trans({}, 'compliance') } %}
                         </div>
                     {% endif %}
                 {% endblock %}
@@ -147,34 +138,23 @@
                     <div class="card-header"><h4 class="mb-0 h5"><i class="fa-icon fa-icon--nav-activity" aria-hidden="true"></i> {{ 'mapping_review.section.similarity_scores'|trans({}, 'compliance') }}</h4></div>
                 {% endblock %}
                 {% block card_body %}
+                    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     {% if mapping.textualSimilarity is not null %}
                     <div class="mb-2">
                         <small>{{ 'mapping_review.field.textual_similarity'|trans({}, 'compliance') }}</small>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-info" style="width: {{ (mapping.textualSimilarity * 100)|round }}%">
-                                {{ (mapping.textualSimilarity * 100)|round }}%
-                            </div>
-                        </div>
+                        {{ _fa_progress.render({ value: (mapping.textualSimilarity * 100)|round, tone: 'info', showText: true }) }}
                     </div>
                     {% endif %}
                     {% if mapping.keywordOverlap is not null %}
                     <div class="mb-2">
                         <small>{{ 'mapping_review.field.keyword_overlap'|trans({}, 'compliance') }}</small>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-info" style="width: {{ (mapping.keywordOverlap * 100)|round }}%">
-                                {{ (mapping.keywordOverlap * 100)|round }}%
-                            </div>
-                        </div>
+                        {{ _fa_progress.render({ value: (mapping.keywordOverlap * 100)|round, tone: 'info', showText: true }) }}
                     </div>
                     {% endif %}
                     {% if mapping.structuralSimilarity is not null %}
                     <div class="mb-2">
                         <small>{{ 'mapping_review.field.structural_similarity'|trans({}, 'compliance') }}</small>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-info" style="width: {{ (mapping.structuralSimilarity * 100)|round }}%">
-                                {{ (mapping.structuralSimilarity * 100)|round }}%
-                            </div>
-                        </div>
+                        {{ _fa_progress.render({ value: (mapping.structuralSimilarity * 100)|round, tone: 'info', showText: true }) }}
                     </div>
                     {% endif %}
                     {% if mapping.analysisAlgorithmVersion %}
@@ -266,19 +246,26 @@
             </div>
         {% endblock %}
         {% block card_body %}
+            {% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
             <form id="reviewForm">
                 <div class="row">
                     <div class="col-md-4">
                         <div class="form-group">
-                            <label for="manualPercentage">{{ 'mapping_review.field.manual_percentage'|trans({}, 'compliance') }}</label>
-                            <input type="number" class="form-control" id="manualPercentage" min="0" max="150" value="{{ mapping.manualPercentage }}" placeholder="Optional">
-                            <small class="form-text text-muted">{{ 'mapping_review.field.manual_percentage_help'|trans({}, 'compliance') }}</small>
+                            {{ _fa_cyber.text('manualPercentage', {
+                                id: 'manualPercentage',
+                                type: 'number',
+                                label: 'mapping_review.field.manual_percentage'|trans({}, 'compliance'),
+                                value: mapping.manualPercentage,
+                                placeholder: 'Optional',
+                                help: 'mapping_review.field.manual_percentage_help'|trans({}, 'compliance'),
+                                extra_attrs: {'min': '0', 'max': '150'}
+                            }) }}
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="form-group">
                             <label for="reviewStatus">{{ 'mapping_review.field.review_status'|trans({}, 'compliance') }}</label>
-                            <select class="form-control" id="reviewStatus">
+                            <select class="form-control fa-cyber-input__field" id="reviewStatus">
                                 <option value="unreviewed" {% if mapping.reviewStatus == 'unreviewed' %}selected{% endif %}>{{ 'mapping_review.status.unreviewed'|trans({}, 'compliance') }}</option>
                                 <option value="in_review" {% if mapping.reviewStatus == 'in_review' %}selected{% endif %}>{{ 'mapping_review.status.in_review'|trans({}, 'compliance') }}</option>
                                 <option value="approved" {% if mapping.reviewStatus == 'approved' %}selected{% endif %}>{{ 'mapping_review.status.approved'|trans({}, 'compliance') }}</option>
@@ -298,7 +285,7 @@
 
                 <div class="form-group">
                     <label for="reviewNotes">{{ 'mapping_review.field.review_notes'|trans({}, 'compliance') }}</label>
-                    <textarea class="form-control" id="reviewNotes" rows="3" placeholder="{{ 'mapping_review.field.review_notes_placeholder'|trans({}, 'compliance') }}">{{ mapping.reviewNotes }}</textarea>
+                    <textarea class="form-control fa-cyber-input__field" id="reviewNotes" rows="3" placeholder="{{ 'mapping_review.field.review_notes_placeholder'|trans({}, 'compliance') }}">{{ mapping.reviewNotes }}</textarea>
                 </div>
             </form>
 

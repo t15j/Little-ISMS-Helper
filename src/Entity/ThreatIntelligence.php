@@ -7,6 +7,7 @@ namespace App\Entity;
 use DateTimeInterface;
 use DateTimeImmutable;
 use App\Entity\Person;
+use App\Enum\ThreatIntelligenceStatus;
 use App\Service\OwnerResolver;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Get;
@@ -102,6 +103,14 @@ class ThreatIntelligence
     #[Assert\Choice(choices: ['new', 'analyzing', 'mitigated', 'monitoring', 'closed'])]
     private ?string $status = 'new';
 
+    /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on threat_intelligence_lifecycle.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
     #[ORM\Column(type: Types::DATE_MUTABLE)]
     #[Groups(['threat:read', 'threat:write'])]
     private ?DateTimeInterface $detectionDate = null;
@@ -138,7 +147,10 @@ class ThreatIntelligence
     #[Groups(['threat:read', 'threat:write'])]
     private ?int $cvssScore = null;
 
-    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    // Column name `references` is a MariaDB/MySQL reserved keyword and breaks
+    // unquoted INSERT/UPDATE — explicit `name: 'threat_references'` mirrors the
+    // earlier rename for the `vulnerabilities.references` column.
+    #[ORM\Column(name: 'threat_references', type: Types::TEXT, nullable: true)]
     #[Groups(['threat:read', 'threat:write'])]
     private ?string $references = null;
 
@@ -153,6 +165,58 @@ class ThreatIntelligence
     #[ORM\ManyToOne(targetEntity: Tenant::class)]
     #[ORM\JoinColumn(nullable: true)]
     private ?Tenant $tenant = null;
+
+    /**
+     * TLP Classification (FIRST.org TLP — NIS2 Art. 30 information sharing).
+     * Values: red | amber | green | white
+     */
+    #[ORM\Column(length: 20, nullable: true)]
+    #[Groups(['threat:read', 'threat:write'])]
+    private ?string $tlpClassification = null;
+
+    /**
+     * Threat actor attribution (APT-Group / Crime-Group, MITRE ATT&CK).
+     */
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Groups(['threat:read', 'threat:write'])]
+    private ?string $threatActorAttribution = null;
+
+    /**
+     * MITRE ATT&CK Tactics (e.g. ["TA0001","TA0002"]).
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[Groups(['threat:read', 'threat:write'])]
+    private ?array $mitreAttackTactics = null;
+
+    /**
+     * MITRE ATT&CK Techniques (e.g. ["T1059","T1566"]).
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[Groups(['threat:read', 'threat:write'])]
+    private ?array $mitreAttackTechniques = null;
+
+    /**
+     * Indicators of Compromise — STIX 2.1 format.
+     * [{type: ip|domain|hash|url|email, value: string, context: string}]
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[Groups(['threat:read', 'threat:write'])]
+    private ?array $iocsList = null;
+
+    /**
+     * Confidence level of the intelligence (NIST 800-150).
+     * Values: low | medium | high
+     */
+    #[ORM\Column(length: 20, nullable: true)]
+    #[Groups(['threat:read', 'threat:write'])]
+    private ?string $confidenceLevel = null;
+
+    /**
+     * Whether this intelligence was shared externally (NIS2 Art. 30 — CERT/CSIRT sharing).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['threat:read', 'threat:write'])]
+    private bool $sharedExternally = false;
 
     /**
      * @var Collection<int, Incident>
@@ -182,7 +246,7 @@ class ThreatIntelligence
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -193,7 +257,7 @@ class ThreatIntelligence
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -204,7 +268,7 @@ class ThreatIntelligence
         return $this->threatType;
     }
 
-    public function setThreatType(string $threatType): static
+    public function setThreatType(?string $threatType): static
     {
         $this->threatType = $threatType;
         return $this;
@@ -215,7 +279,7 @@ class ThreatIntelligence
         return $this->severity;
     }
 
-    public function setSeverity(string $severity): static
+    public function setSeverity(?string $severity): static
     {
         $this->severity = $severity;
         return $this;
@@ -281,10 +345,18 @@ class ThreatIntelligence
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(ThreatIntelligenceStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?ThreatIntelligenceStatus
+    {
+        return $this->status === null ? null : ThreatIntelligenceStatus::tryFrom($this->status);
     }
 
     public function getDetectionDate(): ?DateTimeInterface
@@ -292,7 +364,7 @@ class ThreatIntelligence
         return $this->detectionDate;
     }
 
-    public function setDetectionDate(DateTimeInterface $detectionDate): static
+    public function setDetectionDate(?DateTimeInterface $detectionDate): static
     {
         $this->detectionDate = $detectionDate;
         return $this;
@@ -378,7 +450,7 @@ class ThreatIntelligence
         return $this->affectsOrganization;
     }
 
-    public function setAffectsOrganization(bool $affectsOrganization): static
+    public function setAffectsOrganization(?bool $affectsOrganization): static
     {
         $this->affectsOrganization = $affectsOrganization;
         return $this;
@@ -411,7 +483,7 @@ class ThreatIntelligence
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -488,5 +560,89 @@ class ThreatIntelligence
         }
 
         return $this;
+    }
+
+    // ── vulnerability_intel module fields ──────────────────────────────────
+
+    public function getTlpClassification(): ?string
+    {
+        return $this->tlpClassification;
+    }
+
+    public function setTlpClassification(?string $tlpClassification): static
+    {
+        $this->tlpClassification = $tlpClassification;
+        return $this;
+    }
+
+    public function getThreatActorAttribution(): ?string
+    {
+        return $this->threatActorAttribution;
+    }
+
+    public function setThreatActorAttribution(?string $threatActorAttribution): static
+    {
+        $this->threatActorAttribution = $threatActorAttribution;
+        return $this;
+    }
+
+    public function getMitreAttackTactics(): ?array
+    {
+        return $this->mitreAttackTactics;
+    }
+
+    public function setMitreAttackTactics(?array $mitreAttackTactics): static
+    {
+        $this->mitreAttackTactics = $mitreAttackTactics;
+        return $this;
+    }
+
+    public function getMitreAttackTechniques(): ?array
+    {
+        return $this->mitreAttackTechniques;
+    }
+
+    public function setMitreAttackTechniques(?array $mitreAttackTechniques): static
+    {
+        $this->mitreAttackTechniques = $mitreAttackTechniques;
+        return $this;
+    }
+
+    public function getIocsList(): ?array
+    {
+        return $this->iocsList;
+    }
+
+    public function setIocsList(?array $iocsList): static
+    {
+        $this->iocsList = $iocsList;
+        return $this;
+    }
+
+    public function getConfidenceLevel(): ?string
+    {
+        return $this->confidenceLevel;
+    }
+
+    public function setConfidenceLevel(?string $confidenceLevel): static
+    {
+        $this->confidenceLevel = $confidenceLevel;
+        return $this;
+    }
+
+    public function isSharedExternally(): bool
+    {
+        return $this->sharedExternally;
+    }
+
+    public function setSharedExternally(bool $sharedExternally): static
+    {
+        $this->sharedExternally = $sharedExternally;
+        return $this;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

@@ -1,23 +1,25 @@
-{% extends 'base.html.twig' %}
+{% extends 'admin/layout.html.twig' %}
+{% trans_default_domain 'quick_fix' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
 
-{% block title %}{{ 'quick_fix.settings.title'|trans({}, 'quick_fix') }}{% endblock %}
+{% block admin_title %}{{ 'quick_fix.settings.title'|trans({}, 'quick_fix') }}{% endblock %}
 
-{% block body %}
-<div class="container mt-4">
-    <div class="row mb-3">
-        <div class="col">
-            <h1>
-                <i class="fa-icon fa-icon--nav-tools" aria-hidden="true"></i>
-                {{ 'quick_fix.settings.title'|trans({}, 'quick_fix') }}
-            </h1>
-            <p class="lead">{{ 'quick_fix.settings.description'|trans({}, 'quick_fix') }}</p>
-        </div>
-    </div>
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item active" aria-current="page">{{ 'quick_fix.settings.title'|trans({}, 'quick_fix') }}</li>
+{% endblock %}
+
+{% block admin_content %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-wrench', label: 'Quick Fix' },
+        title: 'quick_fix.settings.title'|trans({}, 'quick_fix'),
+        subtitle: 'quick_fix.settings.description'|trans({}, 'quick_fix'),
+    }) }}
 
     <div class="row">
         <div class="col-lg-8">
-            {% embed '_components/_card.html.twig' %}
-                {% block card_body %}
+            <section class="fa-section">
+                <div class="fa-section__body">
                     <form method="post" action="{{ path('app_admin_quick_fix_settings') }}">
                         <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_settings') }}">
 
@@ -52,13 +54,13 @@
                         </div>
 
                         <div class="mb-4">
-                            <label for="ip_allowlist" class="form-label fw-semibold">
-                                {{ 'quick_fix.settings.ip_allowlist.label'|trans({}, 'quick_fix') }}
-                            </label>
-                            <input type="text" class="form-control" id="ip_allowlist" name="ip_allowlist"
-                                   value="{{ current.ip_allowlist }}"
-                                   placeholder="10.0.0.1, 192.168.1.5">
-                            <div class="form-text">{{ 'quick_fix.settings.ip_allowlist.help'|trans({}, 'quick_fix') }}</div>
+                            {{ _fa_cyber.text('ip_allowlist', {
+                                id: 'ip_allowlist',
+                                label: 'quick_fix.settings.ip_allowlist.label'|trans({}, 'quick_fix'),
+                                value: current.ip_allowlist,
+                                placeholder: '10.0.0.1, 192.168.1.5',
+                                help: 'quick_fix.settings.ip_allowlist.help'|trans({}, 'quick_fix')
+                            }) }}
                         </div>
 
                         <div class="d-flex gap-2">
@@ -68,9 +70,8 @@
                             </button>
                         </div>
                     </form>
-                {% endblock %}
-            {% endembed %}
+                </div>
+            </section>
         </div>
     </div>
-</div>
 {% endblock %}

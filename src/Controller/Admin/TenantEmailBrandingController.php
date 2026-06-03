@@ -19,6 +19,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 /**
  * Phase 8L.F3 — Admin-UI für E-Mail-Branding (Absender, Logo, Footer).
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/admin/email-branding')]
 #[IsGranted('ROLE_ADMIN')]
 class TenantEmailBrandingController extends AbstractController
@@ -76,10 +77,14 @@ class TenantEmailBrandingController extends AbstractController
 
         $effective = $this->resolver->resolveFor($tenant);
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/tenant_email_branding/edit.html.twig', [
             'form' => $form,
             'tenant' => $tenant,
             'effective' => $effective,
-        ]);
+        ], new Response(status: $status));
     }
 }

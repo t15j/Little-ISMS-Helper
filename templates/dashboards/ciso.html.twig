@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% trans_default_domain 'dashboards' %}
 
 {% block title %}{{ 'ciso.title'|trans({}, 'dashboards') }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
@@ -7,24 +8,41 @@
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
 {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_skel.html.twig' as _fa_skel %}
 
 {% block body %}
 <main class="fa-aurora-surface role-dashboard ciso-dashboard">
     {# Page Header — Aurora v4 fa-page-header #}
     {{ _fa_page_header.render({
-        badge:    { icon: 'shield-lock', label: 'ciso.badge'|trans({}, 'dashboards') },
+        badge:    { icon: 'nav-shield-lock', label: 'ciso.badge'|trans({}, 'dashboards') },
         title:    'ciso.title'|trans({}, 'dashboards'),
         subtitle: 'ciso.subtitle'|trans({}, 'dashboards'),
         actions: [
-            { label: 'action.standard_dashboard'|trans({}, 'dashboards'), variant: 'ghost',   icon: 'house',     href: path('app_dashboard') },
-            { label: 'action.board_view'|trans({}, 'dashboards'),         variant: 'primary', icon: 'briefcase', href: path('app_dashboard_board') }
+            { label: 'action.standard_dashboard'|trans({}, 'dashboards'), variant: 'ghost',   icon: 'nav-home',     href: path('app_dashboard') },
+            { label: 'action.board_view'|trans({}, 'dashboards'),         variant: 'primary', icon: 'nav-building', href: path('app_dashboard_board') }
         ]
     }) }}
 
+    {% set _global_hints = alva_hints('dashboard_ciso') %}
+    {% if _global_hints|length > 0 %}
+        {% for _h in _global_hints %}
+            {{ _fa_alva_hint.render(_h) }}
+        {% endfor %}
+    {% endif %}
+
+
     {# Phase 8H.1: Skeleton placeholder renders instantly, real content fades in after ~600ms — perceived-performance win for first paint. #}
     <div data-controller="skeleton" data-skeleton-duration-value="600">
-        <div data-skeleton-target="skeleton">
-            {% include '_components/_skeleton.html.twig' with { type: 'kpi-grid', count: 4 } %}
+        <div data-skeleton-target="skeleton" aria-busy="true">
+            <div class="row g-3 mb-4">
+                {% for i in 1..4 %}
+                    <div class="col-md-3">{{ _fa_skel.render({ variant: 'card' }) }}</div>
+                {% endfor %}
+            </div>
+            <div class="row g-4">
+                <div class="col-lg-6">{{ _fa_skel.render({ variant: 'row' }) }}</div>
+                <div class="col-lg-6">{{ _fa_skel.render({ variant: 'row' }) }}</div>
+            </div>
         </div>
 
         <div data-skeleton-target="content" class="hidden">
@@ -88,6 +106,7 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
                     {% if dashboard.compliance.frameworks|length > 0 %}
                         {% for framework in dashboard.compliance.frameworks %}
@@ -98,10 +117,7 @@
                                     {{ framework.compliance_percentage }}%
                                 </span>
                             </div>
-                            <div class="progress progress-h-8">
-                                <div class="progress-bar bg-{% if framework.compliance_percentage >= 80 %}success{% elseif framework.compliance_percentage >= 60 %}warning{% else %}danger{% endif %}"
-                                     style="width: {{ framework.compliance_percentage }}%"></div>
-                            </div>
+                            {{ _fa_progress.render({ value: framework.compliance_percentage, tone: framework.compliance_percentage >= 80 ? 'success' : (framework.compliance_percentage >= 60 ? 'warning' : 'danger') }) }}
                         </div>
                         {% endfor %}
                     {% else %}
@@ -236,8 +252,8 @@
         </div>
     </div>
 
-    {# DORA Compliance Section (conditionally shown) #}
-    {% if dashboard.dora_kpis is defined and dashboard.dora_kpis is not empty %}
+    {# DORA Compliance Section — only for DORA-obligated tenants #}
+    {% if is_dora_obligated() and dashboard.dora_kpis is defined and dashboard.dora_kpis is not empty %}
     <div class="row g-4 mt-2">
         <div class="col-12">
             {% embed '_components/_card.html.twig' %}
@@ -310,6 +326,44 @@
         </div>
     </div>
 
+
+    {# TISAX Per-Tier Maturity — only rendered when module active + requirements uploaded #}
+    {% if is_module_active('tisax') and dashboard.tisax_aggregate is defined and dashboard.tisax_aggregate is not null %}
+    <section class="fa-section mb-4 mt-4" id="tisax-maturity">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'tisax.section.title'|trans }}</h2>
+            <small class="text-muted">{{ 'tisax.section.subtitle'|trans }}</small>
+        </div>
+        <div class="fa-section__body">
+            <div class="kpi-grid d-grid grid-responsive-250 gap-4">
+                {% for tierKey, tier in dashboard.tisax_aggregate.byTier %}
+                    {% if tier.model == 'reifegrad' %}
+                        {% set avg = tier.average %}
+                        {% set target = 3 %}
+                        {% set variant = avg < 2 ? 'danger' : (avg < target ? 'warning' : 'success') %}
+                        {{ _fa_feature_card.render({
+                            icon:    'compliance-shield',
+                            label:   ('tisax.tier.' ~ tierKey)|trans,
+                            value:   avg ~ ' / 5',
+                            variant: variant,
+                            href:    path('app_compliance_wizard_assess', {wizard: 'tisax', _locale: app.request.locale})
+                        }) }}
+                    {% elseif tier.model == 'tristate' %}
+                        {% set pct = tier.percent_compliant %}
+                        {% set variant = pct < 60 ? 'danger' : (pct < 90 ? 'warning' : 'success') %}
+                        {{ _fa_feature_card.render({
+                            icon:    'nav-shield-lock',
+                            label:   ('tisax.tier.' ~ tierKey)|trans,
+                            value:   pct ~ ' %',
+                            variant: variant,
+                            href:    path('app_compliance_wizard_assess', {wizard: 'tisax', _locale: app.request.locale})
+                        }) }}
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
     {# Last Updated Timestamp #}
     <div class="text-muted text-end small mt-3">
         {{ 'dashboard.last_updated'|trans({'%time%': 'now'|date('H:i')}, 'dashboard') }}

@@ -24,7 +24,7 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
  * Manages evidence documents for ISO 27001 audit preparation.
  * Links uploaded files to Controls, ComplianceRequirements, and RiskTreatmentPlans.
  */
-class EvidenceCollectionService
+final class EvidenceCollectionService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -267,13 +267,13 @@ class EvidenceCollectionService
             'control' => $this->controlRepository->find($entityId),
             'requirement' => $this->requirementRepository->find($entityId),
             'risk_treatment_plan' => $this->rtpRepository->find($entityId),
-            default => throw new \InvalidArgumentException(
+            default => throw new \App\Exception\InvalidArgument\InvalidArgumentException(
                 sprintf('Unsupported entity type: %s', $entityType)
             ),
         };
 
         if ($entity === null) {
-            throw new \InvalidArgumentException(
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException(
                 sprintf('Entity of type "%s" with ID %d not found', $entityType, $entityId)
             );
         }

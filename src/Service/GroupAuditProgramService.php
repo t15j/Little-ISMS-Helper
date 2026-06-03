@@ -29,7 +29,7 @@ use Doctrine\ORM\EntityManagerInterface;
  * Holding tenant as a template row. Rolling up findings across the
  * subtree happens by enumerating $program->getDerivedAudits().
  */
-class GroupAuditProgramService
+final class GroupAuditProgramService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -68,7 +68,7 @@ class GroupAuditProgramService
                 continue;
             }
 
-            $child = (new InternalAudit())
+            $child = (new InternalAudit()) // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist InternalAudit; 'planned' is the internal_audit_lifecycle initial_marking)
                 ->setTenant($tenant)
                 ->setParentAudit($program)
                 ->setAuditNumber($program->getAuditNumber() . '-' . (string) $tenant->getCode())

@@ -12,6 +12,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -25,6 +26,7 @@ use PHPUnit\Framework\Attributes\Test;
  * - PDF export
  * - Role-based access control
  */
+#[AllowMockObjectsWithoutExpectations]
 class DataBreachControllerTest extends WebTestCase
 {
     private KernelBrowser $client;
@@ -38,7 +40,22 @@ class DataBreachControllerTest extends WebTestCase
     protected function setUp(): void
     {
         $this->client = static::createClient();
+        $this->client->disableReboot();
+
         $container = static::getContainer();
+
+        $moduleService = $this->createMock(\App\Service\ModuleConfigurationService::class);
+        $moduleService->method('isModuleActive')->willReturnCallback(
+            fn(string $key) => in_array($key, [
+                'core', 'authentication', 'assets', 'risks', 'controls',
+                'incidents', 'audits', 'training', 'reviews', 'bcm',
+                'compliance', 'audit_logging', 'privacy', 'nis2_dora',
+                'ai_governance', 'cloud_security', 'vulnerability_intel',
+                'marisk', 'tisax', 'quantitative_risk', 'notifications', 'eu_authority_reporting', 'tisax_isa', 'ai_act', 'cra_sbom', 'procedures',
+            ], true)
+        );
+        $container->set(\App\Service\ModuleConfigurationService::class, $moduleService);
+
         $this->entityManager = $container->get(EntityManagerInterface::class);
 
         $this->createTestData();
@@ -425,6 +442,30 @@ class DataBreachControllerTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $this->assertSelectorExists('form[name="data_breach"]');
+    }
+
+    /**
+     * PR #537 — fa-modal--wizard migration smoke test.
+     * Verifies the creation flow renders the wizard chrome.
+     */
+    #[Test]
+    public function testNewRendersWizardModalMarkup(): void
+    {
+        $this->loginAsUser($this->auditorUser);
+
+        $crawler = $this->client->request('GET', '/en/data-breach/new');
+
+        $this->assertResponseIsSuccessful();
+        // fa-modal--wizard BEM block must be present (design-system spec §form-layout)
+        $this->assertSelectorExists('.fa-modal--wizard');
+        // Stepper chrome must be present
+        $this->assertSelectorExists('.fa-modal__wizard-pips');
+        // Wizard controller wiring
+        $this->assertSelectorExists('[data-controller="modal-wizard"]');
+        // All 4 step panels
+        $this->assertCount(4, $crawler->filter('[data-modal-wizard-target="step"]'));
+        // Final submit button must be present
+        $this->assertSelectorExists('[data-modal-wizard-target="submitBtn"]');
     }
 
     // ========== EDIT ACTION TESTS ==========

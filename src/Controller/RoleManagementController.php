@@ -21,7 +21,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 
 class RoleManagementController extends AbstractController
 {
-    #[Route('/admin/roles', name: 'role_management_index')]
+    #[Route('/admin/roles', name: 'role_management_index', methods: ['GET'])]
     public function index(RoleRepository $roleRepository): Response
     {
         $this->denyAccessUnlessGranted(RoleVoter::VIEW, new Role());
@@ -32,7 +32,7 @@ class RoleManagementController extends AbstractController
             'roles' => $roles,
         ]);
     }
-    #[Route('/admin/roles/new', name: 'role_management_new')]
+    #[Route('/admin/roles/new', name: 'role_management_new', methods: ['GET', 'POST'])]
     #[IsGranted(RoleVoter::CREATE)]
     public function new(
         Request $request,
@@ -51,18 +51,22 @@ class RoleManagementController extends AbstractController
             $entityManager->persist($role);
             $entityManager->flush();
 
-            $this->addFlash('success', $translator->trans('role.success.created'));
+            $this->addFlash('success', $translator->trans('role.success.created', [], 'messages'));
 
             return $this->redirectToRoute('role_management_index');
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('role_management/new.html.twig', [
             'role' => $role,
             'form' => $form,
             'permissions' => $permissions,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/admin/roles/compare', name: 'role_management_compare')]
+    #[Route('/admin/roles/compare', name: 'role_management_compare', methods: ['GET'])]
     public function compare(
         Request $request,
         RoleRepository $roleRepository,
@@ -115,7 +119,7 @@ class RoleManagementController extends AbstractController
             'selected_role_ids' => $roleIds,
         ]);
     }
-    #[Route('/admin/roles/templates', name: 'role_management_templates')]
+    #[Route('/admin/roles/templates', name: 'role_management_templates', methods: ['GET', 'POST'])]
     #[IsGranted(RoleVoter::CREATE)]
     public function templates(
         Request $request,
@@ -129,6 +133,11 @@ class RoleManagementController extends AbstractController
 
         // Handle template application
         if ($request->isMethod('POST')) {
+            if (!$this->isCsrfTokenValid('role_template_apply', $request->request->get('_token'))) {
+                $this->addFlash('danger', $translator->trans('common.csrf_error', [], 'messages'));
+                return $this->redirectToRoute('role_management_templates');
+            }
+
             $templateKey = $request->request->get('template');
             $customName = $request->request->get('custom_name');
 
@@ -153,7 +162,7 @@ class RoleManagementController extends AbstractController
 
                 $this->addFlash('success', $translator->trans('role.success.created_from_template', [
                     'role' => $role->getName(),
-                ]));
+                ], 'messages'));
 
                 return $this->redirectToRoute('role_management_show', ['id' => $role->getId()]);
             }
@@ -163,7 +172,7 @@ class RoleManagementController extends AbstractController
             'templates' => $templates,
         ]);
     }
-    #[Route('/admin/roles/{id}', name: 'role_management_show', requirements: ['id' => '\d+'])]
+    #[Route('/admin/roles/{id}', name: 'role_management_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Role $role, RoleRepository $roleRepository): Response
     {
         $this->denyAccessUnlessGranted(RoleVoter::VIEW, $role);
@@ -174,7 +183,7 @@ class RoleManagementController extends AbstractController
             'role' => $role,
         ]);
     }
-    #[Route('/admin/roles/{id}/edit', name: 'role_management_edit', requirements: ['id' => '\d+'])]
+    #[Route('/admin/roles/{id}/edit', name: 'role_management_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     public function edit(
         Role $role,
         Request $request,
@@ -198,16 +207,20 @@ class RoleManagementController extends AbstractController
             $role->setUpdatedAt(new DateTimeImmutable());
             $entityManager->flush();
 
-            $this->addFlash('success', $translator->trans('role.success.updated'));
+            $this->addFlash('success', $translator->trans('role.success.updated', [], 'messages'));
 
             return $this->redirectToRoute('role_management_show', ['id' => $role->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('role_management/edit.html.twig', [
             'role' => $role,
             'form' => $form,
             'permissions' => $permissions,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/admin/roles/{id}/delete', name: 'role_management_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function delete(
@@ -222,7 +235,7 @@ class RoleManagementController extends AbstractController
             $entityManager->remove($role);
             $entityManager->flush();
 
-            $this->addFlash('success', $translator->trans('role.success.deleted'));
+            $this->addFlash('success', $translator->trans('role.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('role_management_index');

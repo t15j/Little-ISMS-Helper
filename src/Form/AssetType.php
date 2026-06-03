@@ -5,15 +5,26 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\Asset;
+use App\Entity\AssetSubType;
 use App\Entity\Location;
+use App\Form\SectionMapInterface;
 use App\Entity\Person;
+use App\Entity\ProcessingActivity;
 use App\Entity\User;
+use App\Enum\AssetStatus;
+use App\Form\Trait\ModuleAwareFormTrait;
+use App\Form\Trait\OwnerPickerFormTrait;
+use App\Form\Type\JsonTagsType;
+use App\Service\ModuleConfigurationService;
+use App\Service\TenantContext;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Form\AbstractType;
-use Symfony\Component\Form\CallbackTransformer;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\NumberType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -21,8 +32,24 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class AssetType extends AbstractType
+final class AssetType extends AbstractType implements SectionMapInterface
 {
+    use ModuleAwareFormTrait;
+    use OwnerPickerFormTrait;
+
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleConfiguration,
+        private readonly Security $security,
+        private readonly TenantContext $tenantContext,
+    ) {
+    }
+
+    // Junior-ISB-Audit-2026-05-22 4.11: Owner pre-fill — UX-Polish
+    protected function getSecurityForOwnerPicker(): ?Security
+    {
+        return $this->security;
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
@@ -59,58 +86,76 @@ class AssetType extends AbstractType
                 'attr' => [
                     'id' => 'asset_form_assetType',
                     'data-asset-form-target' => 'assetTypeSelect',
+                    'data-asset-sub-type-target' => 'topType',
+                    'data-action' => 'change->asset-sub-type#topTypeChanged',
                 ],
             ])
-            ->add('ownerUser', EntityType::class, [
-                'label' => 'asset.field.owner',
-                'class' => User::class,
-                'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
-                'required' => false,
-                'placeholder' => 'asset.placeholder.owner_user',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'asset.help.owner_user',
-            ])
-            ->add('ownerPerson', EntityType::class, [
-                'label' => 'asset.field.owner_person',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'placeholder' => 'asset.placeholder.owner_person',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'asset.help.owner_person',
-            ])
-            ->add('ownerDeputyPersons', EntityType::class, [
-                'label' => 'asset.field.owner_deputies',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'multiple' => true,
-                'expanded' => false,
-                'attr' => [
-                    'class' => 'form-select',
-                    'data-controller' => 'tom-select',
-                ],
-                'help' => 'asset.help.owner_deputies',
-            ])
-            ->add('owner', TextType::class, [
-                'label' => 'asset.field.owner_legacy',
-                'required' => false,
-                'attr' => [
-                    'maxlength' => 100,
-                    'placeholder' => 'asset.placeholder.owner',
-                ],
-                'help' => 'asset.help.owner',
-            ])
+        ;
+
+        // S18 B2: tenant-konfigurierbarer Sub-Type. Dependent-select gefiltert
+        // via Stimulus-Controller (asset-sub-type) + JSON-Endpoint. Bei jedem
+        // Initialladen werden ALLE Tenant-Sub-Types geliefert; das JS filtert
+        // clientseitig (Form-Render) + lädt frisch beim topType-Wechsel.
+        $tenant = $this->tenantContext->getCurrentTenant();
+        $builder->add('subType', EntityType::class, [
+            'class' => AssetSubType::class,
+            'choice_label' => static fn (AssetSubType $s): string => $s->getName(),
+            'group_by' => static fn (AssetSubType $s): string => $s->getTopType(),
+            'required' => false,
+            'placeholder' => 'asset_sub_type.asset_form.placeholder',
+            'label' => 'asset_sub_type.asset_form.label',
+            'choice_translation_domain' => 'asset_sub_type',
+            'translation_domain' => 'asset_sub_type',
+            'query_builder' => static function ($repo) use ($tenant) {
+                $qb = $repo->createQueryBuilder('s')
+                    ->andWhere('s.isActive = :a')
+                    ->setParameter('a', true)
+                    ->orderBy('s.topType', 'ASC')
+                    ->addOrderBy('s.name', 'ASC');
+                if ($tenant !== null) {
+                    $qb->andWhere('s.tenant = :t')->setParameter('t', $tenant);
+                } else {
+                    // Defensive: no tenant context → return empty set.
+                    $qb->andWhere('1 = 0');
+                }
+                return $qb;
+            },
+            'choice_attr' => static fn (AssetSubType $s): array => [
+                'data-top-type' => $s->getTopType(),
+            ],
+            'attr' => [
+                'data-asset-sub-type-target' => 'subType',
+            ],
+        ]);
+
+        // ── Owner cluster (audit-s4 P-1) ────────────────────────────────────
+        // Replaces 4 hand-rolled add() calls (ownerUser/ownerPerson/
+        // ownerDeputyPersons/owner) with one shared helper. Pattern A
+        // dual-state semantics are preserved at the entity layer
+        // (validateOwnerSlot stays below, getEffectiveOwner stays in Asset).
+        $this->addOwnerPicker($builder, [
+            'user_field'         => 'ownerUser',
+            'person_field'       => 'ownerPerson',
+            'deputies_field'     => 'ownerDeputyPersons',
+            'legacy_field'       => 'owner',
+            'translation_prefix' => 'asset',
+            'user_label'         => 'asset.field.owner',
+            'user_placeholder'   => 'asset.placeholder.owner_user',
+            'legacy_label'       => 'asset.field.owner_legacy',
+            'legacy_help'        => 'asset.help.owner',
+            'legacy_placeholder' => 'asset.placeholder.owner',
+            // Junior-ISB-Audit-2026-05-22 4.11: Owner pre-fill — UX-Polish
+            'default_to_current_user' => true,
+        ]);
+
+        $builder
             ->add('physicalLocation', EntityType::class, [
                 'label' => 'asset.field.location',
                 'class' => Location::class,
                 'choice_label' => 'name',
                 'required' => false,
                 'placeholder' => 'asset.placeholder.location_select',
-                'attr' => [
-                    'class' => 'form-select',
-                ],
-                'help' => 'asset.help.physical_location',
+                                'help' => 'asset.help.physical_location',
             ])
             ->add('dependsOn', EntityType::class, [
                 'label' => 'asset.field.depends_on',
@@ -122,10 +167,30 @@ class AssetType extends AbstractType
                     return $repo->createQueryBuilder('a')->orderBy('a.name', 'ASC');
                 },
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'asset.help.depends_on',
+            ])
+            // V3 W2-Bug3 — linked Processing Activities (M:N inverse).
+            // Edit from either side; the owning side lives on
+            // ProcessingActivity::$assets.
+            // @no-module-gate-required: M:N inverse to ProcessingActivity. When privacy is off,
+            //   no PA exists, so the EntityType list is empty and the field hides itself visually.
+            //   No data leak.
+            ->add('processingActivities', EntityType::class, [
+                'label' => 'asset.field.processing_activities',
+                'help' => 'asset.help.processing_activities',
+                'class' => ProcessingActivity::class,
+                'choice_label' => 'name',
+                'multiple' => true,
+                'required' => false,
+                'by_reference' => false,
+                'query_builder' => static function ($repo) {
+                    return $repo->createQueryBuilder('p')->orderBy('p.name', 'ASC');
+                },
+                'attr' => [
+                    'data-controller' => 'tom-select',
+                ],
             ])
             ->add('acquisitionValue', NumberType::class, [
                 'label' => 'asset.field.acquisition_value',
@@ -174,10 +239,10 @@ class AssetType extends AbstractType
                 ],
                 'help' => 'asset.help.availability',
             ])
-            // monetaryValue removed from form (Junior-Finding #9): redundant to
-            // acquisitionValue + currentValue. DB column preserved for
-            // backwards compatibility; existing values surface via asset.show
-            // if ever needed, but not maintained through the form anymore.
+            // monetaryValue removed (Junior-Finding #9 form-removal,
+            // S14+ #15 DB-column drop in Version20260612100000): replaced
+            // by acquisitionValue + currentValue. Legacy column-data was
+            // backfilled into current_value during the drop migration.
             ->add('dataClassification', ChoiceType::class, [
                 'label' => 'asset.field.data_classification',
                 'choices' => [
@@ -215,23 +280,93 @@ class AssetType extends AbstractType
                 'widget' => 'single_text',
                 'help' => 'asset.help.return_date',
             ])
-            ->add('status', ChoiceType::class, [
+            // ── Status field is READ-ONLY in the form (Lifecycle-bypass fix) ──
+            // The `asset_lifecycle` Symfony Workflow owns this column. Status
+            // transitions go EXCLUSIVELY through LifecycleService::transition()
+            // (lifecycle-actions dropdown on show-pages, or bulk-status-change
+            // action bar). That path enforces the YAML transition matrix, 4-eyes
+            // on `dispose`, RBAC, audit-log + tenant-guard.
+            //
+            // `disabled => true` makes Symfony Forms ignore submitted values
+            // and preserve the entity's current status. Pre-fix the field was
+            // editable — a single POST could move an Asset from `in_use`
+            // directly to `disposed`, bypassing the 4-eyes guard.
+            ->add('status', EnumType::class, [
                 'label' => 'asset.field.status',
-                'choices' => [
-                    'asset.status.active' => 'active',
-                    'asset.status.inactive' => 'inactive',
-                    'asset.status.in_use' => 'in_use',
-                    'asset.status.returned' => 'returned',
-                    'asset.status.retired' => 'retired',
-                    'asset.status.disposed' => 'disposed',
-                ],
-                'required' => true,
-                'help' => 'asset.help.status',
+                'class' => AssetStatus::class,
+                'choice_label' => fn(AssetStatus $s): string => 'asset.status.' . $s->value,
+                // Status is stored as VARCHAR (?string) on the entity; accept either
+                // an enum case OR its raw string value so EnumType can resolve the
+                // currently-selected option from both Doctrine hydration paths.
+                'choice_value' => fn(AssetStatus|string|null $c): ?string =>
+                    $c instanceof AssetStatus ? $c->value : $c,
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
+                'help' => 'asset.help.status_readonly',
                 'choice_translation_domain' => 'asset',
             ])
-            // ── AI-Agent fields (only relevant when assetType = 'ai_agent') ──
-            // Erfüllt EU AI Act Art. 6/9-16, ISO 42001 Annex A, MRIS MHC-13.
-            // All fields nullable — only meaningful for ai_agent subtype.
+        ;
+
+        // ── DORA scope flag — only when nis2_dora module is active ──────────
+        // DORA Art. 28 — Register of Information. Flag marks this asset as
+        // in-scope for the ICT-risk monitoring obligation.
+        if ($this->isModuleActive('nis2_dora')) {
+            $builder->add('isDoraRelevant', CheckboxType::class, [
+                'label'    => 'asset.field.is_dora_relevant',
+                'help'     => 'asset.help.is_dora_relevant',
+                'required' => false,
+            ]);
+        }
+
+        // ── TISAX VDA-ISA 6.0 information-classification overlay — only when
+        // 'tisax' module is active. Sits orthogonal to the generic
+        // dataClassification field so the TISAX label vocabulary
+        // (public/internal/confidential/strictly_confidential/prototype) does
+        // not clutter non-automotive tenants. (T31/S2-P6)
+        if ($this->isModuleActive('tisax')) {
+            $builder->add('tisaxInformationClassification', ChoiceType::class, [
+                'label' => 'asset.field.tisax_information_classification',
+                'choices' => [
+                    'asset.tisax_classification.public' => 'public',
+                    'asset.tisax_classification.internal' => 'internal',
+                    'asset.tisax_classification.confidential' => 'confidential',
+                    'asset.tisax_classification.strictly_confidential' => 'strictly_confidential',
+                    'asset.tisax_classification.prototype' => 'prototype',
+                ],
+                'required' => false,
+                'placeholder' => 'asset.placeholder.tisax_information_classification',
+                'help' => 'asset.help.tisax_information_classification',
+                'choice_translation_domain' => 'asset',
+            ]);
+        }
+
+        // ── AI-Agent fields: only added when 'ai_governance' module is active ──
+        // Erfüllt EU AI Act Art. 6/9-16, ISO 42001 Annex A, MRIS MHC-13.
+        // Stimulus show/hide via data-depends-on (assetType=ai_agent) is kept
+        // intact — module gate is the outer guard.
+        if ($this->isModuleActive('ai_governance')) {
+            $this->addAiAgentFields($builder);
+        }
+
+        // Note: aiAgentCapabilityScope + aiAgentExtensionAllowlist used to
+        // get a CallbackTransformer here (textarea-as-newline-list ↔ ?array).
+        // Both fields now use JsonTagsType which ships its own array↔CSV
+        // DataTransformer + tom-select chip-input UX. Adding a second
+        // transformer would double-encode and break form submission.
+    }
+
+    /**
+     * Adds all 9 AI-Agent inventory fields to the builder.
+     * Called only when the 'ai_governance' module is active.
+     * All fields nullable — only meaningful for ai_agent subtype.
+     * Stimulus show/hide (data-depends-on assetType=ai_agent) is preserved.
+     */
+    private function addAiAgentFields(FormBuilderInterface $builder): void
+    {
+        $builder
             ->add('aiAgentClassification', ChoiceType::class, [
                 'label' => 'asset.ai_agent.field.classification',
                 'choices' => [
@@ -310,12 +445,11 @@ class AssetType extends AbstractType
                 ],
                 'help' => 'asset.ai_agent.help.model_version',
             ])
-            ->add('aiAgentCapabilityScope', TextareaType::class, [
+            ->add('aiAgentCapabilityScope', JsonTagsType::class, [
                 'label' => 'asset.ai_agent.field.capability_scope',
                 'required' => false,
+                'placeholder' => 'asset.ai_agent.placeholder.capability_scope',
                 'attr' => [
-                    'rows' => 4,
-                    'placeholder' => 'asset.ai_agent.placeholder.capability_scope',
                     'data-depends-on' => 'asset_form_assetType',
                     'data-depends-on-value' => 'ai_agent',
                 ],
@@ -332,45 +466,74 @@ class AssetType extends AbstractType
                 ],
                 'help' => 'asset.ai_agent.help.threat_model_doc_id',
             ])
-            ->add('aiAgentExtensionAllowlist', TextareaType::class, [
+            ->add('aiAgentExtensionAllowlist', JsonTagsType::class, [
                 'label' => 'asset.ai_agent.field.extension_allowlist',
                 'required' => false,
+                'placeholder' => 'asset.ai_agent.placeholder.extension_allowlist',
                 'attr' => [
-                    'rows' => 4,
-                    'placeholder' => 'asset.ai_agent.placeholder.extension_allowlist',
                     'data-depends-on' => 'asset_form_assetType',
                     'data-depends-on-value' => 'ai_agent',
                 ],
                 'help' => 'asset.ai_agent.help.extension_allowlist',
             ])
         ;
+    }
 
-        // Array <-> textarea (one entry per line) transformers for the two
-        // JSON columns. Empty input persists as null; otherwise lines are
-        // trimmed and empty lines dropped.
-        $arrayTransformer = new CallbackTransformer(
-            // model (?array) -> view (string)
-            static function (?array $value): string {
-                if ($value === null || $value === []) {
-                    return '';
-                }
-
-                return implode("\n", $value);
-            },
-            // view (?string) -> model (?array)
-            static function (?string $value): ?array {
-                if ($value === null) {
-                    return null;
-                }
-                $lines = preg_split('/\r\n|\r|\n/', $value) ?: [];
-                $cleaned = array_values(array_filter(array_map('trim', $lines), static fn(string $l): bool => $l !== ''));
-
-                return $cleaned === [] ? null : $cleaned;
-            }
-        );
-
-        $builder->get('aiAgentCapabilityScope')->addModelTransformer($arrayTransformer);
-        $builder->get('aiAgentExtensionAllowlist')->addModelTransformer($arrayTransformer);
+    /**
+     * S4 Foundation P-2 SectionPolicy — ISO 27001 A.5.9 · Asset Inventory.
+     * Module-gated fields (nis2_dora, tisax, ai_governance) listed here so
+     * the map is always complete; fields not built are silently ignored.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview' => [
+                'name',
+                'description',
+                'assetType',
+                'subType',
+            ],
+            'ownership' => [
+                'ownerUser',
+                'ownerPerson',
+                'ownerDeputyPersons',
+                'owner',
+                'physicalLocation',
+                'dependsOn',
+                'processingActivities',
+            ],
+            'classification' => [
+                'dataClassification',
+                'status',
+                'returnDate',
+                'isDoraRelevant',
+                'tisaxInformationClassification',
+            ],
+            'protection_requirements' => [
+                'confidentialityValue',
+                'integrityValue',
+                'availabilityValue',
+            ],
+            'lifecycle_status' => [
+                'acquisitionValue',
+                'currentValue',
+                'acceptableUsePolicy',
+                'handlingInstructions',
+            ],
+            'dependencies' => [
+                'aiAgentClassification',
+                'aiAgentPurpose',
+                'aiAgentDataSources',
+                'aiAgentOversightMechanism',
+                'aiAgentProvider',
+                'aiAgentModelVersion',
+                'aiAgentCapabilityScope',
+                'aiAgentThreatModelDocId',
+                'aiAgentExtensionAllowlist',
+            ],
+        ];
     }
 
     public function configureOptions(OptionsResolver $resolver): void

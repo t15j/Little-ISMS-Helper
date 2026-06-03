@@ -4,27 +4,47 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Controller\Trait\LocalizedFlashTrait;
 use Symfony\Component\Yaml\Yaml;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\DataImportService;
 use App\Service\ModuleConfigurationService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
- * Admin wrapper for Module Management
- * Integrates existing /modules functionality into admin panel
+ * Admin wrapper for Module Management.
+ *
+ * Role-Scope: class-level {@see TenantScopedAdminVoter::ADMIN_OWN_TENANT}
+ * (Phase 4e — system-settings cluster). Tenant admins activate / deactivate
+ * modules for their own tenant; SUPER_ADMIN passes through transparently.
+ * Existing method-level `MODULE_VIEW`/`MODULE_MANAGE` permission attributes
+ * remain authoritative for read vs. write granularity.
  */
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
 class AdminModuleController extends AbstractController
 {
+    use LocalizedFlashTrait;
+
     public function __construct(
         private readonly ModuleConfigurationService $moduleConfigurationService,
         private readonly DataImportService $dataImportService,
         private readonly TranslatorInterface $translator
     ) {
+    }
+
+    protected function getFlashDomain(): string
+    {
+        return 'admin';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
     }
     /**
      * Module Overview - Admin Panel
@@ -65,7 +85,7 @@ class AdminModuleController extends AbstractController
     public function activate(string $moduleKey, Request $request): Response
     {
         if (!$this->isCsrfTokenValid('module_activate_' . $moduleKey, $request->request->get('_token'))) {
-            $this->addFlash('error', 'Invalid CSRF token');
+            $this->flashError('admin.module.error.invalid_csrf');
             return $this->redirectToRoute('admin_modules_index');
         }
 
@@ -78,7 +98,7 @@ class AdminModuleController extends AbstractController
             foreach ($result['added_modules'] ?? [] as $addedKey) {
                 $module = $this->moduleConfigurationService->getModule($addedKey);
                 if ($module && $addedKey !== $moduleKey) {
-                    $this->addFlash('info', $this->translator->trans('module.info.added_as_dependency', ['name' => $module['name']]));
+                    $this->addFlash('info', $this->translator->trans('module.info.added_as_dependency', ['name' => $module['name']], 'messages'));
                 }
             }
         } else {
@@ -95,7 +115,7 @@ class AdminModuleController extends AbstractController
     public function deactivate(string $moduleKey, Request $request): Response
     {
         if (!$this->isCsrfTokenValid('module_deactivate_' . $moduleKey, $request->request->get('_token'))) {
-            $this->addFlash('error', 'Invalid CSRF token');
+            $this->flashError('admin.module.error.invalid_csrf');
             return $this->redirectToRoute('admin_modules_index');
         }
 
@@ -107,7 +127,8 @@ class AdminModuleController extends AbstractController
             $this->addFlash('error', $result['error']);
 
             if (isset($result['dependents'])) {
-                $this->addFlash('warning', $this->translator->trans('module.warning.disable_dependents_first', ['dependents' => implode(', ', $result['dependents'])]));
+                // @flash-domain-fallback-ok: 3-arg trans with explicit 'messages' domain — gate regex false-positive on nested array literal
+                $this->addFlash('warning', $this->translator->trans('module.warning.disable_dependents_first', ['dependents' => implode(', ', $result['dependents'])], 'messages'));
             }
         }
 
@@ -123,7 +144,7 @@ class AdminModuleController extends AbstractController
         $module = $this->moduleConfigurationService->getModule($moduleKey);
 
         if (!$module) {
-            $this->addFlash('error', $this->translator->trans('module.error.not_found'));
+            $this->addFlash('error', $this->translator->trans('module.error.not_found', [], 'messages'));
             return $this->redirectToRoute('admin_modules_index');
         }
 
@@ -152,19 +173,19 @@ class AdminModuleController extends AbstractController
     public function importData(string $moduleKey, Request $request): Response
     {
         if (!$this->isCsrfTokenValid('module_import_' . $moduleKey, $request->request->get('_token'))) {
-            $this->addFlash('error', 'Invalid CSRF token');
+            $this->flashError('admin.module.error.invalid_csrf');
             return $this->redirectToRoute('admin_modules_details', ['moduleKey' => $moduleKey]);
         }
 
         $module = $this->moduleConfigurationService->getModule($moduleKey);
 
         if (!$module) {
-            $this->addFlash('error', $this->translator->trans('module.error.not_found'));
+            $this->addFlash('error', $this->translator->trans('module.error.not_found', [], 'messages'));
             return $this->redirectToRoute('admin_modules_index');
         }
 
         if (!$this->moduleConfigurationService->isModuleActive($moduleKey)) {
-            $this->addFlash('error', $this->translator->trans('module.error.not_active'));
+            $this->addFlash('error', $this->translator->trans('module.error.not_active', [], 'messages'));
             return $this->redirectToRoute('admin_modules_details', ['moduleKey' => $moduleKey]);
         }
 

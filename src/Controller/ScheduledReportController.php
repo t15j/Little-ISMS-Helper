@@ -21,6 +21,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  *
  * Phase 7A: Manages scheduled reports - create, edit, activate/deactivate, and trigger.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/reports/scheduled')]
 #[IsGranted('ROLE_MANAGER')]
 class ScheduledReportController extends AbstractController
@@ -33,10 +34,10 @@ class ScheduledReportController extends AbstractController
     ) {
     }
 
-    #[Route('/', name: 'app_scheduled_report_index')]
+    #[Route('/', name: 'app_scheduled_report_index', methods: ['GET'])]
     public function index(): Response
     {
-        $tenantId = $this->tenantContext->getTenantId();
+        $tenantId = $this->tenantContext->getCurrentTenantId();
         $reports = $this->repository->findByTenant($tenantId);
         $statistics = $this->repository->getStatistics($tenantId);
         $dueReports = $this->repository->findDueReports();
@@ -52,7 +53,7 @@ class ScheduledReportController extends AbstractController
     public function new(Request $request): Response
     {
         $report = new ScheduledReport();
-        $report->setTenantId($this->tenantContext->getTenantId());
+        $report->setTenantId($this->tenantContext->getCurrentTenantId());
         $report->setCreatedBy($this->getUser());
         $report->setLocale($request->getLocale());
 
@@ -71,13 +72,17 @@ class ScheduledReportController extends AbstractController
             return $this->redirectToRoute('app_scheduled_report_show', ['id' => $report->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('scheduled_report/new.html.twig', [
             'report' => $report,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
-    #[Route('/{id}', name: 'app_scheduled_report_show', methods: ['GET'])]
+    #[Route('/{id}', name: 'app_scheduled_report_show', methods: ['GET'], requirements: ['id' => '\d+'])]
     public function show(ScheduledReport $report): Response
     {
         $this->checkAccess($report);
@@ -87,7 +92,7 @@ class ScheduledReportController extends AbstractController
         ]);
     }
 
-    #[Route('/{id}/edit', name: 'app_scheduled_report_edit', methods: ['GET', 'POST'])]
+    #[Route('/{id}/edit', name: 'app_scheduled_report_edit', methods: ['GET', 'POST'], requirements: ['id' => '\d+'])]
     public function edit(Request $request, ScheduledReport $report): Response
     {
         $this->checkAccess($report);
@@ -106,13 +111,17 @@ class ScheduledReportController extends AbstractController
             return $this->redirectToRoute('app_scheduled_report_show', ['id' => $report->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('scheduled_report/edit.html.twig', [
             'report' => $report,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
-    #[Route('/{id}/toggle', name: 'app_scheduled_report_toggle', methods: ['POST'])]
+    #[Route('/{id}/toggle', name: 'app_scheduled_report_toggle', methods: ['POST'], requirements: ['id' => '\d+'])]
     public function toggle(Request $request, ScheduledReport $report): Response
     {
         $this->checkAccess($report);
@@ -134,7 +143,7 @@ class ScheduledReportController extends AbstractController
         return $this->redirectToRoute('app_scheduled_report_show', ['id' => $report->getId()]);
     }
 
-    #[Route('/{id}/trigger', name: 'app_scheduled_report_trigger', methods: ['POST'])]
+    #[Route('/{id}/trigger', name: 'app_scheduled_report_trigger', methods: ['POST'], requirements: ['id' => '\d+'])]
     #[IsGranted('ROLE_ADMIN')]
     public function trigger(Request $request, ScheduledReport $report): Response
     {
@@ -152,7 +161,7 @@ class ScheduledReportController extends AbstractController
         return $this->redirectToRoute('app_scheduled_report_show', ['id' => $report->getId()]);
     }
 
-    #[Route('/{id}/preview', name: 'app_scheduled_report_preview', methods: ['GET'])]
+    #[Route('/{id}/preview', name: 'app_scheduled_report_preview', methods: ['GET'], requirements: ['id' => '\d+'])]
     public function preview(ScheduledReport $report): Response
     {
         $this->checkAccess($report);
@@ -174,7 +183,7 @@ class ScheduledReportController extends AbstractController
         }
     }
 
-    #[Route('/{id}/delete', name: 'app_scheduled_report_delete', methods: ['POST'])]
+    #[Route('/{id}/delete', name: 'app_scheduled_report_delete', methods: ['POST'], requirements: ['id' => '\d+'])]
     public function delete(Request $request, ScheduledReport $report): Response
     {
         $this->checkAccess($report);
@@ -194,7 +203,7 @@ class ScheduledReportController extends AbstractController
      */
     private function checkAccess(ScheduledReport $report): void
     {
-        if ($report->getTenantId() !== $this->tenantContext->getTenantId()) {
+        if ($report->getTenantId() !== $this->tenantContext->getCurrentTenantId()) {
             throw $this->createAccessDeniedException('Access denied to this scheduled report.');
         }
     }

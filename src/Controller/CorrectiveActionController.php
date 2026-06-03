@@ -7,12 +7,17 @@ namespace App\Controller;
 use App\Entity\AuditFinding;
 use App\Entity\CorrectiveAction;
 use App\Entity\Tenant;
+use App\Enum\CorrectiveActionStatus;
 use App\Form\CorrectiveActionType;
+use App\Repository\CommentRepository;
 use App\Repository\CorrectiveActionRepository;
 use App\Service\AuditLogger;
 use App\Service\TenantContext;
 use Doctrine\ORM\EntityManagerInterface;
+use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -22,6 +27,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  * H-01: CRUD for Corrective Actions (ISO 27001 Clause 10.1).
  */
 #[IsGranted('ROLE_USER')]
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/corrective-action', name: 'app_corrective_action_')]
 class CorrectiveActionController extends AbstractController
 {
@@ -30,20 +36,58 @@ class CorrectiveActionController extends AbstractController
         private readonly EntityManagerInterface $entityManager,
         private readonly TenantContext $tenantContext,
         private readonly AuditLogger $auditLogger,
+        private readonly Security $security,
+        private readonly ?CommentRepository $commentRepository = null,
     ) {
     }
 
     #[Route('/', name: 'index', methods: ['GET'])]
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $tenant = $this->tenantContext->getCurrentTenant();
+
+        // Junior-ISB-Audit-2026-05-22 M-07 Phase-1 — sourceType filter (ADR 2026-05-23).
+        $validSourceTypes = [
+            CorrectiveAction::SOURCE_TYPE_AUDIT_FINDING,
+            CorrectiveAction::SOURCE_TYPE_INCIDENT,
+            CorrectiveAction::SOURCE_TYPE_CHANGE_REQUEST,
+            CorrectiveAction::SOURCE_TYPE_MANUAL,
+        ];
+        $sourceTypeFilter = (string) $request->query->get('source_type', '');
+        if ($sourceTypeFilter !== '' && !in_array($sourceTypeFilter, $validSourceTypes, true)) {
+            $sourceTypeFilter = '';
+        }
+
         $criteria = $tenant instanceof Tenant ? ['tenant' => $tenant] : [];
-        $actions = $this->repository->findBy($criteria, ['createdAt' => 'DESC']);
+        $allActions = $this->repository->findBy($criteria, ['createdAt' => 'DESC']);
+
+        // Count per source_type for chip labels (uses unfiltered set so chip counts stay stable).
+        $countsBySourceType = [
+            CorrectiveAction::SOURCE_TYPE_AUDIT_FINDING => 0,
+            CorrectiveAction::SOURCE_TYPE_INCIDENT => 0,
+            CorrectiveAction::SOURCE_TYPE_CHANGE_REQUEST => 0,
+            CorrectiveAction::SOURCE_TYPE_MANUAL => 0,
+        ];
+        foreach ($allActions as $ca) {
+            $st = $ca->getSourceType();
+            $countsBySourceType[$st] = ($countsBySourceType[$st] ?? 0) + 1;
+        }
+
+        $actions = $sourceTypeFilter === ''
+            ? $allActions
+            : array_values(array_filter(
+                $allActions,
+                static fn (CorrectiveAction $ca): bool => $ca->getSourceType() === $sourceTypeFilter
+            ));
+
         $overdue = $tenant instanceof Tenant ? $this->repository->findOverdue($tenant) : [];
 
         return $this->render('corrective_action/index.html.twig', [
             'actions' => $actions,
             'overdue_count' => count($overdue),
+            'source_type_filter' => $sourceTypeFilter,
+            'counts_by_source_type' => $countsBySourceType,
+            'total_count' => count($allActions),
         ]);
     }
 
@@ -65,6 +109,32 @@ class CorrectiveActionController extends AbstractController
             }
         }
 
+        // S3 P0-30: Pre-Fill from an unwirksame Vorgänger-CAPA.
+        // Tenant-Isolation: never accept a previous-CAPA from a different tenant.
+        $previousCapa = null;
+        $fromIneffective = $request->query->getInt('from_ineffective_capa', 0);
+        if ($fromIneffective > 0) {
+            $prev = $this->repository->find($fromIneffective);
+            if ($prev instanceof CorrectiveAction
+                && $tenant instanceof Tenant
+                && $prev->getTenant()?->getId() === $tenant->getId()
+                && $prev->isVerifiedIneffective()
+            ) {
+                $previousCapa = $prev;
+                $action->setPreviousCapa($prev);
+                if ($prev->getFinding() instanceof AuditFinding) {
+                    $action->setFinding($prev->getFinding());
+                    $findingLocked = true;
+                }
+                $action->setDescription(sprintf(
+                    'Folge-Maßnahme zur unwirksamen CAPA #%d: %s',
+                    $prev->getId() ?? 0,
+                    (string) $prev->getTitle(),
+                ));
+                $action->setStatus(CorrectiveActionStatus::Planned); // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist entity; 'planned' is the corrective_action_lifecycle initial_marking)
+            }
+        }
+
         $form = $this->createForm(CorrectiveActionType::class, $action, ['finding_locked' => $findingLocked]);
         $form->handleRequest($request);
 
@@ -75,7 +145,11 @@ class CorrectiveActionController extends AbstractController
             $this->auditLogger->logCreate(
                 'CorrectiveAction',
                 $action->getId(),
-                ['title' => $action->getTitle(), 'status' => $action->getStatus()],
+                [
+                    'title' => $action->getTitle(),
+                    'status' => $action->getStatus(),
+                    'previousCapaId' => $action->getPreviousCapa()?->getId(),
+                ],
                 'CorrectiveAction created'
             );
 
@@ -83,10 +157,15 @@ class CorrectiveActionController extends AbstractController
             return $this->redirectToRoute('app_corrective_action_show', ['id' => $action->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('corrective_action/new.html.twig', [
             'form' => $form,
             'finding' => $action->getFinding(),
-        ]);
+            'previousCapa' => $previousCapa,
+        ], new Response(status: $status));
     }
 
     #[Route('/{id}', name: 'show', methods: ['GET'], requirements: ['id' => '\d+'])]
@@ -94,8 +173,16 @@ class CorrectiveActionController extends AbstractController
     {
         $this->denyIfWrongTenant($action);
 
+        // V4 LB-4: Comment-Thread adoption — load thread for this CorrectiveAction.
+        $comments = [];
+        $tenant = $this->tenantContext->getCurrentTenant();
+        if ($this->commentRepository !== null && $tenant !== null && $action->getId() !== null) {
+            $comments = $this->commentRepository->findThread($tenant, 'CorrectiveAction', $action->getId());
+        }
+
         return $this->render('corrective_action/show.html.twig', [
             'action' => $action,
+            'comments' => $comments,
         ]);
     }
 
@@ -122,10 +209,14 @@ class CorrectiveActionController extends AbstractController
             return $this->redirectToRoute('app_corrective_action_show', ['id' => $action->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('corrective_action/edit.html.twig', [
             'action' => $action,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
     #[Route('/{id}/delete', name: 'delete', methods: ['POST'], requirements: ['id' => '\d+'])]
@@ -156,5 +247,63 @@ class CorrectiveActionController extends AbstractController
                 throw $this->createAccessDeniedException('Action belongs to a different tenant.');
             }
         }
+    }
+
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * CorrectiveActions are terminal — returns empty dependencies.
+     */
+    #[Route('/bulk-delete-check', name: 'bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = (array) ($data['ids'] ?? []);
+        return new JsonResponse(['dependencies' => [], 'checked_count' => count($ids)]);
+    }
+
+    #[Route('/bulk-delete', name: 'bulk_delete', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDelete(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+        $ids = $data['ids'] ?? [];
+
+        if (empty($ids)) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->security->getUser()?->getTenant();
+        $deleted = 0;
+        $errors = [];
+
+        foreach ($ids as $id) {
+            try {
+                $action = $this->repository->find($id);
+                if (!$action) {
+                    $errors[] = "CorrectiveAction ID $id not found";
+                    continue;
+                }
+                if ($tenant && $action->getTenant() !== $tenant) {
+                    $errors[] = "CorrectiveAction ID $id does not belong to your organization";
+                    continue;
+                }
+                $this->entityManager->remove($action);
+                $deleted++;
+            } catch (Exception $e) {
+                $errors[] = "Error deleting CorrectiveAction ID $id: " . $e->getMessage();
+            }
+        }
+
+        if ($deleted > 0) {
+            $this->entityManager->flush();
+        }
+
+        return $this->json([
+            'success' => $deleted > 0,
+            'deleted' => $deleted,
+            'errors' => $errors,
+            'message' => "$deleted corrective actions deleted successfully",
+        ]);
     }
 }

@@ -12,6 +12,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -22,6 +23,7 @@ use PHPUnit\Framework\Attributes\Test;
  * - CRUD operations
  * - Verify and revoke actions
  */
+#[AllowMockObjectsWithoutExpectations]
 class ConsentControllerTest extends WebTestCase
 {
     private KernelBrowser $client;
@@ -34,7 +36,22 @@ class ConsentControllerTest extends WebTestCase
     protected function setUp(): void
     {
         $this->client = static::createClient();
+        $this->client->disableReboot();
+
         $container = static::getContainer();
+
+        $moduleService = $this->createMock(\App\Service\ModuleConfigurationService::class);
+        $moduleService->method('isModuleActive')->willReturnCallback(
+            fn(string $key) => in_array($key, [
+                'core', 'authentication', 'assets', 'risks', 'controls',
+                'incidents', 'audits', 'training', 'reviews', 'bcm',
+                'compliance', 'audit_logging', 'privacy', 'nis2_dora',
+                'ai_governance', 'cloud_security', 'vulnerability_intel',
+                'marisk', 'tisax', 'quantitative_risk', 'notifications', 'eu_authority_reporting', 'tisax_isa', 'ai_act', 'cra_sbom', 'procedures',
+            ], true)
+        );
+        $container->set(\App\Service\ModuleConfigurationService::class, $moduleService);
+
         $this->entityManager = $container->get(EntityManagerInterface::class);
 
         $this->createTestData();

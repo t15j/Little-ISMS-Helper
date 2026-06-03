@@ -7,6 +7,7 @@ namespace App\Repository;
 use DateTime;
 use App\Entity\Tenant;
 use App\Entity\Supplier;
+use App\Enum\SupplierStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -29,7 +30,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->where('s.nextAssessmentDate < :now')
             ->orWhere('s.lastSecurityAssessment IS NULL AND s.status = :active')
             ->setParameter('now', new DateTime())
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->orderBy('s.criticality', 'DESC')
             ->getQuery()
             ->getResult();
@@ -44,7 +45,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->where('s.criticality IN (:criticalities)')
             ->andWhere('s.status = :active')
             ->setParameter('criticalities', ['critical', 'high'])
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->orderBy('s.criticality', 'DESC')
             ->getQuery()
             ->getResult();
@@ -60,7 +61,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('s.status = :active')
             ->andWhere('s.criticality IN (:criticalities)')
             ->setParameter('false', false)
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->setParameter('criticalities', ['critical', 'high'])
             ->getQuery()
             ->getResult();
@@ -75,7 +76,7 @@ class SupplierRepository extends ServiceEntityRepository
 
         $total = $queryBuilder->select('COUNT(s.id)')
             ->where('s.status = :active')
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -84,7 +85,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->where('s.criticality = :critical')
             ->andWhere('s.status = :active')
             ->setParameter('critical', 'critical')
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -93,7 +94,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->where('s.hasISO27001 = :true')
             ->andWhere('s.status = :active')
             ->setParameter('true', true)
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -101,7 +102,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->select('COUNT(s.id)')
             ->where('s.nextAssessmentDate < :now OR (s.lastSecurityAssessment IS NULL AND s.status = :active)')
             ->setParameter('now', new DateTime())
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -111,7 +112,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('s.status = :active')
             ->andWhere('s.criticality IN (:criticalities)')
             ->setParameter('false', false)
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->setParameter('criticalities', ['critical', 'high'])
             ->getQuery()
             ->getSingleScalarResult();
@@ -137,6 +138,29 @@ class SupplierRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('s')
             ->where('s.tenant = :tenant')
             ->setParameter('tenant', $tenant)
+            ->orderBy('s.name', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * DORA Phase 1 — RoI scope filter.
+     *
+     * Returns only suppliers flagged as DORA-relevant (isDoraRelevant = true)
+     * for the given tenant. Used by DoraRoiXbrlExporter::generate() to
+     * restrict the XBRL export to Art. 28 ICT third-party service providers
+     * explicitly scoped by the operator.
+     *
+     * @param Tenant $tenant The tenant to find suppliers for
+     * @return Supplier[] Array of DORA-scoped Supplier entities
+     */
+    public function findByTenantAndDoraRelevant(Tenant $tenant): array
+    {
+        return $this->createQueryBuilder('s')
+            ->where('s.tenant = :tenant')
+            ->andWhere('s.isDoraRelevant = :dora')
+            ->setParameter('tenant', $tenant)
+            ->setParameter('dora', true)
             ->orderBy('s.name', 'ASC')
             ->getQuery()
             ->getResult();
@@ -263,7 +287,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->where('s.tenant = :tenant')
             ->andWhere('s.status = :active')
             ->setParameter('tenant', $tenant)
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -274,7 +298,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('s.status = :active')
             ->setParameter('tenant', $tenant)
             ->setParameter('critical', 'critical')
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -285,7 +309,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('s.status = :active')
             ->setParameter('tenant', $tenant)
             ->setParameter('true', true)
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -295,7 +319,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('(s.nextAssessmentDate < :now OR (s.lastSecurityAssessment IS NULL AND s.status = :active))')
             ->setParameter('tenant', $tenant)
             ->setParameter('now', new DateTime())
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -307,7 +331,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('s.criticality IN (:criticalities)')
             ->setParameter('tenant', $tenant)
             ->setParameter('false', false)
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->setParameter('criticalities', ['critical', 'high'])
             ->getQuery()
             ->getSingleScalarResult();
@@ -336,7 +360,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('s.status = :active')
             ->setParameter('tenant', $tenant)
             ->setParameter('criticalities', ['critical', 'high'])
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->orderBy('s.criticality', 'DESC')
             ->getQuery()
             ->getResult();
@@ -355,7 +379,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('(s.nextAssessmentDate < :now OR (s.lastSecurityAssessment IS NULL AND s.status = :active))')
             ->setParameter('tenant', $tenant)
             ->setParameter('now', new DateTime())
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->orderBy('s.criticality', 'DESC')
             ->getQuery()
             ->getResult();
@@ -376,7 +400,7 @@ class SupplierRepository extends ServiceEntityRepository
             ->andWhere('s.criticality IN (:criticalities)')
             ->setParameter('tenant', $tenant)
             ->setParameter('false', false)
-            ->setParameter('active', 'active')
+            ->setParameter('active', SupplierStatus::Active->value)
             ->setParameter('criticalities', ['critical', 'high'])
             ->getQuery()
             ->getResult();
@@ -408,5 +432,64 @@ class SupplierRepository extends ServiceEntityRepository
             ->orderBy('s.name', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * Suppliers in scope of the LkSG due-diligence (reportingObligation = true).
+     * Optionally filtered by aggregated risk category for annual report exports.
+     *
+     * @return Supplier[]
+     */
+    public function findLksgRelevantSuppliers(?Tenant $tenant = null, ?string $minimumRiskCategory = null): array
+    {
+        $qb = $this->createQueryBuilder('s')
+            ->where('s.lksgReportingObligation = :flag')
+            ->setParameter('flag', true);
+
+        if ($tenant instanceof Tenant) {
+            $qb->andWhere('s.tenant = :tenant OR s.tenant IS NULL')
+                ->setParameter('tenant', $tenant);
+        }
+
+        if ($minimumRiskCategory !== null) {
+            $order = ['low', 'medium', 'high', 'critical'];
+            $threshold = array_search($minimumRiskCategory, $order, true);
+            if ($threshold !== false) {
+                $allowed = array_slice($order, $threshold);
+                $qb->andWhere('s.lksgRiskCategory IN (:allowed)')
+                    ->setParameter('allowed', $allowed);
+            }
+        }
+
+        return $qb
+            ->orderBy('s.lksgRiskCategory', 'DESC')
+            ->addOrderBy('s.name', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Count suppliers for a tenant that are flagged as DORA-relevant.
+     *
+     * Returns 0 gracefully when the isDoraRelevant field is not yet present
+     * (e.g. when the entity-level DORA flag migration has not yet run).
+     * Once feat/dora-roi-scope-entity-flag is merged this returns a real count.
+     *
+     * @throws \Throwable
+     */
+    public function countByTenantAndDoraRelevant(Tenant $tenant): int
+    {
+        try {
+            return (int) $this->createQueryBuilder('s')
+                ->select('COUNT(s.id)')
+                ->where('s.tenant = :tenant')
+                ->andWhere('s.isDoraRelevant = true')
+                ->setParameter('tenant', $tenant)
+                ->getQuery()
+                ->getSingleScalarResult();
+        } catch (\Throwable) {
+            // isDoraRelevant column not yet available — safe default
+            return 0;
+        }
     }
 }

@@ -5,22 +5,69 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use DateTime;
+use App\Controller\Trait\LocalizedFlashTrait;
 use App\Entity\AuditLog;
 use App\Repository\AuditLogRepository;
+use App\Service\AuditLogIntegrityService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsCsrfTokenValid;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 #[IsGranted('ROLE_ADMIN')]
 class AuditLogController extends AbstractController
 {
+    use LocalizedFlashTrait;
+
     public function __construct(
-        private readonly AuditLogRepository $auditLogRepository
+        private readonly AuditLogRepository $auditLogRepository,
+        private readonly TranslatorInterface $translator,
+        private readonly ?AuditLogIntegrityService $integrityService = null,
     ) {}
 
-    #[Route('/admin/audit-log/', name: 'app_audit_log_index')]
+    protected function getFlashDomain(): string
+    {
+        return 'audit_log';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
+    }
+
+    /**
+     * V3 W2-M8 / UF-3: HMAC-Chain Verify endpoint surfaced as Admin button.
+     * Auditor's classic question "manipulationssicher?" → click & see green/red.
+     */
+    #[Route('/admin/audit-log/verify', name: 'app_audit_log_verify', methods: ['POST'])]
+    #[IsCsrfTokenValid('audit_log_verify')]
+    public function verifyChain(Request $request): Response
+    {
+        if ($this->integrityService === null || !$this->integrityService->isEnabled()) {
+            $this->flashWarning('audit_log.integrity.disabled');
+            return $this->redirectToRoute('app_audit_log_index');
+        }
+
+        $issues = $this->integrityService->verifyChain();
+        if ($issues === []) {
+            $this->flashSuccess('audit_log.integrity.intact');
+        } else {
+            $sample = array_slice($issues, 0, 5);
+            $msg = sprintf(
+                'Integrity violations: %d. First entries: %s',
+                count($issues),
+                implode(' · ', array_map(static fn(array $i): string => sprintf('#%s (%s)', $i['id'] ?? '?', $i['reason'] ?? '?'), $sample)),
+            );
+            $this->addFlash('error', $msg);
+        }
+
+        return $this->redirectToRoute('app_audit_log_index');
+    }
+
+    #[Route('/admin/audit-log', name: 'app_audit_log_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
         $page = max(1, $request->query->getInt('page', 1));
@@ -78,7 +125,7 @@ class AuditLogController extends AbstractController
         ]);
     }
 
-    #[Route('/admin/audit-log/entity/{entityType}/{entityId}', name: 'app_audit_log_entity')]
+    #[Route('/admin/audit-log/entity/{entityType}/{entityId}', name: 'app_audit_log_entity', methods: ['GET'])]
     public function entityHistory(string $entityType, int $entityId): Response
     {
         $auditLogs = $this->auditLogRepository->findByEntity($entityType, $entityId);
@@ -90,7 +137,7 @@ class AuditLogController extends AbstractController
         ]);
     }
 
-    #[Route('/admin/audit-log/user/{userName}', name: 'app_audit_log_user')]
+    #[Route('/admin/audit-log/user/{userName}', name: 'app_audit_log_user', methods: ['GET'])]
     public function userActivity(string $userName): Response
     {
         $auditLogs = $this->auditLogRepository->findByUser($userName);
@@ -101,7 +148,7 @@ class AuditLogController extends AbstractController
         ]);
     }
 
-    #[Route('/admin/audit-log/statistics', name: 'app_audit_log_statistics')]
+    #[Route('/admin/audit-log/statistics', name: 'app_audit_log_statistics', methods: ['GET'])]
     public function statistics(): Response
     {
         $actionStats = $this->auditLogRepository->getActionStatistics();
@@ -127,7 +174,7 @@ class AuditLogController extends AbstractController
         ]);
     }
 
-    #[Route('/admin/audit-log/{id}', name: 'app_audit_log_detail', requirements: ['id' => '\d+'])]
+    #[Route('/admin/audit-log/{id}', name: 'app_audit_log_detail', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function detail(int $id): Response
     {
         $auditLog = $this->auditLogRepository->find($id);

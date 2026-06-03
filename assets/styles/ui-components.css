@@ -8,7 +8,7 @@
    ==================== */
 .risk-score {
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--r-lg);
     text-align: center;
     font-size: 1.5rem;
     font-weight: bold;
@@ -16,12 +16,12 @@
 
 .risk-level-critical .risk-score {
     background-color: var(--danger);
-    color: white;
+    color: var(--on-danger);
 }
 
 .risk-level-high .risk-score {
     background-color: var(--warning);
-    color: white;
+    color: var(--on-warning);
 }
 
 .risk-level-medium .risk-score {
@@ -31,7 +31,7 @@
 
 .risk-level-low .risk-score {
     background-color: var(--success);  /* Semantic green for low risk */
-    color: white;
+    color: var(--on-success);
 }
 
 /* ====================
@@ -255,7 +255,7 @@
 
 .kpi-card-link:hover {
     background: var(--primary);
-    color: white;
+    color: var(--on-primary);
 }
 
 /* ====================
@@ -899,7 +899,7 @@
 .floating-toolbar {
     position: sticky;
     top: 70px;
-    z-index: 10;
+    z-index: var(--z-sticky);
     background: var(--surface);
     border-radius: var(--r-md);
     box-shadow: var(--shadow-md);
@@ -1094,7 +1094,7 @@
 }
 
 .bg-audit-cancelled {
-    background: rgba(148, 163, 184, 0.1);  /* slate-400 */
+    background: rgb(var(--sev-neutral-rgb), 0.1);  /* slate-400 */
     border-radius: var(--r-md);
 }
 
@@ -1165,7 +1165,7 @@
     background: var(--bg);
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: var(--z-sticky);
 }
 
 .w-text-right {
@@ -1186,7 +1186,7 @@
     position: sticky;
     left: 0;
     background: var(--surface-2);
-    z-index: 10;
+    z-index: var(--z-sticky);
 }
 
 .th-center {
@@ -1210,7 +1210,7 @@
     position: sticky;
     left: 0;
     background: var(--surface);
-    z-index: 5;
+    z-index: 5; /* local stacking-context: sticky column within table */
 }
 
 /* Dark Mode - Sticky Table Cells */
@@ -1241,32 +1241,32 @@
 .mapping-card {
     text-align: center;
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--r-lg);
 }
 
 .mapping-card-success {
     text-align: center;
     padding: 1rem;
     background: var(--success-glow);
-    border-radius: 8px;
+    border-radius: var(--r-lg);
 }
 
 .mapping-card-warning {
     text-align: center;
     padding: 1rem;
     background: var(--warning-glow);
-    border-radius: 8px;
+    border-radius: var(--r-lg);
 }
 
 .mapping-card-alt {
     text-align: center;
     padding: 1rem;
     background: var(--surface-2);
-    border-radius: 8px;
+    border-radius: var(--r-lg);
 }
 
 .details-padding {
-    padding: 0 1.5rem 1.5rem 1.5rem;
+    padding: 0 1.5rem 1.5rem;
     border-top: 1px solid var(--border);
 }
 
@@ -1328,28 +1328,28 @@
 .legend-item {
     width: 30px;
     height: 20px;
-    border-radius: 4px;
+    border-radius: var(--r-sm);
 }
 
 .legend-success {
     width: 30px;
     height: 20px;
     background: var(--success);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
 }
 
 .legend-warning {
     width: 30px;
     height: 20px;
     background: var(--warning);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
 }
 
 .legend-danger {
     width: 30px;
     height: 20px;
     background: var(--danger);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
 }
 
 .text-center-italic-margin {
@@ -1372,7 +1372,7 @@
 }
 
 .fs-15-white-mb {
-    color: white;
+    color: white; /* design-spec: heading utility for use on colored gradient hero/banner */
     margin-bottom: 1rem;
     font-size: 1.5rem;
 }
@@ -1465,7 +1465,7 @@
 
 .progress-bar-bg {
     height: 10px;
-    border-radius: 5px;
+    border-radius: var(--r-sm);
     background: var(--surface-2);
 }
 
@@ -1562,7 +1562,7 @@
     border: 1px solid var(--border);
     border-radius: 0.5rem;
     position: relative;
-    z-index: 10;
+    z-index: var(--z-sticky); /* local stacking-context */
 }
 
 .chart-legend-items {
@@ -1583,7 +1583,7 @@
 }
 
 .chart-legend-item:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: rgb(0, 0, 0, 0.05); /* design-spec: faint hover tint on chart legend item */
 }
 
 .chart-legend-item.legend-hidden {
@@ -1597,7 +1597,7 @@
 .chart-legend-color {
     width: 14px;
     height: 14px;
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     flex-shrink: 0;
 }
 
@@ -1610,20 +1610,20 @@
 /* Dark mode - dark background with light text and glow */
 [data-theme="dark"] .chart-html-legend,
 [data-bs-theme="dark"] .chart-html-legend {
-    background: rgba(30, 41, 59, 0.95);
-    border-color: rgba(255, 255, 255, 0.1);
+    background: rgb(30, 41, 59, 0.95);
+    border-color: rgb(255, 255, 255, 0.1);
     backdrop-filter: blur(8px);
 }
 
 [data-theme="dark"] .chart-legend-item:hover,
 [data-bs-theme="dark"] .chart-legend-item:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgb(255, 255, 255, 0.1);
 }
 
 [data-theme="dark"] .chart-legend-label,
 [data-bs-theme="dark"] .chart-legend-label {
     color: var(--fg);
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    text-shadow: 0 0 10px rgb(255, 255, 255, 0.3);
 }
 
 .w-h-100 {
@@ -1767,7 +1767,7 @@
 }
 
 .bg-other-light {
-    background: rgba(148, 163, 184, 0.1);  /* slate-400 */
+    background: rgb(var(--sev-neutral-rgb), 0.1);  /* slate-400 */
     border-radius: var(--r-md);
 }
 
@@ -1781,7 +1781,7 @@
     background: var(--bg);
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: var(--z-sticky);
 }
 
 /* Workflow Instance Show Utilities */
@@ -1838,7 +1838,7 @@
 
 /* Colored headings with no top margin */
 .h-white-no-mt-mb-sm {
-    color: white;
+    color: white; /* design-spec: heading utility for use on colored gradient hero/banner */
     margin-top: 0;
     margin-bottom: 0.5rem;
 }
@@ -1949,7 +1949,7 @@
 .box-bg-alt-p-075-rounded-mb {
     background: var(--surface-2);
     padding: 0.75rem;
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     margin-bottom: 1rem;
 }
 
@@ -1959,7 +1959,7 @@
     gap: 2rem;
     padding: 1rem;
     background: var(--surface-2);
-    border-radius: 8px;
+    border-radius: var(--r-lg);
 }
 
 /* Badge/Progress styles */
@@ -1970,7 +1970,7 @@
     font-weight: 700;
     background: var(--bg);
     color: var(--fg-3);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     border: 2px dashed var(--border);
 }
 
@@ -1979,7 +1979,7 @@
     max-width: 100px;
     height: 8px;
     background: var(--surface-2);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     overflow: hidden;
 }
 
@@ -2156,7 +2156,7 @@
     margin: 2rem 0;
     padding: 1rem;
     background: var(--bg);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
 }
 
 /* Dark Mode - Filter Container */
@@ -2190,7 +2190,7 @@
 /* Compliance Index Utilities - Cyberpunk Fairy Emerald Gradient */
 .alert-gradient-success {
     background: linear-gradient(135deg, var(--success) 0%, var(--success-strong) 100%);  /* Emerald fairy dust */
-    color: white;
+    color: var(--on-success);
     border: none;
     margin-bottom: var(--spacing-lg);
 }
@@ -2440,7 +2440,7 @@
    ==================== */
 .badge-create {
     background: var(--success);  /* Emerald fairy dust */
-    color: white;
+    color: var(--on-success);
 }
 
 .badge-update {
@@ -2450,40 +2450,40 @@
 
 .badge-delete {
     background: var(--danger);  /* Alert flames */
-    color: white;
+    color: var(--on-danger);
 }
 
 .badge-view {
     background: var(--primary);  /* Cyberpunk cyan glow */
-    color: white;
+    color: var(--on-primary);
 }
 
 .badge-export {
     background: var(--fg-2);  /* Slate secondary */
-    color: white;
+    color: white; /* design-spec: text on fg-2 slate badge, no --on-fg token */
 }
 
 .badge-import {
     background: var(--accent);  /* Mystical purple aura */
-    color: white;
+    color: var(--on-accent);
 }
 
 /* Dark Mode - Audit Log Badges */
 [data-theme="dark"] .badge-create {
     background: var(--success);
     color: var(--on-success);
-    box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 8px rgb(var(--success-rgb), 0.3);
 }
 
 [data-theme="dark"] .badge-update {
     background: var(--warning);
     color: var(--on-warning);
-    box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
+    box-shadow: 0 0 8px rgb(var(--warning-rgb), 0.3);
 }
 
 [data-theme="dark"] .badge-delete {
     background: var(--danger);
-    color: white;
+    color: var(--on-danger);
     box-shadow: 0 0 8px var(--danger-tint);
 }
 
@@ -2495,13 +2495,13 @@
 
 [data-theme="dark"] .badge-export {
     background: var(--fg-2);
-    color: white;
-    box-shadow: 0 0 8px rgba(100, 116, 139, 0.3);
+    color: white; /* design-spec: text on fg-2 slate dark badge, no --on-fg token */
+    box-shadow: 0 0 8px rgb(100, 116, 139, 0.3);
 }
 
 [data-theme="dark"] .badge-import {
     background: var(--accent);  /* Mystical purple aura */
-    color: white;
+    color: var(--on-accent);
     box-shadow: 0 0 8px var(--accent-tint);
 }
 
@@ -2579,32 +2579,52 @@
 }
 
 /* ====================
-   Touch Target Improvements (44x44px minimum)
+   Touch Target — Global Floor (WCAG 2.2 SC 2.5.8)
+   24x24 desktop minimum, 44x44 mobile/touch.
+   Tokens: --target-min / --target-touch (fairy-aurora.css).
    ==================== */
+.btn,
+.btn-sm,
+.nav-link,
+.dropdown-item,
+.form-check,
+.page-link,
+.fa-cyber-btn,
+.fa-cyber-btn--sm {
+    min-height: var(--target-min);
+    min-width:  var(--target-min);
+}
+.btn-group .btn,
+.table .btn,
+.action-buttons .btn {
+    min-width:  var(--target-min);
+    min-height: var(--target-min);
+}
+
 @media (max-width: 767px) {
     /* Buttons - ensure minimum touch target */
     .btn {
-        min-height: 44px;
+        min-height: var(--target-touch);
         padding-top: 0.625rem;
         padding-bottom: 0.625rem;
     }
 
     .btn-sm {
-        min-height: 44px;
+        min-height: var(--target-touch);
         padding: 0.5rem 0.75rem;
     }
 
     /* Navigation links */
     .nav-link,
     .dropdown-item {
-        min-height: 44px;
+        min-height: var(--target-touch);
         display: flex;
         align-items: center;
     }
 
     /* Sidebar navigation */
     .app-sidebar .nav-link {
-        min-height: 44px;
+        min-height: var(--target-touch);
         padding: 0.75rem 1rem;
     }
 
@@ -2612,20 +2632,20 @@
     .btn-group .btn,
     .table .btn,
     .action-buttons .btn {
-        min-width: 44px;
-        min-height: 44px;
+        min-width: var(--target-touch);
+        min-height: var(--target-touch);
         padding: 0.5rem;
     }
 
     /* Form controls */
     .form-control,
     .form-select {
-        min-height: 44px;
+        min-height: var(--target-touch);
     }
 
     /* Checkbox and radio - larger clickable area */
     .form-check {
-        min-height: 44px;
+        min-height: var(--target-touch);
         display: flex;
         align-items: center;
     }
@@ -2637,8 +2657,8 @@
 
     /* Pagination */
     .page-link {
-        min-width: 44px;
-        min-height: 44px;
+        min-width: var(--target-touch);
+        min-height: var(--target-touch);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -2739,4 +2759,18 @@
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+}
+
+/* Policy-Wizard form-guard — visible "what's missing" highlight.
+   Set by wizard_form_guard_controller.js when a required field is empty on
+   submit, so the user sees exactly which row/field blocks "Weiter". */
+.wizard-row-invalid > td,
+.wizard-row-invalid > th {
+    background: var(--danger-tint, rgba(220, 38, 38, 0.08));
+}
+.fa-cyber-input__field.is-invalid,
+select.is-invalid,
+textarea.is-invalid {
+    border-color: var(--danger) !important;
+    box-shadow: 0 0 0 2px var(--danger-tint, rgba(220, 38, 38, 0.18)) !important;
 }

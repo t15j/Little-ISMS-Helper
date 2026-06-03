@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'compliance.framework.new.title'|trans({}, 'compliance') }}{% endblock %}
 
@@ -11,7 +12,10 @@
         ]
     } %}
 
-    <h1><i class="fa-icon fa-icon--ui-plus" aria-hidden="true"></i> {{ 'compliance.framework.new.heading'|trans({}, 'compliance') }}</h1>
+    {{ _fa_page_header.render({
+        title: 'compliance.framework.new.heading'|trans({}, 'compliance'),
+        badge: { icon: 'plus', label: '' }
+    }) }}
 
     <div class="row">
         <div class="col-lg-8">
@@ -72,7 +76,7 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_header %}
                     <div class="card-header">
-                        <h2 class="mb-0"><i class="fa-icon fa-icon--status-info" aria-hidden="true"></i> {{ 'common.help'|trans({}, 'messages') }}</h2>
+                        <h2 class="mb-0"><i class="fa-icon fa-icon--status-info" aria-hidden="true"></i> {{ 'common.help_label'|trans({}, 'messages') }}</h2>
                     </div>
                 {% endblock %}
                 {% block card_body %}

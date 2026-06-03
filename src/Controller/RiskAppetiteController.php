@@ -27,7 +27,7 @@ class RiskAppetiteController extends AbstractController
         private readonly EntityManagerInterface $entityManager,
         private readonly TranslatorInterface $translator
     ) {}
-    #[Route('/risk-appetite/', name: 'app_risk_appetite_index')]
+    #[Route('/risk-appetite', name: 'app_risk_appetite_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(Request $request): Response
     {
@@ -77,7 +77,7 @@ class RiskAppetiteController extends AbstractController
             'risksExceedingAppetite' => $risksExceedingAppetite,
         ]);
     }
-    #[Route('/risk-appetite/new', name: 'app_risk_appetite_new')]
+    #[Route('/risk-appetite/new', name: 'app_risk_appetite_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function new(Request $request): Response
     {
@@ -89,16 +89,20 @@ class RiskAppetiteController extends AbstractController
             $this->entityManager->persist($riskAppetite);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('risk_appetite.success.created'));
+            $this->addFlash('success', $this->translator->trans('risk_appetite.success.created', [], 'messages'));
             return $this->redirectToRoute('app_risk_appetite_show', ['id' => $riskAppetite->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('risk_appetite/new.html.twig', [
             'appetite' => $riskAppetite,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/risk-appetite/{id}', name: 'app_risk_appetite_show', requirements: ['id' => '\d+'])]
+    #[Route('/risk-appetite/{id}', name: 'app_risk_appetite_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(RiskAppetite $riskAppetite): Response
     {
@@ -127,7 +131,7 @@ class RiskAppetiteController extends AbstractController
             'totalAuditLogs' => count($auditLogs),
         ]);
     }
-    #[Route('/risk-appetite/{id}/edit', name: 'app_risk_appetite_edit', requirements: ['id' => '\d+'])]
+    #[Route('/risk-appetite/{id}/edit', name: 'app_risk_appetite_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function edit(Request $request, RiskAppetite $riskAppetite): Response
     {
@@ -138,14 +142,18 @@ class RiskAppetiteController extends AbstractController
             $riskAppetite->setUpdatedAt(new DateTimeImmutable());
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('risk_appetite.success.updated'));
+            $this->addFlash('success', $this->translator->trans('risk_appetite.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_risk_appetite_show', ['id' => $riskAppetite->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('risk_appetite/edit.html.twig', [
             'appetite' => $riskAppetite,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/risk-appetite/{id}/delete', name: 'app_risk_appetite_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -155,7 +163,7 @@ class RiskAppetiteController extends AbstractController
             $this->entityManager->remove($riskAppetite);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('risk_appetite.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('risk_appetite.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_risk_appetite_index');

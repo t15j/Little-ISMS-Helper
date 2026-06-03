@@ -1,0 +1,3 @@
+# check_admin_role_scope.py baseline
+# Format: <relative-path>:<line>:<kind>
+# Drop a line and ship the PR after migrating that controller to a TenantScopedAdminVoter attribute.

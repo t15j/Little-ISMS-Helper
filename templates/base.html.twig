@@ -10,6 +10,8 @@
 
     {# PWA Support - Phase 8A (FairyAurora v3.0) #}
     <link rel="manifest" href="{{ asset('manifest.json') }}">
+    {# PWA theme-color: hex must be static (meta-tags can't reference CSS-vars).
+       Keep in sync with --primary token in fairy-aurora.css (light: #0284c7, dark: #38bdf8). #}
     <meta name="theme-color" content="#0284c7" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#38bdf8" media="(prefers-color-scheme: dark)">
     <meta name="mobile-web-app-capable" content="yes">
@@ -32,9 +34,12 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="{{ asset('og-image.png') }}">
 
-    {# FairyAurora v3.0 — Font-Preload (above-the-fold weights only) #}
-    <link rel="preload" href="{{ asset('fonts/inter-500.woff2') }}" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="{{ asset('fonts/inter-600.woff2') }}" as="font" type="font/woff2" crossorigin>
+    {# FairyAurora v3.0 — Font-Preload (above-the-fold weights only).
+       Use static paths to match the @font-face src in fairy-aurora.css —
+       AssetMapper would produce a different hashed URL and trigger
+       "preload but not used" browser console warnings. #}
+    <link rel="preload" href="/fonts/inter-500.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/inter-600.woff2" as="font" type="font/woff2" crossorigin>
 
     {# FairyAurora v3.0 — Theme-Init (prevent Flash-of-Wrong-Theme) #}
     <script>
@@ -55,7 +60,7 @@
             position: absolute;
             top: -40px;
             left: 0;
-            z-index: 10000;
+            z-index: var(--z-tour, 2000);
             padding: 0.5rem 1rem;
             background: var(--primary);
             color: var(--on-primary);
@@ -73,11 +78,11 @@
     </style>
 
     {% block stylesheets %}
-        {# Bootstrap zuerst — Aurora (via importmap unten) kommt danach und überschreibt. #}
+        {# Bootstrap zuerst — Aurora kommt danach und überschreibt (Cascade-Order). #}
         <link href="{{ asset('vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
 
-        {# Bootstrap Icons - Loaded locally to avoid CDN certificate issues #}
-        <link rel="stylesheet" href="{{ asset('vendor/bootstrap-icons/font/bootstrap-icons.min.css') }}">
+        {# Aurora-Layer als parallele <link> (kein @import-Barrel → kein FOUC). #}
+        {{ include('_aurora_styles.html.twig') }}
 
         {# Custom styles #}
         <style>
@@ -127,7 +132,7 @@
                 border-radius: 0 0 8px 8px;
                 font-size: 12px;
                 font-weight: 600;
-                z-index: 10001;
+                z-index: var(--z-turbo-bar, 999999);
                 box-shadow: 0 2px 10px var(--danger-glow);
             }
 
@@ -155,10 +160,10 @@
     {% endblock %}
 
     {% block importmap %}
-        {# Aurora-Styles + App-JS — MUSS nach Bootstrap kommen, damit
-           Aurora-Overrides die Bootstrap-Defaults schlagen. #}
+        {# Nur App-JS via importmap. Aurora-CSS liegt als parallele head-<link>
+           im stylesheets-Block (siehe dort) — NICHT als @import-Barrel hier. #}
         <div data-turbo-permanent id="importmap-container">
-            {{ importmap(['app', 'styles']) }}
+            {{ importmap(['app']) }}
         </div>
     {% endblock %}
 </head>
@@ -215,19 +220,18 @@
                 {# Global Search Component (Button + Modal) #}
                 {% include '_components/_global_search.html.twig' %}
 
-                {# Notification Bell (moved to header) #}
+                {# Notification Bell — single canonical (Sprint-6b F3 backend-polled).
+                   Legacy _notification_bell.html.twig dropped 2026-05-22 — was a
+                   non-functional duplicate that showed an empty bell next to the
+                   working one. #}
                 {% if not is_setup_route %}
-                    {% include '_components/_notification_bell.html.twig' %}
+                    {% include '_components/_navbar_notification_bell.html.twig' %}
                 {% endif %}
 
-                {# FairyAurora Alva-Topbar-Mount (zentralisierter Mood-Anchor) #}
-                {% if not is_setup_route %}
-                    {% import '_components/_alva.html.twig' as faAlva %}
-                    <span class="header-alva d-none d-md-inline-flex"
-                          data-current-mood="{{ alva_mood|default('idle') }}">
-                        {{ faAlva.render(alva_mood|default('idle'), { size: 32, decorative: false })|raw }}
-                    </span>
-                {% endif %}
+                {# V3 W2-H7: header-alva removed.
+                   Spec: Alva only in empty-states/hints/onboarding. The header
+                   already has fa-brand + user-avatar — a third brand-anchor
+                   here causes UX-confusion. Alva-Dock + Hint-Position remain. #}
 
                 {# FairyAurora System-Status-Pill (Topbar) #}
                 {% if not is_setup_route %}
@@ -284,6 +288,15 @@
                             <i class="fa-icon fa-icon--control fa-dropdown-panel__item-icon" aria-hidden="true"></i>
                             <span class="fa-dropdown-panel__item-body">{{ 'nav.security'|trans({}, 'nav') }}</span>
                         </a>
+                        <button type="button"
+                                class="user-dropdown-item fa-dropdown-panel__item"
+                                role="menuitem"
+                                data-controller="fa-modal-dispatcher"
+                                data-action="click->fa-modal-dispatcher#open"
+                                data-fa-modal-id="preferencesModal">
+                            <i class="fa-icon fa-icon--ui-settings fa-dropdown-panel__item-icon" aria-hidden="true"></i>
+                            <span class="fa-dropdown-panel__item-body">{{ 'preferences.title'|trans({}, 'preferences')|default('Einstellungen') }}</span>
+                        </button>
                         {# Guided-Tour — Rolle(n) auswählbar bei mehreren passenden #}
                         {% set tour_roles = [] %}
                         {% if is_granted('ROLE_AUDITOR') %}{% set tour_roles = tour_roles|merge(['auditor']) %}{% endif %}
@@ -333,10 +346,7 @@
 
     {% set current_route = app.request.attributes.get('_route') %}
 
-    {# Skip to Content Link - WCAG 2.1 AA (Issue 13.1) #}
-    <a href="#main-content" class="skip-link">
-        {{ 'accessibility.skip_to_content'|trans({}, 'messages') }}
-    </a>
+    {# Skip-Links sind bereits oben (Line 190-191, vor jeglichem Content) — WCAG 2.1 AA. #}
 
     {# Main App Layout with Sidebar #}
     <div class="app-layout">
@@ -360,6 +370,11 @@
         <main id="main-content" class="app-main" role="main">
             <div class="container" data-controller="turbo">
                 <div class="content">
+                    {# Worker-down banner (admin-only, RED state only) #}
+                    {% if not is_setup_route %}
+                        {% include '_components/_worker_status_banner.html.twig' %}
+                    {% endif %}
+
                     {# Flash Messages — Aurora-styled alerts with Alva-avatar #}
                     {% import '_components/_alert.html.twig' as faAlert %}
                     {% set flashToneMap = {
@@ -418,8 +433,14 @@
     {# Notification Center (Paket C - Premium) #}
     {% include '_components/_notification_center.html.twig' %}
 
-    {# Toast Notifications Container #}
-    <div class="toast-container" data-controller="toast" data-toast-target="container" role="status" aria-live="polite" aria-atomic="true"></div>
+    {# Toast Notifications Stack — canonical Aurora _fa_toast (V4-FP-1)
+       Picks up Symfony flash-messages via fa_toast_controller#_convertFlashMessages
+       and listens for both `fa-toast:show` (canonical) and legacy `toast:show`
+       window/document events. Tones: info | success | warning | danger.
+       Flash label mapping: success→success, error/danger→danger,
+       warning→warning, info/notice→info (via _toneFromAlertClass). #}
+    {% import '_components/_fa_toast.html.twig' as _fa_toast %}
+    {{ _fa_toast.stack([]) }}
 
     {# Keyboard Shortcuts Help #}
     {% include '_components/_keyboard_shortcuts.html.twig' %}
@@ -432,9 +453,22 @@
     {# Bulk Delete Confirmation Dialog #}
     {% include '_components/_bulk_delete_confirmation.html.twig' %}
 
+    {# Re-authentication modal — shown when RememberMe user hits IS_AUTHENTICATED_FULLY route.
+       The reauth-modal Stimulus controller listens for `fa-reauth:open` events dispatched
+       by the global fetch interceptor (fetch-interceptor.js) when a 403+reauth response is
+       detected.  The modal is hidden by default (inert); the controller opens it on demand. #}
+    {% if is_granted('IS_AUTHENTICATED_REMEMBERED') and app.user is not null %}
+        {% include 'security/_reauth_modal.html.twig' with {
+            reauth_provider:    app.user.authProvider in ['azure_oauth', 'azure_saml'] ? app.user.authProvider : (app.user.ssoProvider is not null ? 'oidc' : 'password'),
+            reauth_identifier:  app.user.email ?? app.user.userIdentifier,
+            reauth_return_to:   '/',
+            reauth_sso_slug:    app.user.ssoProvider is not null ? app.user.ssoProvider.slug : null,
+        } only %}
+    {% endif %}
+
     {# FairyAurora v4.0 — Alva Companion Dock (Phase 4)
        Shown to authenticated users on non-setup routes who have the companion enabled. #}
-    {% if is_granted('IS_AUTHENTICATED_FULLY')
+    {% if is_granted('IS_AUTHENTICATED_REMEMBERED')
         and app.user is not null
         and not is_setup_route
         and app.user.alvaCompanionEnabled is defined
@@ -479,6 +513,16 @@
                 loading: "{{ 'common.loading'|trans({}, 'messages')|raw }}",
                 error: "{{ 'common.error'|trans({}, 'messages')|raw }}",
                 success: "{{ 'common.success'|trans({}, 'messages')|raw }}"
+            },
+            security: {
+                reauth: {
+                    error: {
+                        password_required: "{{ 'reauth.error.password_required'|trans({}, 'security')|raw }}",
+                        invalid_password:  "{{ 'reauth.error.invalid_password'|trans({}, 'security')|raw }}",
+                        generic:           "{{ 'reauth.error.generic'|trans({}, 'security')|raw }}",
+                        network:           "{{ 'reauth.error.network'|trans({}, 'security')|raw }}"
+                    }
+                }
             }
         };
     </script>

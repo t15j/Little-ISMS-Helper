@@ -6,50 +6,49 @@ namespace App\Controller;
 
 use RuntimeException;
 use Exception;
-use Symfony\Component\HttpFoundation\RedirectResponse;
 use App\Entity\Risk;
 use App\Entity\Asset;
-use DateTimeImmutable;
-use PDO;
-use App\Entity\Tenant;
 use App\Form\AdminUserType;
 use App\Form\ComplianceFrameworkSelectionType;
 use App\Form\DatabaseConfigurationType;
 use App\Form\EmailConfigurationType;
 use App\Form\OrganisationInfoType;
+use App\Controller\Trait\DetachableResponseTrait;
 use App\Repository\AssetRepository;
 use App\Repository\IncidentRepository;
 use App\Repository\RiskRepository;
 use App\Repository\TenantRepository;
 use App\Security\SetupAccessChecker;
-use App\Repository\IndustryBaselineRepository;
 use App\Service\BackupService;
 use App\Service\ComplianceFrameworkLoaderService;
 use App\Service\FrameworkApplicabilityService;
 use App\Service\DatabaseTestService;
 use App\Service\DataImportService;
-use App\Service\IndustryBaselineApplier;
 use App\Service\EnvironmentWriter;
 use App\Service\ModuleConfigurationService;
 use App\Service\RestoreService;
+use App\Service\Setup\DatabaseProvisioner;
+use App\Service\Setup\SetupConsoleRunner;
+use App\Service\Setup\SetupIndustryPresetService;
 use App\Service\Setup\SetupJobStatusService;
+use App\Service\Setup\SetupBaselineApplier;
+use App\Service\Setup\SetupRecommendationEngine;
+use App\Service\Setup\SetupTenantBootstrapper;
 use App\Service\SystemRequirementsChecker;
 use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\Console\Input\ArrayInput;
-use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
-use Symfony\Component\HttpKernel\KernelInterface;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Contracts\Translation\TranslatorInterface;
 use Psr\Log\LoggerInterface;
 
 class DeploymentWizardController extends AbstractController
 {
+    use DetachableResponseTrait;
+
     public function __construct(
         private readonly SystemRequirementsChecker $systemRequirementsChecker,
         private readonly ModuleConfigurationService $moduleConfigurationService,
@@ -58,7 +57,6 @@ class DeploymentWizardController extends AbstractController
         private readonly SetupAccessChecker $setupAccessChecker,
         private readonly EnvironmentWriter $environmentWriter,
         private readonly DatabaseTestService $databaseTestService,
-        private readonly KernelInterface $kernel,
         private readonly ComplianceFrameworkLoaderService $complianceFrameworkLoaderService,
         private readonly EntityManagerInterface $entityManager,
         private readonly TenantRepository $tenantRepository,
@@ -68,14 +66,18 @@ class DeploymentWizardController extends AbstractController
         private readonly FrameworkApplicabilityService $applicabilityService,
         private readonly SetupJobStatusService $setupJobStatusService,
         private readonly \Symfony\Bundle\SecurityBundle\Security $security,
-        private readonly IndustryBaselineRepository $industryBaselineRepository,
-        private readonly IndustryBaselineApplier $industryBaselineApplier,
+        private readonly SetupIndustryPresetService $industryPresetService,
+        private readonly DatabaseProvisioner $databaseProvisioner,
+        private readonly SetupConsoleRunner $setupConsoleRunner,
+        private readonly SetupRecommendationEngine $recommendationEngine,
+        private readonly SetupTenantBootstrapper $tenantBootstrapper,
+        private readonly SetupBaselineApplier $setupBaselineApplier,
     ) {
     }
     /**
      * Wizard Start / Welcome
      */
-    #[Route('/setup/', name: 'setup_wizard_index')]
+    #[Route('/setup', name: 'setup_wizard_index', methods: ['GET'])]
     public function index(): Response
     {
         // Check if setup is already complete
@@ -122,7 +124,7 @@ class DeploymentWizardController extends AbstractController
     /**
      * Step 0: Welcome & Language Selection
      */
-    #[Route('/setup/step0-welcome', name: 'setup_step0_welcome')]
+    #[Route('/setup/step0-welcome', name: 'setup_step0_welcome', methods: ['GET'])]
     public function step0Welcome(SessionInterface $session): Response
     {
         // State recovery: Only if there's an active session with progress
@@ -135,7 +137,7 @@ class DeploymentWizardController extends AbstractController
             $state = $this->setupAccessChecker->detectSetupState();
 
             if ($state['database_configured']) {
-                $this->addFlash('info', $this->translator->trans('setup.state.recovery_detected'));
+                $this->addFlash('info', $this->translator->trans('setup.state.recovery_detected', [], 'messages'));
 
                 // Redirect to appropriate step
                 $nextStep = $this->setupAccessChecker->getRecommendedNextStep();
@@ -150,14 +152,14 @@ class DeploymentWizardController extends AbstractController
     /**
      * Step 2: Database Configuration
      */
-    #[Route('/setup/step2-database-config', name: 'setup_step2_database_config')]
+    #[Route('/setup/step2-database-config', name: 'setup_step2_database_config', methods: ['GET', 'POST'])]
     public function step2DatabaseConfig(Request $request, SessionInterface $session): Response
     {
         if ($guard = $this->guardPostSetup()) { return $guard; }
 
         // Check if system requirements are met (step 1)
         if (!$this->systemRequirementsChecker->isSystemReady()) {
-            $this->addFlash('error', $this->translator->trans('deployment.error.fix_requirements'));
+            $this->addFlash('error', $this->translator->trans('deployment.error.fix_requirements', [], 'messages'));
             return $this->redirectToRoute('setup_step1_requirements');
         }
 
@@ -173,7 +175,7 @@ class DeploymentWizardController extends AbstractController
                 $session->set('setup_database_configured', true);
                 // init-mysql.sh also runs migrations, so mark schema as created
                 $session->set('setup_schema_created', true);
-                $this->addFlash('info', $this->translator->trans('setup.database.docker_auto_configured'));
+                $this->addFlash('info', $this->translator->trans('setup.database.docker_auto_configured', [], 'messages'));
                 return $this->redirectToRoute('setup_step3_restore_backup');
             }
         }
@@ -225,7 +227,7 @@ class DeploymentWizardController extends AbstractController
                         'serverVersion' => $queryParams['serverVersion'] ?? ($type === 'postgresql' ? '15' : 'mariadb-11.4.0'),
                         'unixSocket' => $queryParams['unix_socket'] ?? null,
                     ];
-                    $this->addFlash('info', $this->translator->trans('setup.database.config_loaded'));
+                    $this->addFlash('info', $this->translator->trans('setup.database.config_loaded', [], 'messages'));
                 }
             }
         }
@@ -243,7 +245,7 @@ class DeploymentWizardController extends AbstractController
                 // For Docker standalone: If password is empty in .env.local, try to get it from auto-generated credentials
                 $password = $envVars['DB_PASS'] ?? '';
                 if (empty($password) && $isDockerStandalone) {
-                    $password = $_ENV['MYSQL_PASSWORD'] ?? $this->getDockerMysqlPassword();
+                    $password = $_ENV['MYSQL_PASSWORD'] ?? $this->databaseProvisioner->getDockerMysqlPassword();
                 }
 
                 // For Docker standalone: Default to Unix socket if not specified
@@ -262,7 +264,7 @@ class DeploymentWizardController extends AbstractController
                     'serverVersion' => $envVars['DB_SERVER_VERSION'] ?? 'mariadb-11.4.0',
                     'unixSocket' => $unixSocket,
                 ];
-                $this->addFlash('info', $this->translator->trans('setup.database.config_loaded'));
+                $this->addFlash('info', $this->translator->trans('setup.database.config_loaded', [], 'messages'));
             }
         }
 
@@ -276,12 +278,12 @@ class DeploymentWizardController extends AbstractController
                 'port' => 3306,
                 'name' => $_ENV['MYSQL_DATABASE'] ?? 'isms',
                 'user' => $_ENV['MYSQL_USER'] ?? 'isms',
-                'password' => $_ENV['MYSQL_PASSWORD'] ?? $this->getDockerMysqlPassword(),
+                'password' => $_ENV['MYSQL_PASSWORD'] ?? $this->databaseProvisioner->getDockerMysqlPassword(),
                 'serverVersion' => 'mariadb-11.4.0',
                 'unixSocket' => '/run/mysqld/mysqld.sock',
             ];
 
-            $this->addFlash('info', $this->translator->trans('setup.database.docker_detected'));
+            $this->addFlash('info', $this->translator->trans('setup.database.docker_detected', [], 'messages'));
         }
 
         $form = $this->createForm(DatabaseConfigurationType::class, $defaultData);
@@ -301,7 +303,7 @@ class DeploymentWizardController extends AbstractController
 
             // For Docker standalone: If password is empty, use the auto-generated one
             if ($isDockerStandalone && empty($config['password'])) {
-                $config['password'] = $this->getDockerMysqlPassword();
+                $config['password'] = $this->databaseProvisioner->getDockerMysqlPassword();
             }
 
             // For Docker standalone: Default to Unix socket if not explicitly set
@@ -319,7 +321,7 @@ class DeploymentWizardController extends AbstractController
                     $this->addFlash('warning', $this->translator->trans('setup.database.existing_tables', [
                         '%count%' => $existingTables['count'],
                         '%tables%' => implode(', ', array_slice($existingTables['tables'], 0, 5)),
-                    ]));
+                    ], 'messages'));
                 }
 
                 // Test passed - save configuration
@@ -354,30 +356,30 @@ class DeploymentWizardController extends AbstractController
                     // Clear form data from session (success - no need to preserve)
                     $session->remove('setup_step1_form_data');
 
-                    $this->addFlash('success', $this->translator->trans('setup.database.config_saved'));
+                    $this->addFlash('success', $this->translator->trans('setup.database.config_saved', [], 'messages'));
 
                     return $this->redirectToRoute('setup_step3_restore_backup');
                 } catch (RuntimeException $e) {
                     // File system errors (permissions, disk full, etc.)
                     if (str_contains($e->getMessage(), 'Failed to write') || str_contains($e->getMessage(), 'Failed to rename')) {
-                        $this->addFlash('error', $this->translator->trans('setup.database.write_failed',  [
+                        $this->addFlash('error', $this->translator->trans('setup.database.write_failed', [
                             '%error%' => $e->getMessage(),
                             '%hint%' => 'Please check file permissions for .env.local and ensure sufficient disk space.'
-                        ]));
+                        ], 'messages'));
                     } else {
-                        $this->addFlash('error', $this->translator->trans('setup.database.config_failed') . ': ' . $e->getMessage());
+                        $this->addFlash('error', $this->translator->trans('setup.database.config_failed', [], 'messages') . ': ' . $e->getMessage());
                     }
                     // Redirect to same page to show error (Turbo compatibility)
                     return $this->redirectToRoute('setup_step2_database_config');
                 } catch (Exception $e) {
-                    $this->addFlash('error', $this->translator->trans('setup.database.config_failed') . ': ' . $e->getMessage());
+                    $this->addFlash('error', $this->translator->trans('setup.database.config_failed', [], 'messages') . ': ' . $e->getMessage());
                     // Redirect to same page to show error (Turbo compatibility)
                     return $this->redirectToRoute('setup_step2_database_config');
                 }
             } else {
                 // Test failed - store result in session and redirect (Turbo compatibility)
                 $session->set('setup_db_test_result', $testResult);
-                $this->addFlash('error', $testResult['message'] ?? $this->translator->trans('setup.database.test_failed'));
+                $this->addFlash('error', $testResult['message'] ?? $this->translator->trans('setup.database.test_failed', [], 'messages'));
                 return $this->redirectToRoute('setup_step2_database_config');
             }
         }
@@ -385,7 +387,7 @@ class DeploymentWizardController extends AbstractController
         // Pass Docker-specific data to template
         $dockerPassword = null;
         if ($isDockerStandalone) {
-            $dockerPassword = $_ENV['MYSQL_PASSWORD'] ?? $this->getDockerMysqlPassword();
+            $dockerPassword = $_ENV['MYSQL_PASSWORD'] ?? $this->databaseProvisioner->getDockerMysqlPassword();
         }
 
         // Return 422 status for validation errors so Turbo displays errors
@@ -406,7 +408,7 @@ class DeploymentWizardController extends AbstractController
      * Step 3: Backup Restore (Optional)
      * User can restore an existing backup or skip to create fresh installation
      */
-    #[Route('/setup/step3-restore-backup', name: 'setup_step3_restore_backup')]
+    #[Route('/setup/step3-restore-backup', name: 'setup_step3_restore_backup', methods: ['GET'])]
     public function step3RestoreBackup(SessionInterface $session): Response
     {
         // Docker-Standalone: DATABASE_URL ist von init-mysql.sh in .env.local geschrieben.
@@ -428,7 +430,7 @@ class DeploymentWizardController extends AbstractController
 
         // Check if database is configured
         if (!$session->get('setup_database_configured')) {
-            $this->addFlash('error', $this->translator->trans('setup.error.configure_database_first'));
+            $this->addFlash('error', $this->translator->trans('setup.error.configure_database_first', [], 'messages'));
             return $this->redirectToRoute('setup_step2_database_config');
         }
 
@@ -489,7 +491,7 @@ class DeploymentWizardController extends AbstractController
         // Background work
         try {
             $logger->info('Creating database schema (fresh-install via SchemaTool)');
-            $migrationResult = $this->runFreshSchemaInstall();
+            $migrationResult = $this->databaseProvisioner->runFreshSchemaInstall();
             $logger->info('Schema-install timings', ['timings' => $migrationResult['timings'] ?? null]);
 
             if ($migrationResult['success']) {
@@ -586,7 +588,7 @@ class DeploymentWizardController extends AbstractController
         // Validate CSRF token
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('setup_restore_backup', $token)) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('setup_step3_restore_backup');
         }
 
@@ -734,7 +736,7 @@ class DeploymentWizardController extends AbstractController
         // Validate CSRF token
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('setup_skip_restore', $token)) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('setup_step3_restore_backup');
         }
 
@@ -787,7 +789,7 @@ class DeploymentWizardController extends AbstractController
             // on Docker MySQL and avoids two competing connections.
 
             $logger->info('Step 3 Skip: Running fresh-install schema-create');
-            $migrationResult = $this->runFreshSchemaInstall();
+            $migrationResult = $this->databaseProvisioner->runFreshSchemaInstall();
             $logger->info('Step 3 Skip: Schema-install result', [
                 'success' => $migrationResult['success'],
                 'message' => $migrationResult['message'] ?? 'no message',
@@ -841,7 +843,7 @@ class DeploymentWizardController extends AbstractController
         // Validate CSRF token
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('setup_repair_orphans', $token)) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('setup_step3_restore_backup');
         }
 
@@ -921,14 +923,14 @@ class DeploymentWizardController extends AbstractController
     /**
      * Step 4: Admin User Creation
      */
-    #[Route('/setup/step4-admin-user', name: 'setup_step4_admin_user')]
+    #[Route('/setup/step4-admin-user', name: 'setup_step4_admin_user', methods: ['GET', 'POST'])]
     public function step4AdminUser(Request $request, SessionInterface $session): Response
     {
         if ($guard = $this->guardPostSetup()) { return $guard; }
 
         // If backup was restored in step 3, skip to completion
         if ($session->get('setup_backup_restored')) {
-            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps'));
+            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps', [], 'messages'));
             return $this->redirectToRoute('setup_step11_complete');
         }
 
@@ -948,7 +950,7 @@ class DeploymentWizardController extends AbstractController
 
             // Still not configured? Redirect to step 2
             if (!$session->get('setup_database_configured')) {
-                $this->addFlash('error', $this->translator->trans('setup.error.configure_database_first'));
+                $this->addFlash('error', $this->translator->trans('setup.error.configure_database_first', [], 'messages'));
                 return $this->redirectToRoute('setup_step2_database_config');
             }
         }
@@ -988,7 +990,7 @@ class DeploymentWizardController extends AbstractController
 
             try {
                 // Create admin user via command (database schema already created in step 3)
-                $result = $this->createAdminUserViaCommand($data);
+                $result = $this->setupConsoleRunner->createAdminUser($data);
 
                 if ($result['success']) {
                     $session->set('setup_admin_created', true);
@@ -997,12 +999,12 @@ class DeploymentWizardController extends AbstractController
                     // Clear form data from session (success - no need to preserve)
                     $session->remove('setup_step2_form_data');
 
-                    $this->addFlash('success', $this->translator->trans('setup.admin.user_created'));
+                    $this->addFlash('success', $this->translator->trans('setup.admin.user_created', [], 'setup'));
 
                     return $this->redirectToRoute('setup_step5_email_config');
                 }
 
-                $this->addFlash('error', $this->translator->trans('setup.admin.creation_failed') . ': ' . $result['message']);
+                $this->addFlash('error', $this->translator->trans('setup.admin.creation_failed', [], 'setup') . ': ' . $result['message']);
                 return $this->redirectToRoute('setup_step4_admin_user');
 
             } catch (Exception $e) {
@@ -1026,20 +1028,20 @@ class DeploymentWizardController extends AbstractController
     /**
      * Step 5: Email Configuration (Optional)
      */
-    #[Route('/setup/step5-email-config', name: 'setup_step5_email_config')]
+    #[Route('/setup/step5-email-config', name: 'setup_step5_email_config', methods: ['GET', 'POST'])]
     public function step5EmailConfig(Request $request, SessionInterface $session): Response
     {
         if ($guard = $this->guardPostSetup()) { return $guard; }
 
         // If backup was restored in step 3, skip to completion
         if ($session->get('setup_backup_restored')) {
-            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps'));
+            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps', [], 'messages'));
             return $this->redirectToRoute('setup_step11_complete');
         }
 
         // Check if admin user is created
         if (!$session->get('setup_admin_created')) {
-            $this->addFlash('error', $this->translator->trans('setup.error.create_admin_first'));
+            $this->addFlash('error', $this->translator->trans('setup.error.create_admin_first', [], 'messages'));
             return $this->redirectToRoute('setup_step4_admin_user');
         }
 
@@ -1091,11 +1093,11 @@ class DeploymentWizardController extends AbstractController
                 $this->environmentWriter->writeEnvVariables($envVars);
 
                 $session->set('setup_email_configured', true);
-                $this->addFlash('success', $this->translator->trans('setup.email.config_saved'));
+                $this->addFlash('success', $this->translator->trans('setup.email.config_saved', [], 'messages'));
 
                 return $this->redirectToRoute('setup_step6_organisation_info');
             } catch (Exception $e) {
-                $this->addFlash('error', $this->translator->trans('setup.email.config_failed') . ': ' . $e->getMessage());
+                $this->addFlash('error', $this->translator->trans('setup.email.config_failed', [], 'messages') . ': ' . $e->getMessage());
                 // Turbo requires redirect after POST
                 return $this->redirectToRoute('setup_step5_email_config');
             }
@@ -1121,32 +1123,32 @@ class DeploymentWizardController extends AbstractController
         // Validate CSRF token
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('setup_email_skip', $token)) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('setup_step5_email_config');
         }
 
         $session->set('setup_email_configured', false);
-        $this->addFlash('info', $this->translator->trans('setup.email.skipped'));
+        $this->addFlash('info', $this->translator->trans('setup.email.skipped', [], 'messages'));
 
         return $this->redirectToRoute('setup_step6_organisation_info');
     }
     /**
      * Step 6: Organisation Information
      */
-    #[Route('/setup/step6-organisation-info', name: 'setup_step6_organisation_info')]
+    #[Route('/setup/step6-organisation-info', name: 'setup_step6_organisation_info', methods: ['GET', 'POST'])]
     public function step6OrganisationInfo(Request $request, SessionInterface $session): Response
     {
         if ($guard = $this->guardPostSetup()) { return $guard; }
         // If backup was restored in step 3, skip to completion
         if ($session->get('setup_backup_restored')) {
-            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps'));
+            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps', [], 'messages'));
             return $this->redirectToRoute('setup_step11_complete');
         }
 
         // User can skip email config, so we don't check for it
         // But admin must be created
         if (!$session->get('setup_admin_created')) {
-            $this->addFlash('error', $this->translator->trans('setup.error.create_admin_first'));
+            $this->addFlash('error', $this->translator->trans('setup.error.create_admin_first', [], 'messages'));
             return $this->redirectToRoute('setup_step4_admin_user');
         }
 
@@ -1168,11 +1170,12 @@ class DeploymentWizardController extends AbstractController
                 $session->set('setup_organisation_country', $data['country']);
                 $session->set('setup_organisation_description', $data['description'] ?? '');
 
-                $this->addFlash('success', $this->translator->trans('setup.organisation.info_saved'));
+                $this->addFlash('success', $this->translator->trans('setup.organisation.info_saved', [], 'messages'));
 
-                return $this->redirectToRoute('setup_step7_modules');
+                // V4-EF-1: Offer Industry-Preset Express-Path before manual module selection.
+                return $this->redirectToRoute('setup_industry_preset');
             } catch (Exception $e) {
-                $this->addFlash('error', $this->translator->trans('setup.organisation.info_failed') . ': ' . $e->getMessage());
+                $this->addFlash('error', $this->translator->trans('setup.organisation.info_failed', [], 'messages') . ': ' . $e->getMessage());
                 // Turbo requires redirect after POST
                 return $this->redirectToRoute('setup_step6_organisation_info');
             }
@@ -1190,10 +1193,85 @@ class DeploymentWizardController extends AbstractController
         return $response;
     }
     /**
+     * V4-EF-1 — Industry-Preset Express-Path (between organisation-info and modules).
+     *
+     * Tag-1-Onboarding-Bruch-Fix: Lets the user pick a curated industry preset
+     * (e.g. "Deutscher Mittelstand mit NIS2", "SaaS-Startup ISO 27001") instead
+     * of manually clicking through module + framework selection. The chosen
+     * preset is applied to the wizard SESSION (not the tenant — tenant does not
+     * exist yet during setup) and forwards directly to step9 base-data.
+     *
+     * Skipping this screen continues the manual flow via step7-modules.
+     */
+    #[Route('/setup/industry-preset', name: 'setup_industry_preset', methods: ['GET'])]
+    public function industryPreset(SessionInterface $session): Response
+    {
+        if ($guard = $this->guardPostSetup()) { return $guard; }
+
+        // Same prerequisites as step7 — admin user must exist, requirements OK.
+        if ($session->get('setup_backup_restored')) {
+            return $this->redirectToRoute('setup_step11_complete');
+        }
+        if (!$this->systemRequirementsChecker->isSystemReady()) {
+            $this->addFlash('error', $this->translator->trans('deployment.error.fix_requirements', [], 'messages'));
+            return $this->redirectToRoute('setup_step1_requirements');
+        }
+        if (!$session->get('setup_admin_created')) {
+            $this->addFlash('error', $this->translator->trans('setup.error.create_admin_first', [], 'messages'));
+            return $this->redirectToRoute('setup_step4_admin_user');
+        }
+
+        $presets = $this->industryPresetService->listPresets();
+
+        return $this->render('setup/industry_preset.html.twig', [
+            'presets' => $presets,
+        ]);
+    }
+
+    /**
+     * V4-EF-1 — Apply selected preset and forward into the flow.
+     * If preset == "skip", continues with manual module-selection (step7).
+     */
+    #[Route('/setup/industry-preset/apply', name: 'setup_industry_preset_apply', methods: ['POST'])]
+    public function industryPresetApply(Request $request, SessionInterface $session): Response
+    {
+        if ($guard = $this->guardPostSetup()) { return $guard; }
+
+        $token = (string) $request->request->get('_token');
+        if (!$this->isCsrfTokenValid('setup_industry_preset', $token)) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('setup_industry_preset');
+        }
+
+        $presetId = (string) $request->request->get('preset', '');
+
+        if ($presetId === '' || $presetId === 'skip') {
+            // Manual path — clear any previous preset state so step7 starts fresh.
+            $this->industryPresetService->clearSession($session);
+            return $this->redirectToRoute('setup_step7_modules');
+        }
+
+        $applied = $this->industryPresetService->applyToSession($presetId, $session);
+        if ($applied === null) {
+            $this->addFlash('error', $this->translator->trans('setup.preset.error.unknown', [], 'setup'));
+            return $this->redirectToRoute('setup_industry_preset');
+        }
+
+        $this->addFlash('success', $this->translator->trans('setup.preset.applied', [
+            '%modules%' => count($applied['modules']),
+            '%frameworks%' => count($applied['frameworks']),
+        ], 'setup'));
+
+        // Express-Path: skip step7 (modules) + step8 (frameworks) — both already
+        // populated in the session. User lands directly on step9 base-data.
+        return $this->redirectToRoute('setup_step9_base_data');
+    }
+
+    /**
      * Step 1: System Requirements Check
      * This is the first step - checks if system meets minimum requirements
      */
-    #[Route('/setup/step1-requirements', name: 'setup_step1_requirements')]
+    #[Route('/setup/step1-requirements', name: 'setup_step1_requirements', methods: ['GET'])]
     public function step1Requirements(SessionInterface $session): Response
     {
         // No prerequisites - this is the first step after welcome
@@ -1207,18 +1285,18 @@ class DeploymentWizardController extends AbstractController
     /**
      * Step 7: Module Selection
      */
-    #[Route('/setup/step7-modules', name: 'setup_step7_modules')]
+    #[Route('/setup/step7-modules', name: 'setup_step7_modules', methods: ['GET'])]
     public function step7Modules(SessionInterface $session): Response
     {
         // If backup was restored in step 3, skip to completion
         if ($session->get('setup_backup_restored')) {
-            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps'));
+            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps', [], 'messages'));
             return $this->redirectToRoute('setup_step11_complete');
         }
 
         // Check if requirements passed
         if (!$this->systemRequirementsChecker->isSystemReady()) {
-            $this->addFlash('error', $this->translator->trans('deployment.error.fix_requirements'));
+            $this->addFlash('error', $this->translator->trans('deployment.error.fix_requirements', [], 'messages'));
             return $this->redirectToRoute('setup_step1_requirements');
         }
 
@@ -1231,7 +1309,7 @@ class DeploymentWizardController extends AbstractController
         $employeeCount = $session->get('setup_organisation_employee_count', '1-10');
 
         // Get recommended modules based on organization data (supports multiple industries)
-        $recommendedModules = $this->getRecommendedModulesForIndustries($organisationIndustries, $employeeCount);
+        $recommendedModules = $this->recommendationEngine->getRecommendedModulesForIndustries($organisationIndustries, $employeeCount);
 
         // Load previous selection from session, default to required + recommended
         if (!$session->has('setup_selected_modules')) {
@@ -1258,7 +1336,7 @@ class DeploymentWizardController extends AbstractController
         // Validate CSRF token
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('setup_modules', $token)) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('setup_step7_modules');
         }
 
@@ -1284,7 +1362,7 @@ class DeploymentWizardController extends AbstractController
         // Show added modules
         foreach ($resolved['added'] as $addedModule) {
             $module = $this->moduleConfigurationService->getModule($addedModule);
-            $this->addFlash('info', $this->translator->trans('deployment.info.module_added_auto', ['name' => $module['name']]));
+            $this->addFlash('info', $this->translator->trans('deployment.info.module_added_auto', ['name' => $module['name']], 'messages'));
         }
 
         foreach ($validation['warnings'] as $warning) {
@@ -1301,19 +1379,19 @@ class DeploymentWizardController extends AbstractController
     /**
      * Step 8: Compliance Frameworks Selection
      */
-    #[Route('/setup/step8-compliance-frameworks', name: 'setup_step8_compliance_frameworks')]
+    #[Route('/setup/step8-compliance-frameworks', name: 'setup_step8_compliance_frameworks', methods: ['GET', 'POST'])]
     public function step8ComplianceFrameworks(Request $request, SessionInterface $session): Response
     {
         // If backup was restored in step 3, skip to completion
         if ($session->get('setup_backup_restored')) {
-            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps'));
+            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps', [], 'messages'));
             return $this->redirectToRoute('setup_step11_complete');
         }
 
         $selectedModules = $session->get('setup_selected_modules', []);
 
         if (empty($selectedModules)) {
-            $this->addFlash('error', $this->translator->trans('deployment.error.select_modules'));
+            $this->addFlash('error', $this->translator->trans('deployment.error.select_modules', [], 'messages'));
             return $this->redirectToRoute('setup_step7_modules');
         }
 
@@ -1372,7 +1450,7 @@ class DeploymentWizardController extends AbstractController
 
             $this->addFlash('success', $this->translator->trans('setup.compliance.frameworks_saved', [
                 '%count%' => count($selectedFrameworks),
-            ]));
+            ], 'messages'));
 
             return $this->redirectToRoute('setup_step9_base_data');
         }
@@ -1394,385 +1472,23 @@ class DeploymentWizardController extends AbstractController
 
         return $response;
     }
-    /**
-     * Get recommended compliance frameworks based on industry, size, and location
-     *
-     * @param string $industry Organisation industry
-     * @param string $employeeCount Employee count range (1-10, 11-50, 51-250, 251-1000, 1001+)
-     * @param string $country Country code (DE, AT, CH, etc.)
-     * @return array List of recommended framework codes
-     */
-    private function getRecommendedFrameworks(string $industry, string $employeeCount, string $country): array
-    {
-        $recommendations = ['ISO27001']; // Always recommend ISO 27001
-
-        // Determine company size thresholds
-        $isNis2Size = in_array($employeeCount, ['51-250', '251-1000', '1001+'], true);
-        $isLargeOrg = in_array($employeeCount, ['251-1000', '1001+'], true);
-
-        // Determine country/region specific frameworks
-        $isDACH = in_array($country, ['DE', 'AT', 'CH'], true);
-        $isGermany = $country === 'DE';
-        $isEU = in_array($country, ['DE', 'AT', 'BE', 'DK', 'FI', 'FR', 'IT', 'LU', 'NL', 'PL', 'ES', 'SE', 'CZ', 'EU_OTHER'], true);
-
-        // Use ISO 27701 for DACH region (covers GDPR), otherwise recommend GDPR
-        $privacyFramework = $isDACH ? 'ISO27701' : 'GDPR';
-
-        // Industry-specific recommendations
-        switch ($industry) {
-            case 'automotive':
-                $recommendations[] = 'TISAX';
-                $recommendations[] = $privacyFramework;
-                if ($isNis2Size) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-
-            case 'financial_services':
-                $recommendations[] = 'DORA';
-                $recommendations[] = $privacyFramework;
-                if ($isNis2Size) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-
-            case 'healthcare':
-                $recommendations[] = $privacyFramework;
-                if ($isGermany) {
-                    $recommendations[] = 'KRITIS-HEALTH';
-                }
-                if ($isNis2Size) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-
-            case 'pharmaceutical':
-                $recommendations[] = 'GXP';
-                $recommendations[] = $privacyFramework;
-                if ($isNis2Size) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-
-            case 'digital_health':
-                if ($isGermany) {
-                    $recommendations[] = 'DIGAV';
-                }
-                $recommendations[] = $privacyFramework;
-                break;
-
-            case 'energy':
-                // Critical infrastructure - NIS2 often applies regardless of size
-                $recommendations[] = 'NIS2';
-                if ($isGermany) {
-                    $recommendations[] = 'KRITIS';
-                }
-                $recommendations[] = $privacyFramework;
-                break;
-
-            case 'telecommunications':
-                // Critical infrastructure - NIS2 often applies regardless of size
-                $recommendations[] = 'NIS2';
-                if ($isGermany) {
-                    $recommendations[] = 'TKG-2024';
-                    $recommendations[] = 'KRITIS';
-                }
-                $recommendations[] = $privacyFramework;
-                break;
-
-            case 'cloud_services':
-                if ($isGermany) {
-                    $recommendations[] = 'BSI-C5';
-                }
-                $recommendations[] = $privacyFramework;
-                if ($isNis2Size) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-
-            case 'public_sector':
-                if ($isGermany) {
-                    $recommendations[] = 'BSI_GRUNDSCHUTZ';
-                }
-                $recommendations[] = $privacyFramework;
-                if ($isNis2Size) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-
-            case 'critical_infrastructure':
-                $recommendations[] = 'NIS2';
-                if ($isGermany) {
-                    $recommendations[] = 'KRITIS';
-                    $recommendations[] = 'BSI_GRUNDSCHUTZ';
-                }
-                $recommendations[] = $privacyFramework;
-                break;
-
-            case 'it_services':
-
-            case 'manufacturing':
-                $recommendations[] = $privacyFramework;
-                if ($isNis2Size) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-
-            case 'retail':
-                $recommendations[] = $privacyFramework;
-                if ($isLargeOrg) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-
-            case 'education':
-                $recommendations[] = $privacyFramework;
-                if ($isGermany) {
-                    $recommendations[] = 'BSI_GRUNDSCHUTZ';
-                }
-                break;
-
-            default:
-                // Default recommendation for other industries
-                $recommendations[] = $privacyFramework;
-                if ($isNis2Size && $isEU) {
-                    $recommendations[] = 'NIS2';
-                }
-                break;
-        }
-
-        return array_unique($recommendations);
-    }
-    /**
-     * Get recommended modules based on industry and company size
-     *
-     * @param string $industry Organisation industry
-     * @param string $employeeCount Employee count range (1-10, 11-50, 51-250, 251-1000, 1001+)
-     * @return array List of recommended module keys
-     */
-    private function getRecommendedModules(string $industry, string $employeeCount): array
-    {
-        $recommendations = [];
-
-        // Larger organizations typically need more structure
-        $isLargeOrg = in_array($employeeCount, ['251-1000', '1001+'], true);
-        $isMediumOrg = in_array($employeeCount, ['51-250', '251-1000', '1001+'], true);
-        $isSmallOrg = in_array($employeeCount, ['1-10', '11-50'], true);
-
-        // Core modules recommended for all
-        $recommendations[] = 'asset_management';
-        $recommendations[] = 'risk_management';
-        $recommendations[] = 'controls';
-
-        // Industry-specific recommendations
-        switch ($industry) {
-            case 'automotive':
-                // TISAX requires strong asset and risk management
-                $recommendations[] = 'compliance';
-                $recommendations[] = 'document_management';
-                if ($isMediumOrg) {
-                    $recommendations[] = 'training';
-                }
-                break;
-
-            case 'financial_services':
-
-            case 'energy':
-            case 'telecommunications':
-            case 'critical_infrastructure':
-                // DORA requires BCM and incident management
-                $recommendations[] = 'bcm';
-                $recommendations[] = 'incident_management';
-                $recommendations[] = 'compliance';
-                $recommendations[] = 'audit_management';
-                break;
-            case 'healthcare':
-                // Healthcare needs incident tracking and compliance
-                $recommendations[] = 'incident_management';
-                $recommendations[] = 'compliance';
-                $recommendations[] = 'training';
-                if ($isMediumOrg) {
-                    $recommendations[] = 'bcm';
-                }
-                break;
-            case 'pharmaceutical':
-                // GxP requires strong training and audit
-                $recommendations[] = 'compliance';
-                $recommendations[] = 'audit_management';
-                $recommendations[] = 'training';
-                $recommendations[] = 'document_management';
-                break;
-            case 'digital_health':
-                // DiGA needs compliance and audit trail
-                $recommendations[] = 'compliance';
-                $recommendations[] = 'audit_management';
-                break;
-
-            case 'cloud_services':
-                // Cloud services need strong controls and audit
-                $recommendations[] = 'compliance';
-                $recommendations[] = 'audit_management';
-                if ($isMediumOrg) {
-                    $recommendations[] = 'bcm';
-                }
-                break;
-
-            case 'public_sector':
-                // Public sector has strict audit requirements
-                $recommendations[] = 'audit_management';
-                $recommendations[] = 'compliance';
-                $recommendations[] = 'document_management';
-                break;
-
-            case 'it_services':
-                // IT services need incident management
-                $recommendations[] = 'incident_management';
-                if ($isMediumOrg) {
-                    $recommendations[] = 'bcm';
-                }
-                break;
-
-            case 'manufacturing':
-                // Manufacturing needs BCM
-                $recommendations[] = 'bcm';
-                if ($isMediumOrg) {
-                    $recommendations[] = 'incident_management';
-                }
-                break;
-
-            default:
-                // Basic recommendations for other industries
-                if ($isMediumOrg) {
-                    $recommendations[] = 'incident_management';
-                }
-                break;
-        }
-
-        // Large organizations benefit from training and audit
-        if ($isLargeOrg) {
-            $recommendations[] = 'training';
-            $recommendations[] = 'audit_management';
-        }
-
-        // SMB-5: Small orgs (1-50 employees) don't need BCM, multi-framework
-        // compliance, or audit logging initially — keep it lean.
-        if ($isSmallOrg) {
-            $recommendations = array_values(array_diff($recommendations, [
-                'bcm',
-                'compliance',
-                'audit_logging',
-            ]));
-        }
-
-        return array_unique($recommendations);
-    }
-    /**
-     * Get recommended compliance frameworks for multiple industries (corporate structures)
-     *
-     * @param array $industries List of industry codes
-     * @param string $employeeCount Employee count range
-     * @param string $country Country code
-     * @return array Aggregated list of recommended framework codes
-     */
-    private function getRecommendedFrameworksForIndustries(array $industries, string $employeeCount, string $country): array
-    {
-        $allRecommendations = [];
-
-        foreach ($industries as $industry) {
-            $industryRecommendations = $this->getRecommendedFrameworks($industry, $employeeCount, $country);
-            $allRecommendations = array_merge($allRecommendations, $industryRecommendations);
-        }
-
-        return array_unique($allRecommendations);
-    }
-    /**
-     * Get recommended modules for multiple industries (corporate structures)
-     *
-     * @param array $industries List of industry codes
-     * @param string $employeeCount Employee count range
-     * @return array Aggregated list of recommended module keys
-     */
-    private function getRecommendedModulesForIndustries(array $industries, string $employeeCount): array
-    {
-        $allRecommendations = [];
-
-        foreach ($industries as $industry) {
-            $industryRecommendations = $this->getRecommendedModules($industry, $employeeCount);
-            $allRecommendations = array_merge($allRecommendations, $industryRecommendations);
-        }
-
-        return array_unique($allRecommendations);
-    }
-
-    /**
-     * SMB-2: Apply the Generic Starter baseline (BL-GENERIC-v1) to the current tenant.
-     *
-     * Ensures the baseline entity is loaded first. If the baseline or tenant
-     * cannot be resolved, returns a human-readable skip message instead of
-     * throwing — the base-data import should not fail because of this.
-     */
-    private function applyGenericStarterBaseline(): string
-    {
-        try {
-            // Ensure baselines are seeded (idempotent command)
-            $baseline = $this->industryBaselineRepository->findByCode('BL-GENERIC-v1');
-            if ($baseline === null) {
-                $app = new Application($this->kernel);
-                $app->setAutoExit(false);
-                $app->run(
-                    new ArrayInput(['command' => 'app:load-industry-baselines']),
-                    new BufferedOutput(),
-                );
-                // Re-query after seeding — clear identity map so Doctrine sees the new row
-                $this->entityManager->clear();
-                $baseline = $this->industryBaselineRepository->findByCode('BL-GENERIC-v1');
-            }
-
-            if ($baseline === null) {
-                return 'Baseline BL-GENERIC-v1 nicht gefunden';
-            }
-
-            $tenant = $this->tenantRepository->findOneBy([]);
-            if ($tenant === null) {
-                return 'Kein Tenant vorhanden';
-            }
-
-            /** @var \App\Entity\User|null $user */
-            $user = $this->security->getUser();
-
-            $result = $this->industryBaselineApplier->apply($baseline, $tenant, $user);
-
-            if ($result['already_applied']) {
-                return 'Generic Starter bereits angewendet';
-            }
-
-            return sprintf(
-                'Generic Starter: %d Risiken, %d Assets, %d Controls',
-                $result['risks_created'],
-                $result['assets_created'],
-                $result['controls_marked_applicable'],
-            );
-        } catch (\Throwable $e) {
-            return 'Baseline-Fehler: ' . $e->getMessage();
-        }
-    }
 
     /**
      * Step 9: Base Data Import
      */
-    #[Route('/setup/step9-base-data', name: 'setup_step9_base_data')]
+    #[Route('/setup/step9-base-data', name: 'setup_step9_base_data', methods: ['GET'])]
     public function step9BaseData(SessionInterface $session): Response
     {
         // If backup was restored in step 3, skip to completion
         if ($session->get('setup_backup_restored')) {
-            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps'));
+            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps', [], 'messages'));
             return $this->redirectToRoute('setup_step11_complete');
         }
 
         $selectedModules = $session->get('setup_selected_modules', []);
 
         if (empty($selectedModules)) {
-            $this->addFlash('error', $this->translator->trans('deployment.error.select_modules'));
+            $this->addFlash('error', $this->translator->trans('deployment.error.select_modules', [], 'messages'));
             return $this->redirectToRoute('setup_step7_modules');
         }
 
@@ -1840,7 +1556,7 @@ class DeploymentWizardController extends AbstractController
             // SMB-2: Apply Generic Starter baseline if requested
             $baselineMessage = '';
             if ($applyBaseline) {
-                $baselineMessage = $this->applyGenericStarterBaseline();
+                $baselineMessage = $this->setupBaselineApplier->applyGenericStarterBaseline();
             }
 
             $message = sprintf(
@@ -1862,19 +1578,19 @@ class DeploymentWizardController extends AbstractController
     /**
      * Step 10: Sample Data (Optional)
      */
-    #[Route('/setup/step10-sample-data', name: 'setup_step10_sample_data')]
+    #[Route('/setup/step10-sample-data', name: 'setup_step10_sample_data', methods: ['GET'])]
     public function step10SampleData(SessionInterface $session): Response
     {
         // If backup was restored in step 3, skip to completion
         if ($session->get('setup_backup_restored')) {
-            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps'));
+            $this->addFlash('info', $this->translator->trans('setup.info.backup_restored_skip_steps', [], 'messages'));
             return $this->redirectToRoute('setup_step11_complete');
         }
 
         $selectedModules = $session->get('setup_selected_modules', []);
 
         if (empty($selectedModules)) {
-            $this->addFlash('error', $this->translator->trans('deployment.error.select_modules'));
+            $this->addFlash('error', $this->translator->trans('deployment.error.select_modules', [], 'messages'));
             return $this->redirectToRoute('setup_step7_modules');
         }
 
@@ -1966,17 +1682,17 @@ class DeploymentWizardController extends AbstractController
         // Validate CSRF token
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('setup_sample_skip', $token)) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('setup_step10_sample_data');
         }
 
-        $this->addFlash('info', $this->translator->trans('deployment.info.sample_data_skipped'));
+        $this->addFlash('info', $this->translator->trans('deployment.info.sample_data_skipped', [], 'messages'));
         return $this->redirectToRoute('setup_step11_complete');
     }
     /**
      * Step 11: Setup Complete
      */
-    #[Route('/setup/step11-complete', name: 'setup_step11_complete')]
+    #[Route('/setup/step11-complete', name: 'setup_step11_complete', methods: ['GET'])]
     public function step11Complete(SessionInterface $session): Response
     {
         $backupRestored = $session->get('setup_backup_restored', false);
@@ -1985,7 +1701,7 @@ class DeploymentWizardController extends AbstractController
         // If backup was restored, skip module requirement check
         // (backup already contains all necessary configuration)
         if (empty($selectedModules) && !$backupRestored) {
-            $this->addFlash('error', $this->translator->trans('deployment.error.select_modules'));
+            $this->addFlash('error', $this->translator->trans('deployment.error.select_modules', [], 'messages'));
             return $this->redirectToRoute('setup_step7_modules');
         }
 
@@ -1994,8 +1710,14 @@ class DeploymentWizardController extends AbstractController
             $this->moduleConfigurationService->saveActiveModules($selectedModules);
         }
 
-        // Save organization data to Tenant settings
-        $this->saveOrganisationDataToTenant($session);
+        // Save organization data to Tenant settings — but NOT after a backup
+        // restore: the restored tenant already carries its real name + settings,
+        // and the wizard session holds only defaults here (empty org form), which
+        // would overwrite settings.organisation (industries/size/country/…) with
+        // 'other'/'1-10'/'DE'. Skipping preserves the restored organisation.
+        if (!$backupRestored) {
+            $this->tenantBootstrapper->saveOrganisationDataToTenant($session);
+        }
 
         // Mark setup as complete
         $this->setupAccessChecker->markSetupComplete();
@@ -2011,7 +1733,7 @@ class DeploymentWizardController extends AbstractController
     /**
      * Reset Setup (Development Only)
      */
-    #[Route('/setup/reset', name: 'setup_wizard_reset')]
+    #[Route('/setup/reset', name: 'setup_wizard_reset', methods: ['GET', 'POST'])]
     public function reset(SessionInterface $session): Response
     {
         // Only allow in dev environment
@@ -2025,603 +1747,7 @@ class DeploymentWizardController extends AbstractController
         // Clear session
         $session->clear();
 
-        $this->addFlash('success', $this->translator->trans('deployment.success.reset'));
+        $this->addFlash('success', $this->translator->trans('deployment.success.reset', [], 'setup'));
         return $this->redirectToRoute('setup_wizard_index');
-    }
-    /**
-     * Save organization data to Tenant settings
-     *
-     * This stores the organization context (industries, size, country) in the Tenant entity
-     * so it can be modified later via Tenant settings.
-     */
-    private function saveOrganisationDataToTenant(SessionInterface $session): void
-    {
-        try {
-            // Get the first (and typically only) tenant created during setup
-            $tenant = $this->tenantRepository->findOneBy([]);
-
-            if (!$tenant) {
-                // If no tenant exists, create one with default code
-                $tenant = new Tenant();
-                $tenant->setCode('default');
-                $tenant->setName($session->get('setup_organisation_name', 'Default Organization'));
-                $this->entityManager->persist($tenant);
-            } else {
-                // Update tenant name if provided
-                $orgName = $session->get('setup_organisation_name');
-                if ($orgName) {
-                    $tenant->setName($orgName);
-                }
-            }
-
-            // Get current settings or initialize empty array
-            $settings = $tenant->getSettings() ?? [];
-
-            // Store organization context in settings
-            $settings['organisation'] = [
-                'industries' => $session->get('setup_organisation_industries', ['other']),
-                'employee_count' => $session->get('setup_organisation_employee_count', '1-10'),
-                'country' => $session->get('setup_organisation_country', 'DE'),
-                'description' => $session->get('setup_organisation_description', ''),
-                'selected_modules' => $session->get('setup_selected_modules', []),
-                'selected_frameworks' => $session->get('setup_selected_frameworks', []),
-                'setup_completed_at' => new DateTimeImmutable()->format('c'),
-            ];
-
-            $tenant->setSettings($settings);
-
-            // Update tenant description if provided
-            $orgDescription = $session->get('setup_organisation_description');
-            if ($orgDescription && !$tenant->getDescription()) {
-                $tenant->setDescription($orgDescription);
-            }
-
-            $this->entityManager->flush();
-
-            // Seed "Kontext der Organisation" (ISO 27001 Clause 4) from wizard.
-            // Without this the dedicated context-of-organisation page starts
-            // empty even though the user already provided org-name + scope-
-            // adjacent data in step 6 — duplicate data entry, junior frustration.
-            $this->seedISMSContextFromWizard($tenant, $session);
-
-            $this->entityManager->flush();
-        } catch (Exception) {
-            // Log error but don't fail setup
-            // The organization data is already saved in session and modules are configured
-        }
-    }
-
-    /**
-     * Pre-fills the ISMSContext entity (Clause 4 — Kontext der Organisation)
-     * with whatever the wizard already collected in step 6. Idempotent: if a
-     * row for the tenant exists, its previously-set fields are not overwritten.
-     */
-    private function seedISMSContextFromWizard(Tenant $tenant, SessionInterface $session): void
-    {
-        $contextRepo = $this->entityManager->getRepository(\App\Entity\ISMSContext::class);
-        $context = $contextRepo->findOneBy(['tenant' => $tenant]);
-        $isNew = false;
-        if (!$context instanceof \App\Entity\ISMSContext) {
-            $context = new \App\Entity\ISMSContext();
-            $context->setTenant($tenant);
-            $isNew = true;
-        }
-
-        $orgName = $session->get('setup_organisation_name', $tenant->getName() ?: 'Default Organization');
-        if ($context->getOrganizationName() === null || $context->getOrganizationName() === '') {
-            $context->setOrganizationName((string) $orgName);
-        }
-
-        // Map step-6 free-text description into internalIssues as a starting
-        // point — user can refine in the dedicated context-edit form later.
-        $description = (string) ($session->get('setup_organisation_description', '') ?? '');
-        if ($description !== '' && ($context->getInternalIssues() === null || $context->getInternalIssues() === '')) {
-            $context->setInternalIssues($description);
-        }
-
-        // Build a starter scope sentence from industry/country/employee-count
-        // so the SoA + audit-prep pages have something to anchor on.
-        $industries = $session->get('setup_organisation_industries', []);
-        $employeeCount = $session->get('setup_organisation_employee_count', '');
-        $country = $session->get('setup_organisation_country', '');
-        if ($context->getIsmsScope() === null || $context->getIsmsScope() === '') {
-            $scopeParts = [];
-            if (is_array($industries) && $industries !== []) {
-                $scopeParts[] = 'Branchen: ' . implode(', ', $industries);
-            }
-            if ($employeeCount !== '') {
-                $scopeParts[] = 'Mitarbeiter: ' . $employeeCount;
-            }
-            if ($country !== '') {
-                $scopeParts[] = 'Sitz: ' . $country;
-            }
-            if ($scopeParts !== []) {
-                $context->setIsmsScope(implode(' · ', $scopeParts));
-            }
-        }
-
-        if ($isNew) {
-            $this->entityManager->persist($context);
-        }
-    }
-    /**
-     * Helper: Run database migrations
-     *
-     * Fresh-Install Schema-Create — way faster than running 34 migrations sequentially.
-     *
-     * Uses Doctrine SchemaTool to generate the schema from current entity metadata
-     * (single batch SQL exec, ~1-2s vs. 30-60s for migration loop). After creation,
-     * marks every migration version as executed so future `migrate` calls skip them.
-     *
-     * Trade-off: data-seed INSERTs from older migrations (e.g. corporate_governance
-     * defaults, supplier_criticality, system_settings) are NOT replayed. The app's
-     * setup-wizard fills those defaults in subsequent steps (admin-user, organisation,
-     * frameworks, base-data) — fresh-install convergence is correct.
-     *
-     * @return array{success: bool, message: string, output?: string}
-     */
-    private function runFreshSchemaInstall(): array
-    {
-        $timings = [];
-        $t0 = microtime(true);
-        try {
-            $em = $this->entityManager;
-            $metadata = $em->getMetadataFactory()->getAllMetadata();
-            $timings['metadata_ms'] = (int) round((microtime(true) - $t0) * 1000);
-
-            if ($metadata === []) {
-                return ['success' => false, 'message' => 'No entity metadata found — Doctrine not configured?'];
-            }
-
-            $schemaTool = new \Doctrine\ORM\Tools\SchemaTool($em);
-            $connection = $em->getConnection();
-            $platform = $connection->getDatabasePlatform()::class;
-            $isMysql = stripos($platform, 'MySQL') !== false || stripos($platform, 'MariaDB') !== false;
-            $isPostgres = stripos($platform, 'PostgreSQL') !== false;
-
-            // ALL DDL goes through raw PDO (getNativeConnection) — Doctrine's
-            // wrapped Connection tracks transaction nesting in its own state.
-            // MySQL DDL implicitly commits any active transaction, breaking
-            // Doctrine's tx-tracker → "There is no active transaction" on
-            // subsequent calls. Bypassing the wrapper for the DDL phase
-            // sidesteps that whole issue.
-            $nativeConn = $connection->getNativeConnection();
-            if (!$nativeConn instanceof \PDO) {
-                // Unsupported driver — fall back to Doctrine SchemaTool.
-                $schemaTool->dropSchema($metadata);
-                $schemaTool->createSchema($metadata);
-                return [
-                    'success' => true,
-                    'message' => 'Schema created via SchemaTool (non-PDO driver)',
-                ];
-            }
-
-            // Drop existing app-tables (skip doctrine_migration_versions to
-            // preserve migration history).
-            if ($isMysql) {
-                $stmt = $nativeConn->query('SHOW TABLES');
-                $existingTables = $stmt instanceof \PDOStatement
-                    ? $stmt->fetchAll(\PDO::FETCH_COLUMN)
-                    : [];
-                $existingAppTables = array_filter(
-                    $existingTables,
-                    fn(string $t): bool => $t !== 'doctrine_migration_versions'
-                );
-
-                if ($existingAppTables !== []) {
-                    // Bulk-drop strategy: prefer DROP DATABASE / CREATE DATABASE
-                    // over per-table DROP — MariaDB / MySQL serialise each
-                    // DROP TABLE through innodb_flush_log_at_trx_commit, so
-                    // 125 DROPs become 125 fsyncs (~15s on a typical SSD).
-                    // DROP DATABASE collapses that to two statements that
-                    // execute in milliseconds. Falls back to the per-table
-                    // loop if the user lacks DROP/CREATE DATABASE privileges
-                    // (managed-DB scenarios).
-                    $tDrop = microtime(true);
-                    $dbName = (string) $nativeConn->query('SELECT DATABASE()')->fetchColumn();
-                    $dropMode = 'per_table';
-                    $charset = (string) ($nativeConn->query("SELECT @@character_set_database")->fetchColumn() ?: 'utf8mb4');
-                    $collation = (string) ($nativeConn->query("SELECT @@collation_database")->fetchColumn() ?: 'utf8mb4_unicode_ci');
-                    if ($dbName !== '') {
-                        try {
-                            $nativeConn->exec(sprintf('DROP DATABASE `%s`', str_replace('`', '', $dbName)));
-                            $nativeConn->exec(sprintf(
-                                'CREATE DATABASE `%s` CHARACTER SET %s COLLATE %s',
-                                str_replace('`', '', $dbName),
-                                $charset,
-                                $collation
-                            ));
-                            $nativeConn->exec(sprintf('USE `%s`', str_replace('`', '', $dbName)));
-                            $dropMode = 'recreate_db';
-                        } catch (\Throwable) {
-                            // Fall back to per-table drops if DROP DATABASE
-                            // is not permitted (managed-DB / user privilege).
-                        }
-                    }
-                    if ($dropMode === 'per_table') {
-                        $dropSql = "SET FOREIGN_KEY_CHECKS = 0;\n";
-                        foreach ($existingAppTables as $table) {
-                            $clean = str_replace('`', '', (string) $table);
-                            $dropSql .= "DROP TABLE IF EXISTS `{$clean}`;\n";
-                        }
-                        $dropSql .= "SET FOREIGN_KEY_CHECKS = 1;\n";
-                        $nativeConn->exec($dropSql);
-                    }
-                    $timings['drop_ms'] = (int) round((microtime(true) - $tDrop) * 1000);
-                    $timings['drop_count'] = count($existingAppTables);
-                    $timings['drop_mode'] = $dropMode;
-                }
-            } elseif ($isPostgres) {
-                $stmt = $nativeConn->query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'");
-                $existingTables = $stmt instanceof \PDOStatement
-                    ? $stmt->fetchAll(\PDO::FETCH_COLUMN)
-                    : [];
-                $existingAppTables = array_filter(
-                    $existingTables,
-                    fn(string $t): bool => $t !== 'doctrine_migration_versions'
-                );
-                if ($existingAppTables !== []) {
-                    $dropSql = '';
-                    foreach ($existingAppTables as $table) {
-                        $clean = str_replace('"', '', (string) $table);
-                        $dropSql .= 'DROP TABLE IF EXISTS "' . $clean . '" CASCADE;' . "\n";
-                    }
-                    $nativeConn->exec($dropSql);
-                }
-            } else {
-                // SQLite or other — Doctrine's dropSchema is fast enough
-                $schemaTool->dropSchema($metadata);
-            }
-
-            // Generate all CREATE TABLE / ALTER ADD CONSTRAINT SQL from
-            // entity metadata, join with semicolons, submit to PDO::exec
-            // in ONE call. Server executes the whole batch in one RTT
-            // instead of 250.
-            $tSql = microtime(true);
-            $createSqls = $schemaTool->getCreateSchemaSql($metadata);
-            $timings['create_sql_gen_ms'] = (int) round((microtime(true) - $tSql) * 1000);
-            $timings['create_sql_count'] = count($createSqls);
-            if ($createSqls !== []) {
-                // Disable FK + uniqueness checks for the duration of bulk DDL.
-                // For MariaDB/MySQL we also try to relax durability (commit
-                // log fsync per DDL) for the bulk install — this requires
-                // SUPER on the global flag, so we wrap in try/catch and fall
-                // back gracefully if the user lacks the privilege.
-                $relaxedDurability = false;
-                if ($isMysql) {
-                    try {
-                        $nativeConn->exec('SET @bench_old_flush := @@GLOBAL.innodb_flush_log_at_trx_commit');
-                        $nativeConn->exec('SET GLOBAL innodb_flush_log_at_trx_commit = 2');
-                        $relaxedDurability = true;
-                    } catch (\Throwable) {
-                        // Lack of SUPER privilege — keep default durability.
-                    }
-                }
-
-                // Munge CREATE TABLE → CREATE TABLE IF NOT EXISTS so the batch is
-                // idempotent against background workers that auto-create their own
-                // tables in parallel. Concrete case: Symfony Messenger doctrine
-                // transport (auto_setup: true) racing with the wizard during Skip:
-                // DROP DATABASE wipes everything, messenger-scheduler then sends a
-                // message → transport CREATEs messenger_messages → bulk batch hits
-                // "Table 'messenger_messages' already exists" and the whole install
-                // aborts. IF NOT EXISTS is safe here because SchemaTool emits the
-                // same definition the auto-setup uses.
-                $idempotentSqls = array_map(
-                    static function (string $sql): string {
-                        return preg_replace(
-                            '/^\s*CREATE TABLE(?!\s+IF\s+NOT\s+EXISTS)/i',
-                            'CREATE TABLE IF NOT EXISTS',
-                            $sql,
-                            1,
-                        ) ?? $sql;
-                    },
-                    $createSqls,
-                );
-
-                $sqlBatch = '';
-                if ($isMysql) {
-                    $sqlBatch .= "SET FOREIGN_KEY_CHECKS = 0;\n";
-                    $sqlBatch .= "SET UNIQUE_CHECKS = 0;\n";
-                }
-                $sqlBatch .= implode(";\n", $idempotentSqls);
-                if (!str_ends_with(rtrim($sqlBatch), ';')) {
-                    $sqlBatch .= ';';
-                }
-                if ($isMysql) {
-                    $sqlBatch .= "\nSET UNIQUE_CHECKS = 1;";
-                    $sqlBatch .= "\nSET FOREIGN_KEY_CHECKS = 1;";
-                }
-                $tExec = microtime(true);
-                try {
-                    $nativeConn->exec($sqlBatch);
-                } finally {
-                    if ($relaxedDurability) {
-                        try {
-                            $nativeConn->exec('SET GLOBAL innodb_flush_log_at_trx_commit = IFNULL(@bench_old_flush, 1)');
-                        } catch (\Throwable) {
-                            // Best-effort; the session will end soon anyway.
-                        }
-                    }
-                }
-                $timings['create_exec_ms'] = (int) round((microtime(true) - $tExec) * 1000);
-                $timings['relaxed_durability'] = $relaxedDurability;
-            }
-
-            // Mark every migration version as executed so future migrate-calls skip them.
-            $tReg = microtime(true);
-            $migrationFiles = glob($this->getParameter('kernel.project_dir') . '/migrations/Version*.php') ?: [];
-            $registered = 0;
-            if ($migrationFiles !== []) {
-                $nativeConn->exec(
-                    'CREATE TABLE IF NOT EXISTS doctrine_migration_versions (version VARCHAR(191) PRIMARY KEY, executed_at DATETIME, execution_time INT)'
-                );
-                $rows = [];
-                foreach ($migrationFiles as $file) {
-                    $version = $nativeConn->quote('DoctrineMigrations\\' . basename($file, '.php'));
-                    $rows[] = "({$version}, NOW(), 0)";
-                }
-                $nativeConn->exec(
-                    'INSERT IGNORE INTO doctrine_migration_versions (version, executed_at, execution_time) VALUES '
-                        . implode(', ', $rows)
-                );
-                $registered = count($migrationFiles);
-            }
-
-            $timings['migrations_register_ms'] = (int) round((microtime(true) - $tReg) * 1000);
-
-            // Force Doctrine to re-establish its connection state — the raw
-            // PDO calls above bypassed Doctrine's transaction tracker, so
-            // subsequent Doctrine queries could see stale state.
-            $connection->close();
-            $timings['total_ms'] = (int) round((microtime(true) - $t0) * 1000);
-
-            return [
-                'success' => true,
-                'message' => sprintf('Schema created from entity metadata (%d migrations marked executed)', $registered),
-                'output' => sprintf('Tables created: %d, migrations registered: %d', count($metadata), $registered),
-                'timings' => $timings,
-            ];
-        } catch (\Throwable $e) {
-            return [
-                'success' => false,
-                'message' => 'Fresh-install failed: ' . $e->getMessage(),
-                'output' => $e->getTraceAsString(),
-            ];
-        }
-    }
-
-    /**
-     * @return array Result with 'success' and 'message'
-     */
-    private function runMigrationsInternal(): array
-    {
-        try {
-            $application = new Application($this->kernel);
-            $application->setAutoExit(false);
-
-            $arrayInput = new ArrayInput([
-                'command' => 'doctrine:migrations:migrate',
-                '--no-interaction' => true,
-                '--allow-no-migration' => true,
-            ]);
-
-            $bufferedOutput = new BufferedOutput();
-            $exitCode = $application->run($arrayInput, $bufferedOutput);
-
-            $outputText = $bufferedOutput->fetch();
-
-            if ($exitCode === 0) {
-                return [
-                    'success' => true,
-                    'message' => 'Database migrations executed successfully',
-                    'output' => $outputText,
-                ];
-            }
-
-            return [
-                'success' => false,
-                'message' => 'Migration failed with exit code ' . $exitCode . ': ' . $outputText,
-                'output' => $outputText,
-            ];
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'message' => 'Migration exception: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(),
-                'exception' => $e::class,
-            ];
-        }
-    }
-    /**
-     * Helper: Create admin user via console command
-     *
-     * @param array $data User data (email, firstName, lastName, password)
-     * @return array Result with 'success' and 'message'
-     */
-    private function createAdminUserViaCommand(array $data): array
-    {
-        try {
-            $application = new Application($this->kernel);
-            $application->setAutoExit(false);
-
-            $arrayInput = new ArrayInput([
-                'command' => 'app:setup-permissions',
-                '--admin-email' => $data['email'],
-                '--admin-password' => $data['password'],
-                '--admin-firstname' => $data['firstName'],
-                '--admin-lastname' => $data['lastName'],
-                '--no-interaction' => true,
-            ]);
-
-            $bufferedOutput = new BufferedOutput();
-            $exitCode = $application->run($arrayInput, $bufferedOutput);
-
-            if ($exitCode === 0) {
-                return [
-                    'success' => true,
-                    'message' => 'Admin user created successfully',
-                ];
-            }
-
-            return [
-                'success' => false,
-                'message' => 'Failed to create admin user: ' . $bufferedOutput->fetch(),
-            ];
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'message' => $e->getMessage(),
-            ];
-        }
-    }
-    /**
-     * Clean up database connection state to prevent savepoint errors
-     */
-    private function cleanupDatabaseConnection(): void
-    {
-        try {
-            $connection = $this->entityManager->getConnection();
-
-            // Roll back all active transactions
-            while ($connection->isTransactionActive()) {
-                try {
-                    $connection->rollBack();
-                } catch (Exception) {
-                    // If rollback fails, close the connection
-                    // Doctrine will automatically reconnect on next use
-                    try {
-                        $connection->close();
-                    } catch (Exception) {
-                        // Ignore - connection might already be closed
-                    }
-                    break;
-                }
-            }
-
-            // Clear EntityManager cache
-            $this->entityManager->clear();
-        } catch (Exception) {
-            // Silently ignore - the setup command will handle connection issues
-        }
-    }
-    /**
-     * Drop and recreate database to ensure clean state
-     */
-    private function dropAndRecreateDatabase(array $config): void
-    {
-        $type = $config['type'] ?? 'mysql';
-        $name = $config['name'] ?? 'little_isms_helper';
-
-        if ($type === 'sqlite') {
-            // For SQLite, just delete the file
-            $dbPath = $this->getParameter('kernel.project_dir') . "/var/{$name}.db";
-            if (file_exists($dbPath)) {
-                @unlink($dbPath);
-            }
-            return;
-        }
-
-        // For MySQL/MariaDB and PostgreSQL, directly drop all tables instead of dropping the database
-        // This avoids permission issues and connection problems with existing Doctrine connections
-        $this->truncateAllTables($config);
-    }
-    /**
-     * Truncate all tables in database (fallback if DROP DATABASE fails)
-     */
-    private function truncateAllTables(array $config): void
-    {
-        try {
-            $pdo = $this->connectToDatabaseWithDbName($config);
-            $type = $config['type'] ?? 'mysql';
-
-            if ($type === 'postgresql') {
-                // PostgreSQL: Get all tables and truncate
-                $stmt = $pdo->query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'");
-                $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
-                foreach ($tables as $table) {
-                    $pdo->exec("TRUNCATE TABLE \"{$table}\" CASCADE");
-                }
-            } else {
-                // MySQL/MariaDB: Disable foreign key checks, truncate all, re-enable
-                $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
-                $stmt = $pdo->query("SHOW TABLES");
-                $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
-                foreach ($tables as $table) {
-                    $pdo->exec("DROP TABLE IF EXISTS `{$table}`");
-                }
-                $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
-            }
-        } catch (Exception) {
-            // Silently fail - migrations will handle it
-        }
-    }
-    /**
-     * Connect to specific database
-     */
-    private function connectToDatabaseWithDbName(array $config): PDO
-    {
-        $type = $config['type'] ?? 'mysql';
-        $host = $config['host'] ?? 'localhost';
-        $port = $config['port'] ?? ($type === 'postgresql' ? 5432 : 3306);
-        $name = $config['name'] ?? 'little_isms_helper';
-        $user = $config['user'] ?? 'root';
-        $password = $config['password'] ?? '';
-        $unixSocket = $config['unixSocket'] ?? null;
-
-        if ($type === 'postgresql') {
-            $dsn = "pgsql:host={$host};port={$port};dbname={$name}";
-        } elseif (!empty($unixSocket)) {
-            $dsn = "mysql:unix_socket={$unixSocket};dbname={$name};charset=utf8mb4";
-        } else {
-            $dsn = "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4";
-        }
-
-        return new PDO($dsn, $user, $password, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_TIMEOUT => 5,
-        ]);
-    }
-    /**
-     * Sends the immediate JSON response and detaches the FCGI worker so the
-     * client sees status=started while the long-running setup-wizard work
-     * continues in the background.
-     *
-     * Flushes every active output buffer before fastcgi_finish_request() —
-     * with PHP's default output_buffering=4096 the JSON body would otherwise
-     * sit in the buffer and the FCGI stream would stay open until script
-     * exit, defeating the async-job pattern (browser hangs on POST until
-     * the reverse-proxy gateway-timeout fires).
-     */
-    private function detachAndContinue(\Symfony\Component\HttpFoundation\Response $response): void
-    {
-        $response->send();
-        while (ob_get_level() > 0) {
-            @ob_end_flush();
-        }
-        flush();
-        if (function_exists('fastcgi_finish_request')) {
-            fastcgi_finish_request();
-        } elseif (function_exists('litespeed_finish_request')) {
-            litespeed_finish_request();
-        }
-    }
-
-    /**
-     * Get Docker MySQL password from auto-generated credentials file
-     */
-    private function getDockerMysqlPassword(): string
-    {
-        $credentialsFile = $this->getParameter('kernel.project_dir') . '/var/mysql_credentials.txt';
-
-        if (file_exists($credentialsFile)) {
-            $content = file_get_contents($credentialsFile);
-            // Extract password from "Auto-generated MySQL password: PASSWORD"
-            if (preg_match('/password:\s*(.+)/', $content, $matches)) {
-                return trim($matches[1]);
-            }
-        }
-
-        // Fallback to default if no auto-generated password found
-        return 'isms';
     }
 }

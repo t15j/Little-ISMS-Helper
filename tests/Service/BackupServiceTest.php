@@ -17,6 +17,7 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use Psr\Log\LoggerInterface;
+use App\Exception\InvalidArgument\InvalidArgumentException as AppInvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
 
 #[AllowMockObjectsWithoutExpectations]
@@ -234,7 +235,7 @@ class BackupServiceTest extends TestCase
     #[Test]
     public function testLoadBackupFromFileThrowsExceptionWhenFileNotFound(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(AppInvalidArgumentException::class);
         $this->expectExceptionMessage('Backup file not found');
 
         $this->service->loadBackupFromFile('/nonexistent/file.json');
@@ -826,6 +827,120 @@ class BackupServiceTest extends TestCase
         $this->assertSame($sensitiveValue, $decrypted);
     }
 
+    /**
+     * Phase 5 — SUPER_ADMIN (scope=null) sees all backups regardless of
+     * embedded tenant_scope (own-tenant, foreign-tenant, legacy without scope).
+     */
+    #[Test]
+    public function testListBackupsSuperAdminSeesAllScopes(): void
+    {
+        $backupDir = $this->projectDir . '/var/backups';
+        mkdir($backupDir, 0755, true);
+
+        // Tenant 1 backup
+        file_put_contents(
+            $backupDir . '/backup_2026-05-18_10-00-00.json',
+            (string) json_encode([
+                'metadata' => ['version' => '2.0', 'tenant_scope' => [1]],
+                'data'     => [],
+            ])
+        );
+        // Tenant 2 backup
+        file_put_contents(
+            $backupDir . '/backup_2026-05-18_11-00-00.json',
+            (string) json_encode([
+                'metadata' => ['version' => '2.0', 'tenant_scope' => [2]],
+                'data'     => [],
+            ])
+        );
+        // Legacy backup without tenant_scope
+        file_put_contents(
+            $backupDir . '/backup_2026-05-18_12-00-00.json',
+            (string) json_encode([
+                'metadata' => ['version' => '1.0'],
+                'data'     => [],
+            ])
+        );
+
+        $backups = $this->service->listBackups(null);
+
+        $this->assertCount(3, $backups, 'SUPER_ADMIN must see all 3 backups including legacy');
+    }
+
+    /**
+     * Phase 5 — ROLE_ADMIN (scope=Tenant 1) sees only own-tenant backups.
+     * Foreign-tenant + legacy (no scope) backups are excluded.
+     */
+    #[Test]
+    public function testListBackupsTenantAdminSeesOwnScopeOnly(): void
+    {
+        $backupDir = $this->projectDir . '/var/backups';
+        mkdir($backupDir, 0755, true);
+
+        // Tenant 1 backup (own)
+        file_put_contents(
+            $backupDir . '/backup_2026-05-18_10-00-00.json',
+            (string) json_encode([
+                'metadata' => ['version' => '2.0', 'tenant_scope' => [1]],
+                'data'     => [],
+            ])
+        );
+        // Tenant 2 backup (foreign)
+        file_put_contents(
+            $backupDir . '/backup_2026-05-18_11-00-00.json',
+            (string) json_encode([
+                'metadata' => ['version' => '2.0', 'tenant_scope' => [2]],
+                'data'     => [],
+            ])
+        );
+        // Legacy without scope info
+        file_put_contents(
+            $backupDir . '/backup_2026-05-18_12-00-00.json',
+            (string) json_encode([
+                'metadata' => ['version' => '1.0'],
+                'data'     => [],
+            ])
+        );
+
+        $tenant1 = $this->createMock(Tenant::class);
+        $tenant1->method('getId')->willReturn(1);
+        $tenant1->method('getAllSubsidiaries')->willReturn([]);
+
+        $backups = $this->service->listBackups($tenant1);
+
+        $this->assertCount(1, $backups, 'Tenant-admin must see only own-scope backup');
+        $this->assertSame('backup_2026-05-18_10-00-00.json', $backups[0]['filename']);
+        $this->assertSame([1], $backups[0]['tenant_scope_ids']);
+    }
+
+    /**
+     * Phase 5 — Opportunistic sidecar caching: after first listBackups() call,
+     * a `<filename>.meta.json` sidecar is written so subsequent calls hit the
+     * fast path without re-reading the (potentially compressed) backup payload.
+     */
+    #[Test]
+    public function testListBackupsWritesSidecarForLegacyDetection(): void
+    {
+        $backupDir = $this->projectDir . '/var/backups';
+        mkdir($backupDir, 0755, true);
+
+        $backupFile = $backupDir . '/backup_2026-05-18_10-00-00.json';
+        file_put_contents(
+            $backupFile,
+            (string) json_encode([
+                'metadata' => ['version' => '2.0', 'tenant_scope' => [42]],
+                'data'     => [],
+            ])
+        );
+
+        $this->service->listBackups(null);
+
+        $sidecar = $backupFile . '.meta.json';
+        $this->assertFileExists($sidecar, 'Sidecar must be created on first detection');
+        $payload = json_decode((string) file_get_contents($sidecar), true);
+        $this->assertSame([42], $payload['tenant_scope']);
+    }
+
     #[Test]
     public function testSystemSettingsWithNonSensitiveKeyIsNotEncrypted(): void
     {
@@ -868,6 +983,64 @@ class BackupServiceTest extends TestCase
             'Non-sensitive value must NOT be encrypted'
         );
         $this->assertSame($nonSensitiveValue, $row['value']);
+    }
+
+    /**
+     * Reflection-based guarantee: every entity class file under src/Entity/
+     * must be either in BackupService::PRODUCTIVE_ENTITIES or in
+     * BackupService::EXCLUDED_FROM_BACKUP. Equivalent to Gate 43 but
+     * runnable as part of the PHPUnit suite, catching regressions inside
+     * developer pre-commit cycles without needing Python.
+     *
+     * Implicit-coverage entities (AuditLog, UserSession) are accepted
+     * because BackupService backs them up via dedicated parameters.
+     */
+    #[Test]
+    public function testEveryEntityIsCoveredByBackupOrExcludedExplicitly(): void
+    {
+        $entityDir = dirname(__DIR__, 2) . '/src/Entity';
+        $this->assertDirectoryExists($entityDir);
+
+        $entityNames = [];
+        foreach (glob($entityDir . '/*.php') as $file) {
+            $entityNames[] = basename($file, '.php');
+        }
+        sort($entityNames);
+        $this->assertNotEmpty($entityNames, 'Expected non-empty entity directory.');
+
+        $reflection = new \ReflectionClass(BackupService::class);
+        $productive = (array) $reflection->getConstant('PRODUCTIVE_ENTITIES');
+        $excluded   = (array) $reflection->getConstant('EXCLUDED_FROM_BACKUP');
+
+        $this->assertNotEmpty($productive, 'PRODUCTIVE_ENTITIES constant missing/empty.');
+
+        // EXCLUDED_FROM_BACKUP is keyed by entity name => reason.
+        $excludedKeys = array_keys($excluded);
+        $implicit     = ['AuditLog', 'UserSession'];
+        $covered      = array_unique(array_merge($productive, $excludedKeys, $implicit));
+
+        $missing = array_values(array_diff($entityNames, $covered));
+        $this->assertSame(
+            [],
+            $missing,
+            sprintf(
+                "The following entities are not covered by the backup whitelist or the\n"
+                . "explicit exclude list:\n  - %s\n\n"
+                . "Fix: add each entity to BackupService::PRODUCTIVE_ENTITIES (preferred)\n"
+                . "or to BackupService::EXCLUDED_FROM_BACKUP with an inline reason string.",
+                implode("\n  - ", $missing)
+            )
+        );
+
+        // Every EXCLUDED_FROM_BACKUP entry must have a non-empty rationale.
+        foreach ($excluded as $name => $reason) {
+            $this->assertIsString($reason, "EXCLUDED_FROM_BACKUP['$name'] must map to a string reason.");
+            $this->assertNotSame(
+                '',
+                trim($reason),
+                "EXCLUDED_FROM_BACKUP['$name'] must have a non-empty rationale."
+            );
+        }
     }
 }
 

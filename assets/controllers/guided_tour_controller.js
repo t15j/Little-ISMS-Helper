@@ -209,6 +209,81 @@ export default class extends Controller {
         }
 
         const targetEl = step.target ? document.querySelector(step.target) : null;
+
+        // Auto-scroll to target FIRST so positionHighlight + positionPopover
+        // can use the post-scroll getBoundingClientRect values.
+        // scrollIntoView fires synchronously for behavior:'auto'; for
+        // behavior:'smooth' we wait via scrollend (with a safety timeout fallback)
+        // before positioning the overlay elements.
+        this.scrollToTargetThenRender(targetEl, step);
+    }
+
+    /**
+     * Scrolls the target element into the viewport (respecting prefers-reduced-motion),
+     * then renders the popover and highlight in their correct post-scroll positions.
+     *
+     * Scroll-order matters: getBoundingClientRect() returns viewport-relative coords.
+     * If we call positionHighlight before scrolling, the coords are stale and the
+     * highlight/popover drift off-target. Scroll first, position after.
+     *
+     * @param {Element|null} targetEl
+     * @param {Object} step
+     */
+    scrollToTargetThenRender(targetEl, step) {
+        if (!targetEl) {
+            // No target — just render centered popover immediately
+            this.renderStepContent(targetEl, step);
+            return;
+        }
+
+        const isInViewport = this.isElementInViewport(targetEl);
+        if (isInViewport) {
+            // Already visible — render right away, no scroll needed
+            this.renderStepContent(targetEl, step);
+            return;
+        }
+
+        if (this.reducedMotion) {
+            // Instant scroll (no animation) — synchronous, safe to position right after
+            targetEl.scrollIntoView({ block: 'center' });
+            this.renderStepContent(targetEl, step);
+            return;
+        }
+
+        // Smooth scroll: wait for scroll to finish before positioning.
+        // 'scrollend' is the modern API (Chrome 111+, Firefox 109+).
+        // For older browsers: 500 ms safety timeout covers the gap.
+        let settled = false;
+        const settle = () => {
+            if (settled) return;
+            settled = true;
+            window.removeEventListener('scrollend', settle);
+            this.renderStepContent(targetEl, step);
+        };
+        const timeout = window.setTimeout(settle, 600);
+        window.addEventListener('scrollend', () => {
+            window.clearTimeout(timeout);
+            settle();
+        }, { once: true });
+
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    /**
+     * Returns true when at least 50% of the element's bounding box is within
+     * the current viewport (horizontally and vertically).
+     */
+    isElementInViewport(el) {
+        const rect = el.getBoundingClientRect();
+        const vw = window.innerWidth || document.documentElement.clientWidth;
+        const vh = window.innerHeight || document.documentElement.clientHeight;
+        // Centre of element must be inside viewport
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        return cx >= 0 && cx <= vw && cy >= 0 && cy <= vh;
+    }
+
+    renderStepContent(targetEl, step) {
         this.positionHighlight(targetEl);
         this.positionPopover(targetEl, step.placement);
 
@@ -222,7 +297,7 @@ export default class extends Controller {
                         data-guided-tour-action="close">&times;</button>
             </div>
             <h3 id="guided-tour-title" class="guided-tour-title">
-                ${step.icon ? `<i class="${this.escapeHtml(step.icon)}" aria-hidden="true"></i> ` : ''}${this.escapeHtml(step.title)}
+                ${step.icon ? `<i class="fa-icon fa-icon--${this.escapeHtml(this.normalizeIcon(step.icon))}" aria-hidden="true"></i> ` : ''}${this.escapeHtml(step.title)}
             </h3>
             <div id="guided-tour-body" class="guided-tour-body">${this.escapeHtml(step.body)}</div>
             <div class="guided-tour-footer">
@@ -274,6 +349,9 @@ export default class extends Controller {
             this.highlightEl.style.display = 'none';
             return;
         }
+        // scrollIntoView has already been called by scrollToTargetThenRender()
+        // before this method — getBoundingClientRect() now reflects the
+        // post-scroll viewport position, so highlight is placed correctly.
         const rect = targetEl.getBoundingClientRect();
         const padding = 6;
         this.highlightEl.style.display = 'block';
@@ -281,13 +359,6 @@ export default class extends Controller {
         this.highlightEl.style.left = `${rect.left - padding + window.scrollX}px`;
         this.highlightEl.style.width = `${rect.width + padding * 2}px`;
         this.highlightEl.style.height = `${rect.height + padding * 2}px`;
-
-        // Scroll target into view (unless reduced motion)
-        if (!this.reducedMotion) {
-            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else {
-            targetEl.scrollIntoView({ block: 'center' });
-        }
     }
 
     positionPopover(targetEl, placement = 'center') {
@@ -433,7 +504,7 @@ export default class extends Controller {
         hint.className = 'guided-tour-mobile-hint alert alert-info alert-dismissible fade show';
         hint.setAttribute('role', 'status');
         hint.innerHTML = `
-            <i class="bi bi-phone" aria-hidden="true"></i>
+            <i class="fa-icon fa-icon--phone" aria-hidden="true"></i>
             <strong>${this.escapeHtml(this.translations('mobile_title'))}</strong>
             ${this.escapeHtml(this.translations('mobile_body'))}
             <button type="button" class="btn-close" aria-label="Close"
@@ -465,5 +536,50 @@ export default class extends Controller {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    /**
+     * Normalize legacy Bootstrap-Icon names (e.g. "bi-stars") to Aurora
+     * fa-icon names so the rendered <i> matches a class in
+     * assets/styles/fairy-aurora-icons.css. Server-side data from
+     * GuidedTourService still uses `bi-*` strings — this keeps that data
+     * working without a backfill migration.
+     */
+    normalizeIcon(raw) {
+        if (!raw) return 'ui-info';
+        const stripped = raw.startsWith('bi-') ? raw.slice(3) : raw;
+        const aliases = {
+            'building-shield': 'nav-building-shield',
+            'person-badge': 'role',
+            'life-preserver': 'recovery',
+            'stars': 'ui-stars',
+            'grid-3x3-gap': 'nav-grid',
+            'grid-3x3': 'nav-grid',
+            'speedometer2': 'nav-dashboard',
+            'bridge': 'nav-target',
+            'command': 'ui-magic',
+            'box-seam': 'nav-boxes',
+            'keyboard': 'ui-key',
+            'diagram-3': 'nav-workflow',
+            'diagram-2': 'nav-workflow',
+            'recycle': 'util-refresh',
+            'check2-circle': 'status-ok',
+            'shield-lock': 'nav-shield-lock',
+            'file-earmark-slides': 'nav-file-pdf',
+            'heart-pulse': 'nav-heart-pulse',
+            'clipboard-check': 'nav-clipboard-check',
+            'exclamation-triangle': 'status-warning',
+            'exclamation-diamond': 'status-warning',
+            'journal-text': 'nav-journal-text',
+            'search': 'ui-search',
+            'file-earmark-text': 'nav-file-earmark-text',
+            'table': 'nav-grid',
+            'shield-exclamation': 'nav-shield-alert',
+            'graph-up-arrow': 'nav-bar-chart',
+            'robot': 'nav-robot',
+            'magic': 'nav-magic',
+            'book': 'nav-book',
+        };
+        return aliases[stripped] || stripped;
     }
 }

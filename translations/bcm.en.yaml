@@ -6,6 +6,7 @@ bcm:
         asset_insights: 'Asset Insights'
         bcm_insights: 'BCM Insights'
         critical: 'Critical Business Continuity'
+        data_reuse_insights: 'Data Reuse Insights'
     level:
         very_high: 'Very High'
         high: 'High'
@@ -13,6 +14,7 @@ bcm:
         low: 'Low'
     description:
         critical: 'Overview of critical assets and processes including RTO/RPO and action needs'
+        data_reuse_insights: 'How BCM data enhances asset protection requirements'
         critical_level: 'Immediate business outage in case of loss or failure. Highest priority for emergency actions.'
         high_level: 'Significant business impact within a short time. Rapid recovery planning required.'
         medium_level: 'Noticeable impact with buffer. Mid-term measures sufficient.'
@@ -21,6 +23,15 @@ bcm:
         add_process: 'Add Process'
         data_reuse: 'Data Reuse'
         view_insights: 'View insights'
+        view_bia: 'View BIA'
+    insights_col:
+        business_process: 'Business Process'
+        supporting_asset: 'Supporting Asset'
+        rto_mtpd: 'RTO/MTPD'
+        current_availability: 'Current Availability'
+        suggested_availability: 'Suggested Availability'
+        recommendation: 'Recommendation'
+        confidence: 'Confidence'
         view_bia: 'View BIA'
         export: Export
         plan: 'Recovery plan'
@@ -93,6 +104,10 @@ bcm:
         standard: Standard
         flexible: Flexible
 business_process:
+    bia:
+        rto_long: 'Recovery Time Objective'
+        rpo_long: 'Recovery Point Objective'
+        mtpd_long: 'Maximum Tolerable Period of Disruption'
     confirm:
         delete: 'Are you sure you want to delete this business process?'
     action:

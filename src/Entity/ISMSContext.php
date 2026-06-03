@@ -125,7 +125,7 @@ class ISMSContext
         return $this->organizationName;
     }
 
-    public function setOrganizationName(string $organizationName): static
+    public function setOrganizationName(?string $organizationName): static
     {
         $this->organizationName = $organizationName;
         return $this;
@@ -279,7 +279,7 @@ class ISMSContext
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;

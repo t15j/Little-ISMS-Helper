@@ -33,6 +33,7 @@ final class DataRepairControllerTest extends WebTestCase
     private EntityManagerInterface $em;
     private ?Tenant $tenantA = null;
     private ?User $adminUser = null;
+    private ?User $superUser = null;
 
     protected function setUp(): void
     {
@@ -60,6 +61,17 @@ final class DataRepairControllerTest extends WebTestCase
             ->setIsActive(true);
         $this->em->persist($this->adminUser);
 
+        $this->superUser = (new User())
+            ->setEmail('repair-super-' . $suffix . '@example.test')
+            ->setFirstName('Repair')
+            ->setLastName('Super')
+            ->setRoles(['ROLE_SUPER_ADMIN'])
+            ->setPassword('hashed_password')
+            ->setTenant($this->tenantA)
+            ->setAuthProvider('local')
+            ->setIsActive(true);
+        $this->em->persist($this->superUser);
+
         $this->em->flush();
     }
 
@@ -67,7 +79,7 @@ final class DataRepairControllerTest extends WebTestCase
     {
         if (isset($this->em) && $this->em->isOpen()) {
             try {
-                foreach ([$this->adminUser, $this->tenantA] as $e) {
+                foreach ([$this->adminUser, $this->superUser, $this->tenantA] as $e) {
                     if ($e && method_exists($e, 'getId') && $e->getId() !== null) {
                         $reload = $this->em->find($e::class, $e->getId());
                         if ($reload) {
@@ -94,7 +106,7 @@ final class DataRepairControllerTest extends WebTestCase
         // the CSRF check passes, so we use an intentionally invalid token
         // and expect either (a) a CSRF error flash OR (b) a reason error
         // flash; both result in the same redirect back to the index.
-        $this->client->request('GET', '/de/admin/data-repair/');
+        $this->client->request('GET', '/de/admin/data-repair');
         self::assertResponseIsSuccessful();
 
         $this->client->request('POST', '/de/admin/data-repair/fix-tenant-mismatches', [
@@ -105,7 +117,7 @@ final class DataRepairControllerTest extends WebTestCase
         // Controller redirects back to the index either way.
         self::assertSame(Response::HTTP_FOUND, $this->client->getResponse()->getStatusCode());
         self::assertStringContainsString(
-            '/admin/data-repair/',
+            '/admin/data-repair',
             (string) $this->client->getResponse()->headers->get('Location'),
         );
     }
@@ -117,7 +129,7 @@ final class DataRepairControllerTest extends WebTestCase
         // container wiring are all intact after the MAJOR-1 audit-log
         // additions to the controller constructor.
         $this->client->loginUser($this->adminUser);
-        $this->client->request('GET', '/de/admin/data-repair/');
+        $this->client->request('GET', '/de/admin/data-repair');
         self::assertResponseIsSuccessful();
         $html = (string) $this->client->getResponse()->getContent();
         // The page title is translated — match on a stable substring.
@@ -132,7 +144,7 @@ final class DataRepairControllerTest extends WebTestCase
         // query returns zero rows and the loop never body). Running the
         // call twice keeps the audit-row count stable.
         $this->client->loginUser($this->adminUser);
-        $this->client->request('GET', '/de/admin/data-repair/');
+        $this->client->request('GET', '/de/admin/data-repair');
         self::assertResponseIsSuccessful();
 
         $before = $this->countAudit('admin.data_repair.orphan_reassigned');
@@ -166,7 +178,7 @@ final class DataRepairControllerTest extends WebTestCase
         // Asserting the localized card titles is sufficient — they're
         // unique on the page and only present when the grid renders.
         $this->client->loginUser($this->adminUser);
-        $this->client->request('GET', '/de/admin/data-repair/');
+        $this->client->request('GET', '/de/admin/data-repair');
         self::assertResponseIsSuccessful();
         $html = (string) $this->client->getResponse()->getContent();
         self::assertStringContainsString('Migrationen', $html);
@@ -180,13 +192,13 @@ final class DataRepairControllerTest extends WebTestCase
     #[Test]
     public function testSchemaMigrationsExecuteRejectsInvalidCsrf(): void
     {
-        $this->client->loginUser($this->adminUser);
+        $this->client->loginUser($this->superUser);
         $this->client->request('POST', '/de/admin/data-repair/schema/migrations', [
             '_token' => 'ignored-invalid',
         ]);
         self::assertSame(Response::HTTP_FOUND, $this->client->getResponse()->getStatusCode());
         self::assertStringContainsString(
-            '/admin/data-repair/',
+            '/admin/data-repair',
             (string) $this->client->getResponse()->headers->get('Location'),
         );
     }
@@ -194,15 +206,47 @@ final class DataRepairControllerTest extends WebTestCase
     #[Test]
     public function testSchemaReconcileRejectsInvalidCsrf(): void
     {
-        $this->client->loginUser($this->adminUser);
+        $this->client->loginUser($this->superUser);
         $this->client->request('POST', '/de/admin/data-repair/schema/reconcile', [
             '_token' => 'ignored-invalid',
         ]);
         self::assertSame(Response::HTTP_FOUND, $this->client->getResponse()->getStatusCode());
         self::assertStringContainsString(
-            '/admin/data-repair/',
+            '/admin/data-repair',
             (string) $this->client->getResponse()->headers->get('Location'),
         );
+    }
+
+    /**
+     * Each of the four section sub-pages (orphans / duplicates /
+     * broken-references / health) must render an HTTP 200 with the
+     * canonical "Refresh now" CTA. The CTA proves the section-scan
+     * dispatcher is wired up — the actual job runs are covered by the
+     * Job unit-tests.
+     */
+    #[Test]
+    public function testSectionSubpagesRender(): void
+    {
+        $this->client->loginUser($this->adminUser);
+        $paths = [
+            '/de/admin/data-repair/orphans' => '/admin/data-repair/orphans/refresh',
+            '/de/admin/data-repair/duplicates' => '/admin/data-repair/duplicates/refresh',
+            '/de/admin/data-repair/broken-references' => '/admin/data-repair/broken-references/refresh',
+            '/de/admin/data-repair/health' => '/admin/data-repair/health/refresh',
+        ];
+
+        foreach ($paths as $path => $refreshPath) {
+            $this->client->request('GET', $path);
+            self::assertResponseIsSuccessful('Sub-page ' . $path . ' did not return HTTP 200');
+            $html = (string) $this->client->getResponse()->getContent();
+            // Each sub-page must include a Refresh-now form pointing at its
+            // own POST refresh route.
+            self::assertStringContainsString(
+                $refreshPath,
+                $html,
+                'Sub-page ' . $path . ' is missing its refresh CTA pointing at ' . $refreshPath,
+            );
+        }
     }
 
     private function countAudit(string $action): int

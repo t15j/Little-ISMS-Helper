@@ -1,5 +1,6 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% trans_default_domain 'help' %}
 
 {% block title %}{{ 'help.glossary.title'|trans({}, 'help') }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
@@ -14,12 +15,12 @@
         ]
     } only %}
 
-    {# Page Header #}
-    {% include '_components/_page_header.html.twig' with {
+    {# Page Header — V3 W2-L1 KL-6 Aurora migration #}
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-book', label: 'help.badge'|trans({}, 'help') },
         title: 'help.glossary.title'|trans({}, 'help'),
-        subtitle: 'help.glossary.subtitle'|trans({}, 'help'),
-        icon: 'bi-book'
-    } only %}
+        subtitle: 'help.glossary.subtitle'|trans({}, 'help')
+    }) }}
 
     {# Introduction Card #}
     <div class="card fa-section mb-4">
@@ -44,14 +45,14 @@
                             <i class="fa-icon fa-icon--ui-search" aria-hidden="true"></i>
                         </span>
                         <input type="text"
-                               class="form-control"
+                               class="form-control fa-cyber-input__field"
                                placeholder="{{ 'help.glossary.search_placeholder'|trans({}, 'help') }}"
                                data-filter-target="searchInput"
                                data-action="input->filter#filterRows">
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <select class="form-select" data-action="change->filter#filterByCategory">
+                    <select class="form-select fa-cyber-input__field" data-action="change->filter#filterByCategory">
                         <option value="">{{ 'help.glossary.all_categories'|trans({}, 'help') }}</option>
                         <option value="basics">{{ 'help.glossary.category.basics'|trans({}, 'help') }}</option>
                         <option value="risk">{{ 'help.glossary.category.risk'|trans({}, 'help') }}</option>
@@ -90,7 +91,7 @@
                     <div id="glossary-isms" class="accordion-collapse collapse" data-bs-parent="#glossaryBasics">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.isms.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.isms.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -107,7 +108,7 @@
                     <div id="glossary-asset" class="accordion-collapse collapse" data-bs-parent="#glossaryBasics">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.asset.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.asset.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -138,7 +139,7 @@
                     <div id="glossary-soa" class="accordion-collapse collapse" data-bs-parent="#glossaryBasics">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.soa.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.soa.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -169,7 +170,7 @@
                     <div id="glossary-scope" class="accordion-collapse collapse" data-bs-parent="#glossaryBasics">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.scope.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.scope.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -186,7 +187,7 @@
                     <div id="glossary-context" class="accordion-collapse collapse" data-bs-parent="#glossaryBasics">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.context.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.context.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -245,7 +246,7 @@
                     <div id="glossary-guided-tour" class="accordion-collapse collapse" data-bs-parent="#glossaryBasics">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.guided_tour.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.guided_tour.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -270,7 +271,7 @@
                     <div id="glossary-risk" class="accordion-collapse collapse" data-bs-parent="#glossaryRisk">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.risk.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.risk.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -705,6 +706,82 @@
                     </div>
                 </div>
 
+                {# Mapping #}
+                <div class="accordion-item" data-filter-target="filterableRow" data-category="compliance">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#glossary-mapping" aria-expanded="false" aria-controls="glossary-mapping">
+                            <strong>{{ 'help.glossary.term.mapping.name'|trans({}, 'help') }}</strong>
+                        </button>
+                    </h2>
+                    <div id="glossary-mapping" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
+                        <div class="accordion-body">
+                            <p>{{ 'help.glossary.term.mapping.definition'|trans({}, 'help') }}</p>
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
+                                {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.mapping.analogy'|trans({}, 'help') }}{% endblock %}
+                            {% endembed %}
+                        </div>
+                    </div>
+                </div>
+
+                {# Coverage #}
+                <div class="accordion-item" data-filter-target="filterableRow" data-category="compliance">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#glossary-coverage" aria-expanded="false" aria-controls="glossary-coverage">
+                            <strong>{{ 'help.glossary.term.coverage.name'|trans({}, 'help') }}</strong>
+                        </button>
+                    </h2>
+                    <div id="glossary-coverage" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
+                        <div class="accordion-body">
+                            <p>{{ 'help.glossary.term.coverage.definition'|trans({}, 'help') }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {# Inheritance / Vererbung #}
+                <div class="accordion-item" data-filter-target="filterableRow" data-category="compliance">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#glossary-inheritance" aria-expanded="false" aria-controls="glossary-inheritance">
+                            <strong>{{ 'help.glossary.term.inheritance.name'|trans({}, 'help') }}</strong>
+                        </button>
+                    </h2>
+                    <div id="glossary-inheritance" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
+                        <div class="accordion-body">
+                            <p>{{ 'help.glossary.term.inheritance.definition'|trans({}, 'help') }}</p>
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
+                                {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.inheritance.analogy'|trans({}, 'help') }}{% endblock %}
+                            {% endembed %}
+                        </div>
+                    </div>
+                </div>
+
+                {# Confidence vs. MQS #}
+                <div class="accordion-item" data-filter-target="filterableRow" data-category="compliance">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#glossary-confidence-mqs" aria-expanded="false" aria-controls="glossary-confidence-mqs">
+                            <strong>{{ 'help.glossary.term.confidence_mqs.name'|trans({}, 'help') }}</strong>
+                        </button>
+                    </h2>
+                    <div id="glossary-confidence-mqs" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
+                        <div class="accordion-body">
+                            <p>{{ 'help.glossary.term.confidence_mqs.definition'|trans({}, 'help') }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {# Mapping-Lifecycle (draft / published) #}
+                <div class="accordion-item" data-filter-target="filterableRow" data-category="compliance">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#glossary-mapping-lifecycle" aria-expanded="false" aria-controls="glossary-mapping-lifecycle">
+                            <strong>{{ 'help.glossary.term.mapping_lifecycle.name'|trans({}, 'help') }}</strong>
+                        </button>
+                    </h2>
+                    <div id="glossary-mapping-lifecycle" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
+                        <div class="accordion-body">
+                            <p>{{ 'help.glossary.term.mapping_lifecycle.definition'|trans({}, 'help') }}</p>
+                        </div>
+                    </div>
+                </div>
+
                 {# Audit #}
                 <div class="accordion-item" data-filter-target="filterableRow" data-category="compliance">
                     <h2 class="accordion-header">
@@ -715,7 +792,7 @@
                     <div id="glossary-audit" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.audit.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.audit.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -732,7 +809,7 @@
                     <div id="glossary-mgmt-review" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.management_review.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.management_review.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -833,7 +910,7 @@
                     <div id="glossary-audit-finding" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.audit_finding.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.audit_finding.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -850,7 +927,7 @@
                     <div id="glossary-nonconformity" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.nonconformity.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.nonconformity.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -867,7 +944,7 @@
                     <div id="glossary-corrective-action" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.corrective_action.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.corrective_action.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -884,7 +961,7 @@
                     <div id="glossary-interested-parties" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.interested_parties.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.interested_parties.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -901,7 +978,7 @@
                     <div id="glossary-continual-improvement" class="accordion-collapse collapse" data-bs-parent="#glossaryCompliance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.continual_improvement.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.continual_improvement.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -1150,7 +1227,7 @@
                     <div id="glossary-bcms" class="accordion-collapse collapse" data-bs-parent="#glossaryBcm">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.bcms.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.bcms.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -1553,7 +1630,7 @@
                     <div id="glossary-tom" class="accordion-collapse collapse" data-bs-parent="#glossaryPrivacy">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.tom.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.tom.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -1872,7 +1949,7 @@
                     <div id="glossary-incident" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.incident.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.incident.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -1903,7 +1980,7 @@
                     <div id="glossary-change-request" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.change_request.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.change_request.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -1920,7 +1997,7 @@
                     <div id="glossary-awareness-training" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.awareness_training.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.awareness_training.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -1937,7 +2014,7 @@
                     <div id="glossary-document-control" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.document_control.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.document_control.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -1954,7 +2031,7 @@
                     <div id="glossary-supplier-security" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.supplier_security.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.supplier_security.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2027,7 +2104,7 @@
                     <div id="glossary-bulk-actions" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.bulk_actions.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.bulk_actions.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2044,7 +2121,7 @@
                     <div id="glossary-command-palette" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.command_palette.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.command_palette.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2061,7 +2138,7 @@
                     <div id="glossary-audit-trail" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.audit_trail.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.audit_trail.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2078,7 +2155,7 @@
                     <div id="glossary-idempotent" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.idempotent.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.idempotent.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2095,7 +2172,7 @@
                     <div id="glossary-workflow-auto-progression" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.workflow_auto_progression.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.workflow_auto_progression.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2140,7 +2217,7 @@
                     <div id="glossary-data-reuse-hub" class="accordion-collapse collapse" data-bs-parent="#glossaryOperations">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.data_reuse_hub.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.data_reuse_hub.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2165,7 +2242,7 @@
                     <div id="glossary-pdca" class="accordion-collapse collapse" data-bs-parent="#glossaryGovernance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.pdca.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.pdca.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2182,7 +2259,7 @@
                     <div id="glossary-hls" class="accordion-collapse collapse" data-bs-parent="#glossaryGovernance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.hls.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.hls.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2199,7 +2276,7 @@
                     <div id="glossary-kpi" class="accordion-collapse collapse" data-bs-parent="#glossaryGovernance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.kpi.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.kpi.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2370,7 +2447,7 @@
                     <div id="glossary-information-security-policy" class="accordion-collapse collapse" data-bs-parent="#glossaryGovernance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.information_security_policy.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.information_security_policy.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2401,7 +2478,7 @@
                     <div id="glossary-risk-assessment" class="accordion-collapse collapse" data-bs-parent="#glossaryGovernance">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.risk_assessment.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.risk_assessment.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2552,7 +2629,7 @@
                     <div id="glossary-logging-monitoring" class="accordion-collapse collapse" data-bs-parent="#glossaryTechnical">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.logging_monitoring.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.logging_monitoring.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2611,7 +2688,7 @@
                     <div id="glossary-schutzbedarfsfeststellung" class="accordion-collapse collapse" data-bs-parent="#glossaryTechnical">
                         <div class="accordion-body">
                             <p>{{ 'help.glossary.term.schutzbedarfsfeststellung.definition'|trans({}, 'help') }}</p>
-                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-arrow-left-right', class: 'mb-0' } } %}
+                            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'util-arrow-left', class: 'mb-0' } } %}
                                 {% block alert_body %}<strong>{{ 'help.glossary.analogy_label'|trans({}, 'help') }}</strong> {{ 'help.glossary.term.schutzbedarfsfeststellung.analogy'|trans({}, 'help') }}{% endblock %}
                             {% endembed %}
                         </div>
@@ -2642,7 +2719,7 @@
     </div>
 
     {# Tip Box #}
-    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'success', icon: 'bi-check-circle-fill', class: 'mb-4' } } %}
+    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'success', icon: 'status-ok', class: 'mb-4' } } %}
         {% block alert_body %}<div class="d-flex align-items-start"> <i class="fa-icon fa-icon--ui-check me-3 fs-4" aria-hidden="true"></i> <div> <strong>{{ 'help.glossary.tip_title'|trans({}, 'help') }}</strong> <p class="mb-0 mt-1">{{ 'help.glossary.tip_text'|trans({}, 'help') }}</p> </div> </div>{% endblock %}
     {% endembed %}
 </div>

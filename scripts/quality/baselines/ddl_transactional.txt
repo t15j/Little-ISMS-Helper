@@ -1,0 +1,2 @@
+# check_ddl_transactional.py baseline
+# Format: <relative-path>:<line>

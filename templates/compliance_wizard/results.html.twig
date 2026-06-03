@@ -1,32 +1,59 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% trans_default_domain 'wizard' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
-
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_status_pill.html.twig' as pill %}
 {% block title %}{{ 'wizard.results'|trans({}, 'wizard') }} - {{ result.framework_name }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid py-4">
-    {# Breadcrumb #}
-    <nav aria-label="breadcrumb" class="mb-4">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item">
-                <a href="{{ path('app_compliance_wizard_index') }}">{{ 'wizard.title'|trans({}, 'wizard') }}</a>
-            </li>
-            <li class="breadcrumb-item">
-                <a href="{{ path('app_compliance_wizard_start', {wizard: wizard}) }}">{{ result.framework_name }}</a>
-            </li>
-            <li class="breadcrumb-item active" aria-current="page">{{ 'wizard.results'|trans({}, 'wizard') }}</li>
-        </ol>
-    </nav>
+    {# Aurora Breadcrumb #}
+    {% include '_components/_breadcrumb.html.twig' with {
+        breadcrumbs: [
+            { label: 'wizard.title'|trans({}, 'wizard'), url: path('app_compliance_wizard_index') },
+            { label: result.framework_name, url: path('app_compliance_wizard_start', {wizard: wizard}) },
+            { label: 'wizard.results'|trans({}, 'wizard') }
+        ]
+    } %}
 
-    {# Header with Score #}
+    {# Aurora Page Header #}
+    {{ _fa_page_header.render({
+        title: result.framework_name,
+        subtitle: ('wizard.assessed_at'|trans({}, 'wizard')) ~ ': ' ~ (result.assessed_at|date('d.m.Y H:i')),
+        badge: { icon: 'nav-clipboard-check', label: ('wizard.results'|trans({}, 'wizard')) ~ ' · ' ~ result.overall_score ~ '%' },
+        actions: [
+            { label: 'wizard.history.title'|trans({}, 'wizard'), href: path('app_compliance_wizard_history', {wizard: wizard}), variant: 'ghost', icon: 'nav-clock-history' },
+            { label: 'wizard.export_pdf'|trans({}, 'wizard'), href: path('app_compliance_wizard_export_pdf', {wizard: wizard}), variant: 'primary', icon: 'nav-file-pdf' }
+        ]
+    }) }}
+{% set _global_hints = alva_hints('compliance_wizard_results') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
+
+    {# V3 B5 / EF-2: Snapshot CTA #}
+    <div class="d-flex justify-content-end mb-3">
+        <form method="post" action="{{ path('app_compliance_wizard_snapshot', {wizard: wizard}) }}" class="d-inline">
+            <input type="hidden" name="_token" value="{{ csrf_token('wizard_snapshot_' ~ wizard) }}">
+            <button type="submit" class="fa-cyber-btn fa-cyber-btn--info">
+                <i class="fa-icon fa-icon--ui-camera" aria-hidden="true"></i>
+                {{ 'wizard.snapshot.cta'|trans({}, 'wizard') }}
+            </button>
+        </form>
+    </div>
+
+    {# Score summary card #}
     <div class="row mb-4">
         <div class="col-lg-8">
             {% embed '_components/_card.html.twig' with { 'class': 'border-0 shadow-sm' } %}
                 {% block card_body %}
+                    {% import '_components/_status_pill.html.twig' as pill %}
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h1 class="h3 mb-1">{{ result.framework_name }}</h1>
                             <p class="text-muted mb-0">
                                 {{ 'wizard.assessed_at'|trans({}, 'wizard') }}: {{ result.assessed_at|date('d.m.Y H:i') }}
                             </p>
@@ -38,13 +65,8 @@
                                 {% else %}text-danger{% endif %}">
                                 {{ result.overall_score }}%
                             </div>
-                            <span class="badge
-                                {% if result.status == 'compliant' %}bg-success
-                                {% elseif result.status == 'partial' %}bg-warning-subtle text-warning
-                                {% elseif result.status == 'in_progress' %}bg-info
-                                {% else %}bg-danger{% endif %}">
-                                {{ ('wizard.status.' ~ result.status)|trans({}, 'wizard') }}
-                            </span>
+                            {% set _status_tone = result.status == 'compliant' ? 'success' : (result.status == 'partial' ? 'warning' : (result.status == 'in_progress' ? 'primary' : 'danger')) %}
+                            {{ pill.render(('wizard.status.' ~ result.status)|trans({}, 'wizard'), _status_tone) }}
                         </div>
                     </div>
                 {% endblock %}
@@ -58,6 +80,7 @@
                             <a href="{{ path('app_compliance_wizard_export_pdf', {wizard: wizard}) }}" class="fa-cyber-btn fa-cyber-btn--primary">
                                 <i class="fa-icon fa-icon--nav-file-pdf me-2" aria-hidden="true"></i>{{ 'wizard.export_pdf'|trans({}, 'wizard') }}
                             </a>
+                            {% include '_components/_fa_pdf_locale_switch.html.twig' with {route: 'app_compliance_wizard_export_pdf', route_params: {wizard: wizard}} only %}
                             <a href="{{ path('app_compliance_wizard_start', {wizard: wizard}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
                                 <i class="fa-icon fa-icon--ui-refresh me-2" aria-hidden="true"></i>{{ 'wizard.run_again'|trans({}, 'wizard') }}
                             </a>
@@ -68,9 +91,39 @@
         </div>
     </div>
 
+    {# Catalogue-Coverage KPI #}
+    {% if result.catalogue_coverage is defined and result.catalogue_coverage.total > 0 %}
+    <div class="row mb-4">
+        <div class="col-12">
+            {% embed '_components/_card.html.twig' with { 'class': 'border-0 shadow-sm' } %}
+                {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div>
+                            <h2 class="h6 text-muted mb-1">
+                                <i class="fa-icon me-1 fa-icon--nav-list-check" aria-hidden="true"></i>
+                                {{ 'wizard.catalogue_coverage.title'|trans({}, 'wizard') }}
+                            </h2>
+                            <div class="h4 fw-bold mb-0">
+                                {{ result.catalogue_coverage.covered }} / {{ result.catalogue_coverage.total }}
+                                <span class="text-muted small fw-normal ms-2">
+                                    {{ 'wizard.catalogue_coverage.subtitle'|trans({'%framework%': result.framework_name}, 'wizard') }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="text-end" style="min-width: 200px;">
+                            {{ _fa_progress.render({ value: result.catalogue_coverage.percent, tone: result.catalogue_coverage.percent >= 80 ? 'success' : (result.catalogue_coverage.percent >= 50 ? 'warning' : 'danger'), showText: true }) }}
+                        </div>
+                    </div>
+                {% endblock %}
+            {% endembed %}
+        </div>
+    </div>
+    {% endif %}
+
     {# Critical Gaps Alert #}
     {% if result.critical_gap_count > 0 %}
-    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'danger', icon: 'bi-exclamation-octagon', class: 'mb-4' } } %}
+    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'danger', icon: 'status-critical', class: 'mb-4' } } %}
         {% block alert_body %}
             <div class="fa-alert__title">{{ 'wizard.critical_gaps_found'|trans({'%count%': result.critical_gap_count}, 'wizard') }}</div>
             <ul class="mb-0">
@@ -102,36 +155,20 @@
         <div class="col-md-6 col-lg-4 mb-4">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100 ' ~ (category.score >= 80 ? 'border-success' : (category.score >= 60 ? 'border-warning' : 'border-danger')) } %}
                 {% block card_header %}
-                    <div class="card-header d-flex justify-content-between align-items-center
-                        {% if category.score >= 80 %}bg-success bg-opacity-10
-                        {% elseif category.score >= 60 %}bg-warning bg-opacity-10
-                        {% else %}bg-danger bg-opacity-10{% endif %}">
+                    {% import '_components/_status_pill.html.twig' as pill %}
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center">
                             <i class="{{ category.icon|default('fa-icon--status-ok') }} me-2"></i>
                             <span class="fw-semibold">{{ category.name|trans({}, 'wizard') }}</span>
                         </div>
-                        <span class="badge
-                            {% if category.score >= 80 %}bg-success
-                            {% elseif category.score >= 60 %}bg-warning-subtle text-warning
-                            {% else %}bg-danger{% endif %}">
-                            {{ category.score }}%
-                        </span>
+                        {% set _cat_tone = category.score >= 80 ? 'success' : (category.score >= 60 ? 'warning' : 'danger') %}
+                        {{ pill.render(category.score ~ '%', _cat_tone) }}
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     {# Progress Bar #}
-                    <div class="progress progress-h-8 mb-3">
-                        <div class="progress-bar
-                            {% if category.score >= 80 %}bg-success
-                            {% elseif category.score >= 60 %}bg-warning
-                            {% else %}bg-danger{% endif %}"
-                            role="progressbar"
-                            style="width: {{ category.score }}%"
-                            aria-valuenow="{{ category.score }}"
-                            aria-valuemin="0"
-                            aria-valuemax="100">
-                        </div>
-                    </div>
+                    {{ _fa_progress.render({ value: category.score, tone: category.score >= 80 ? 'success' : (category.score >= 60 ? 'warning' : 'danger'), class: 'mb-3' }) }}
 
                     {# Items Summary #}
                     <div class="small mb-3">
@@ -194,7 +231,7 @@
 
     {# Missing Modules Info #}
     {% if result.missing_modules|length > 0 %}
-    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-lightbulb', class: 'mt-4' } } %}
+    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'ui-lightbulb', class: 'mt-4' } } %}
         {% block alert_body %}
             <div class="fa-alert__title">{{ 'wizard.improve_coverage'|trans({}, 'wizard') }}</div>
             <p class="mb-2">{{ 'wizard.activate_for_better'|trans({}, 'wizard') }}</p>
@@ -213,7 +250,7 @@
             <i class="fa-icon fa-icon--util-arrow-left me-1" aria-hidden="true"></i>{{ 'wizard.back_to_wizards'|trans({}, 'wizard') }}
         </a>
         <a href="{{ path('app_compliance_wizard_compare', {wizards: [wizard]}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-            <i class="bi bi-columns-gap me-1" aria-hidden="true"></i>{{ 'wizard.compare_with_others'|trans({}, 'wizard') }}
+            <i class="fa-icon me-1 fa-icon--nav-grid" aria-hidden="true"></i>{{ 'wizard.compare_with_others'|trans({}, 'wizard') }}
         </a>
     </div>
 </div>

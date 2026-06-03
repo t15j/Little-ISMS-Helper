@@ -1,62 +1,73 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ freeze.freezeName }} · {{ 'audit_freeze.title'|trans({}, 'audit_freeze') }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid py-4">
+    {# M-4 — module-gating: Audit Freeze (depends on audits module) #}
+    {% if not is_module_active('audits') %}
+        {{ _fa_alert.render({
+            variant: 'info',
+            icon: 'nav-shield-alert',
+            body: 'common.module_not_active'|trans({'%module%': 'Audits'}, 'messages')
+        }) }}
+    {% else %}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'audit_freeze.title'|trans({}, 'audit_freeze'), path: 'app_audit_freeze_index' },
+            { label: 'audit_freeze.title'|trans({}, 'audit_freeze'), url: path('app_audit_freeze_index') },
             { label: freeze.freezeName }
         ]
     } %}
 
-    <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
-        <div>
-            <h1 class="h2 mb-1">
-                <i class="bi bi-snow text-primary" aria-hidden="true"></i>
-                {{ freeze.freezeName }}
-            </h1>
-            <p class="text-muted mb-0">
-                {{ 'audit_freeze.column.stichtag'|trans({}, 'audit_freeze') }}:
-                <strong>{{ freeze.stichtag|date('Y-m-d') }}</strong>
-                · {{ ('audit_freeze.purpose.' ~ freeze.purpose)|trans({}, 'audit_freeze') }}
-            </p>
+    {% set _show_actions = [] %}
+    {% if freeze.pdfPath %}
+        {% set _show_actions = _show_actions|merge([{ label: 'audit_freeze.action.download_pdf'|trans({}, 'audit_freeze'), variant: 'danger', icon: 'nav-file-pdf', href: path('app_audit_freeze_download_pdf', {id: freeze.id}) }]) %}
+    {% endif %}
+    {% set _show_actions = _show_actions|merge([
+        { label: 'audit_freeze.action.verify'|trans({}, 'audit_freeze'), variant: 'ghost', icon: 'shield-check', href: path('app_audit_freeze_verify', {id: freeze.id}) }
+    ]) %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'ui-circle', label: freeze.stichtag|date('Y-m-d') },
+        title: freeze.freezeName,
+        subtitle: ('audit_freeze.purpose.' ~ freeze.purpose)|trans({}, 'audit_freeze'),
+        actions: _show_actions
+    }) }}
+
+    {# PDF locale-switch + POST-generate kept below header (cannot be expressed via _fa_page_header GET-only actions) #}
+    {% if freeze.pdfPath %}
+        <div class="d-flex justify-content-end mb-3">
+            {% include '_components/_fa_pdf_locale_switch.html.twig' with {route: 'app_audit_freeze_download_pdf', route_params: {id: freeze.id}} only %}
         </div>
-        <div class="d-flex gap-2">
-            {% if freeze.pdfPath %}
-                <a href="{{ path('app_audit_freeze_download_pdf', {id: freeze.id}) }}" class="fa-cyber-btn fa-cyber-btn--danger">
+    {% else %}
+        <div class="d-flex justify-content-end mb-3">
+            <form method="post" action="{{ path('app_audit_freeze_generate_pdf', {id: freeze.id}) }}" class="d-inline">
+                <input type="hidden" name="_token" value="{{ csrf_token('audit_freeze_generate_pdf_' ~ freeze.id) }}">
+                <button type="submit" class="fa-cyber-btn fa-cyber-btn--ghost">
                     <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i>
-                    {{ 'audit_freeze.action.download_pdf'|trans({}, 'audit_freeze') }}
-                </a>
-            {% else %}
-                <form method="post" action="{{ path('app_audit_freeze_generate_pdf', {id: freeze.id}) }}" class="d-inline">
-                    <input type="hidden" name="_token" value="{{ csrf_token('audit_freeze_generate_pdf_' ~ freeze.id) }}">
-                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--ghost">
-                        <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i>
-                        {{ 'audit_freeze.action.generate_pdf'|trans({}, 'audit_freeze') }}
-                    </button>
-                </form>
-            {% endif %}
-            <a href="{{ path('app_audit_freeze_verify', {id: freeze.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--compliance-shield" aria-hidden="true"></i>
-                {{ 'audit_freeze.action.verify'|trans({}, 'audit_freeze') }}
-            </a>
+                    {{ 'audit_freeze.action.generate_pdf'|trans({}, 'audit_freeze') }}
+                </button>
+            </form>
         </div>
-    </div>
+    {% endif %}
 
     {# Integrity badge #}
-    <div class="alert {{ verified ? 'alert-success' : 'alert-danger' }}" role="alert">
-        {% if verified %}
-            <i class="fa-icon fa-icon--compliance-shield" aria-hidden="true"></i>
-            <strong>{{ 'audit_freeze.integrity.verified'|trans({}, 'audit_freeze') }}</strong>
-            — {{ 'audit_freeze.integrity.verified_body'|trans({'%hash%': freeze.payloadSha256|slice(0, 16)}, 'audit_freeze') }}
-        {% else %}
-            <i class="fa-icon fa-icon--breach" aria-hidden="true"></i>
-            <strong>{{ 'audit_freeze.integrity.tampered'|trans({}, 'audit_freeze') }}</strong>
-            — {{ 'audit_freeze.integrity.tampered_body'|trans({}, 'audit_freeze') }}
-        {% endif %}
-    </div>
+    {% if verified %}
+        {{ _fa_alert.render({
+            variant: 'success',
+            icon: 'shield-check',
+            title: 'audit_freeze.integrity.verified'|trans({}, 'audit_freeze'),
+            body: 'audit_freeze.integrity.verified_body'|trans({'%hash%': freeze.payloadSha256|slice(0, 16)}, 'audit_freeze')
+        }) }}
+    {% else %}
+        {{ _fa_alert.render({
+            variant: 'danger',
+            icon: 'status-warning',
+            title: 'audit_freeze.integrity.tampered'|trans({}, 'audit_freeze'),
+            body: 'audit_freeze.integrity.tampered_body'|trans({}, 'audit_freeze')
+        }) }}
+    {% endif %}
 
     <div class="row">
         <div class="col-md-6">
@@ -107,5 +118,6 @@
             </div>
         </div>
     </div>
+    {% endif %} {# /M-4 audits module gate #}
 </div>
 {% endblock %}

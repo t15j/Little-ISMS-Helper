@@ -31,7 +31,7 @@
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" data-bs-toggle="tab" data-bs-target="#overlap-tab" type="button" role="tab">
-                <i class="bi bi-intersect me-1" aria-hidden="true"></i> {{ 'analytics.compliance.tabs.overlap'|trans({}, 'analytics') }}
+                <i class="fa-icon me-1 fa-icon--nav-process" aria-hidden="true"></i> {{ 'analytics.compliance.tabs.overlap'|trans({}, 'analytics') }}
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -101,49 +101,47 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th scope="col">{{ 'analytics.compliance.table.framework'|trans({}, 'analytics') }}</th>
-                                    <th scope="col" class="text-center">{{ 'analytics.compliance.table.total'|trans({}, 'analytics') }}</th>
-                                    <th scope="col" class="text-center">{{ 'analytics.compliance.table.compliant'|trans({}, 'analytics') }}</th>
-                                    <th scope="col" class="text-center">{{ 'analytics.compliance.table.partial'|trans({}, 'analytics') }}</th>
-                                    <th scope="col" class="text-center">{{ 'analytics.compliance.table.non_compliant'|trans({}, 'analytics') }}</th>
-                                    <th scope="col" class="text-center">{{ 'analytics.compliance.table.compliance'|trans({}, 'analytics') }}</th>
-                                    <th scope="col">{{ 'analytics.compliance.table.progress'|trans({}, 'analytics') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for framework in comparison.frameworks %}
-                                <tr>
-                                    <td><strong>{{ framework.name }}</strong></td>
-                                    <td class="text-center">{{ framework.applicable }}</td>
-                                    <td class="text-center text-success">{{ framework.fulfilled }}</td>
-                                    <td class="text-center text-warning">{{ framework.in_progress }}</td>
-                                    <td class="text-center text-danger">{{ framework.not_started }}</td>
-                                    <td class="text-center">
-                                        {% include '_components/_badge.html.twig' with {
-                                            variant: framework.compliance_percentage >= 80 ? 'success' : (framework.compliance_percentage >= 50 ? 'warning' : 'danger'),
-                                            content: framework.compliance_percentage ~ '%'
-                                        } %}
-                                    </td>
-                                    <td>
-                                        {% if framework.applicable > 0 %}
-                                        <div class="progress progress-h-20">
-                                            <div class="progress-bar bg-success" style="width: {{ (framework.fulfilled / framework.applicable * 100)|round }}%"></div>
-                                            <div class="progress-bar bg-warning" style="width: {{ (framework.in_progress / framework.applicable * 100)|round }}%"></div>
-                                            <div class="progress-bar bg-danger" style="width: {{ (framework.not_started / framework.applicable * 100)|round }}%"></div>
-                                        </div>
-                                        {% else %}
-                                        <span class="text-muted">-</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                    {% embed '_components/_fa_table.html.twig' %}
+                        {% block table_head %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">{{ 'analytics.compliance.table.framework'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">{{ 'analytics.compliance.table.total'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">{{ 'analytics.compliance.table.compliant'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">{{ 'analytics.compliance.table.partial'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">{{ 'analytics.compliance.table.non_compliant'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">{{ 'analytics.compliance.table.compliance'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'analytics.compliance.table.progress'|trans({}, 'analytics') }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
+                            {% for framework in comparison.frameworks %}
+                            <tr class="fa-table__row">
+                                <td class="fa-table__cell"><strong>{{ framework.name }}</strong></td>
+                                <td class="fa-table__cell fa-table__cell--center">{{ framework.applicable }}</td>
+                                <td class="fa-table__cell fa-table__cell--center text-success">{{ framework.fulfilled }}</td>
+                                <td class="fa-table__cell fa-table__cell--center text-warning">{{ framework.in_progress }}</td>
+                                <td class="fa-table__cell fa-table__cell--center text-danger">{{ framework.not_started }}</td>
+                                <td class="fa-table__cell fa-table__cell--center">
+                                    {% include '_components/_badge.html.twig' with {
+                                        variant: framework.compliance_percentage >= 80 ? 'success' : (framework.compliance_percentage >= 50 ? 'warning' : 'danger'),
+                                        content: framework.compliance_percentage ~ '%'
+                                    } %}
+                                </td>
+                                <td class="fa-table__cell">
+                                    {% if framework.applicable > 0 %}
+                                    <div class="progress progress-h-20">
+                                        <div class="progress-bar bg-success" style="width: {{ (framework.fulfilled / framework.applicable * 100)|round }}%"></div>
+                                        <div class="progress-bar bg-warning" style="width: {{ (framework.in_progress / framework.applicable * 100)|round }}%"></div>
+                                        <div class="progress-bar bg-danger" style="width: {{ (framework.not_started / framework.applicable * 100)|round }}%"></div>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% endblock %}
+                    {% endembed %}
                 {% endblock %}
             {% endembed %}
         </div>
@@ -160,12 +158,12 @@
                         {% endblock %}
                         {% block card_body %}
                             <div class="text-center mb-4">
-                                <h2 class="text-primary">{{ overlap.frameworks|length }}</h2>
+                                <h2 class="" style="color: var(--primary-strong, var(--primary)); font-weight: 700;">{{ overlap.frameworks|length }}</h2>
                                 <p class="text-muted">{{ 'analytics.compliance.overlap.unique_controls'|trans({}, 'analytics') }}</p>
                             </div>
                             <div class="row text-center">
                                 <div class="col-6">
-                                    <h4 class="text-success">{{ overlap.overlaps|length }}</h4>
+                                    <h4 class="" style="color: var(--success-strong, var(--success)); font-weight: 700;">{{ overlap.overlaps|length }}</h4>
                                     <p class="text-muted small">{{ 'analytics.compliance.overlap.shared_controls'|trans({}, 'analytics') }}</p>
                                 </div>
                                 <div class="col-6">
@@ -173,7 +171,7 @@
                                     {% for o in overlap.overlaps %}
                                         {% set total_overlap = total_overlap + o.overlap_percentage %}
                                     {% endfor %}
-                                    <h4 class="text-info">{{ overlap.overlaps|length > 0 ? (total_overlap / overlap.overlaps|length)|round : 0 }}%</h4>
+                                    <h4 class="" style="color: var(--info-strong, var(--info)); font-weight: 700;">{{ overlap.overlaps|length > 0 ? (total_overlap / overlap.overlaps|length)|round : 0 }}%</h4>
                                     <p class="text-muted small">{{ 'analytics.compliance.overlap.overlap_rate'|trans({}, 'analytics') }}</p>
                                 </div>
                             </div>
@@ -212,33 +210,31 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Framework 1</th>
-                                    <th scope="col">Framework 2</th>
-                                    <th scope="col" class="text-center">{{ 'analytics.compliance.overlap.shared_controls'|trans({}, 'analytics') }}</th>
-                                    <th scope="col" class="text-center">{{ 'analytics.compliance.overlap.overlap_rate'|trans({}, 'analytics') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for o in overlap.overlaps %}
-                                <tr>
-                                    <td>{{ o.framework1_name }}</td>
-                                    <td>{{ o.framework2_name }}</td>
-                                    <td class="text-center">{{ o.shared_controls }}</td>
-                                    <td class="text-center">
-                                        {% include '_components/_badge.html.twig' with {
-                                            variant: o.overlap_percentage > 50 ? 'success' : (o.overlap_percentage > 20 ? 'warning' : 'secondary'),
-                                            content: o.overlap_percentage ~ '%'
-                                        } %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                    {% embed '_components/_fa_table.html.twig' %}
+                        {% block table_head %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">Framework 1</th>
+                                <th scope="col" class="fa-table__th">Framework 2</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">{{ 'analytics.compliance.overlap.shared_controls'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">{{ 'analytics.compliance.overlap.overlap_rate'|trans({}, 'analytics') }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
+                            {% for o in overlap.overlaps %}
+                            <tr class="fa-table__row">
+                                <td class="fa-table__cell">{{ o.framework1_name }}</td>
+                                <td class="fa-table__cell">{{ o.framework2_name }}</td>
+                                <td class="fa-table__cell fa-table__cell--center">{{ o.shared_controls }}</td>
+                                <td class="fa-table__cell fa-table__cell--center">
+                                    {% include '_components/_badge.html.twig' with {
+                                        variant: o.overlap_percentage > 50 ? 'success' : (o.overlap_percentage > 20 ? 'warning' : 'secondary'),
+                                        content: o.overlap_percentage ~ '%'
+                                    } %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% endblock %}
+                    {% endembed %}
                 {% endblock %}
             {% endembed %}
             {% endif %}
@@ -255,88 +251,79 @@
                 {% endblock %}
                 {% block card_body %}
                     {% if roadmap.roadmap|length > 0 %}
-                    <div class="row mb-4">
+                    {# Aurora KPI-Tiles statt Bootstrap bg-* (Kontrast garantiert, CLAUDE Pitfall #11). #}
+                    {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
+                    <div class="row g-3 mb-4">
                         <div class="col-md-4">
-                            {% embed '_components/_card.html.twig' with { 'class': 'bg-success bg-opacity-10 border-success' } %}
-                                {% block card_body %}
-                                    <div class="text-center">
-                                        <h3 class="text-success">{{ roadmap.summary.frameworks_compliant }}</h3>
-                                        <p class="mb-0">{{ 'analytics.compliance.table.compliant'|trans({}, 'analytics') }}</p>
-                                    </div>
-                                {% endblock %}
-                            {% endembed %}
+                            {{ _fa_feature_card.render({
+                                variant: 'success',
+                                value: roadmap.summary.frameworks_compliant,
+                                label: 'analytics.compliance.table.compliant'|trans({}, 'analytics'),
+                            }) }}
                         </div>
                         <div class="col-md-4">
-                            {% embed '_components/_card.html.twig' with { 'class': 'bg-warning bg-opacity-10 border-warning' } %}
-                                {% block card_body %}
-                                    <div class="text-center">
-                                        <h3 class="text-warning">{{ roadmap.summary.frameworks_in_progress }}</h3>
-                                        <p class="mb-0">{{ 'analytics.compliance.table.partial'|trans({}, 'analytics') }}</p>
-                                    </div>
-                                {% endblock %}
-                            {% endembed %}
+                            {{ _fa_feature_card.render({
+                                variant: 'warning',
+                                value: roadmap.summary.frameworks_in_progress,
+                                label: 'analytics.compliance.table.partial'|trans({}, 'analytics'),
+                            }) }}
                         </div>
                         <div class="col-md-4">
-                            {% embed '_components/_card.html.twig' with { 'class': 'bg-secondary bg-opacity-10 border-secondary' } %}
-                                {% block card_body %}
-                                    <div class="text-center">
-                                        <h3 class="text-secondary">{{ roadmap.summary.frameworks_not_started }}</h3>
-                                        <p class="mb-0">{{ 'analytics.compliance.table.non_compliant'|trans({}, 'analytics') }}</p>
-                                    </div>
-                                {% endblock %}
-                            {% endembed %}
+                            {{ _fa_feature_card.render({
+                                variant: 'danger',
+                                value: roadmap.summary.frameworks_not_started,
+                                label: 'analytics.compliance.table.non_compliant'|trans({}, 'analytics'),
+                            }) }}
                         </div>
                     </div>
 
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th scope="col">{{ 'analytics.compliance.table.framework'|trans({}, 'analytics') }}</th>
-                                    <th scope="col" class="text-center">{{ 'analytics.compliance.table.compliance'|trans({}, 'analytics') }}</th>
-                                    <th scope="col" class="text-center">Gaps</th>
-                                    <th scope="col" class="text-center">Est. Weeks</th>
-                                    <th scope="col">Status</th>
-                                    <th scope="col">{{ 'analytics.compliance.table.progress'|trans({}, 'analytics') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for item in roadmap.roadmap %}
-                                <tr>
-                                    <td>
-                                        <strong>{{ item.framework }}</strong>
-                                        {% if item.mandatory %}
-                                        {% include '_components/_badge.html.twig' with { variant: 'danger', class: 'ms-1', content: 'Mandatory' } %}
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-center">
-                                        {% include '_components/_badge.html.twig' with {
-                                            variant: item.current_compliance >= 80 ? 'success' : (item.current_compliance >= 50 ? 'warning' : 'danger'),
-                                            content: item.current_compliance ~ '%'
-                                        } %}
-                                    </td>
-                                    <td class="text-center">{{ item.gaps_remaining }}</td>
-                                    <td class="text-center">{{ item.estimated_weeks }}</td>
-                                    <td>
-                                        {% set status_variant = item.status == 'completed' ? 'success' : (item.status == 'on_track' ? 'info' : (item.status in ['in_progress', 'at_risk'] ? 'warning' : (item.status == 'critical' ? 'danger' : 'secondary'))) %}
-                                        {% include '_components/_badge.html.twig' with { variant: status_variant, content: item.status|replace({'_': ' '})|title } %}
-                                    </td>
-                                    <td>
-                                        <div class="progress progress-h-20">
-                                            <div class="progress-bar
-                                                {% if item.current_compliance >= 80 %}bg-success
-                                                {% elseif item.current_compliance >= 50 %}bg-warning
-                                                {% else %}bg-danger{% endif %}
-                                            " style="width: {{ item.current_compliance }}%">
-                                                {{ item.current_compliance }}%
-                                            </div>
+                    {% embed '_components/_fa_table.html.twig' %}
+                        {% block table_head %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">{{ 'analytics.compliance.table.framework'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">{{ 'analytics.compliance.table.compliance'|trans({}, 'analytics') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">Gaps</th>
+                                <th scope="col" class="fa-table__th fa-table__th--center">Est. Weeks</th>
+                                <th scope="col" class="fa-table__th">Status</th>
+                                <th scope="col" class="fa-table__th">{{ 'analytics.compliance.table.progress'|trans({}, 'analytics') }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
+                            {% for item in roadmap.roadmap %}
+                            <tr class="fa-table__row">
+                                <td class="fa-table__cell">
+                                    <strong>{{ item.framework }}</strong>
+                                    {% if item.mandatory %}
+                                    {% include '_components/_badge.html.twig' with { variant: 'danger', class: 'ms-1', content: 'Mandatory' } %}
+                                    {% endif %}
+                                </td>
+                                <td class="fa-table__cell fa-table__cell--center">
+                                    {% include '_components/_badge.html.twig' with {
+                                        variant: item.current_compliance >= 80 ? 'success' : (item.current_compliance >= 50 ? 'warning' : 'danger'),
+                                        content: item.current_compliance ~ '%'
+                                    } %}
+                                </td>
+                                <td class="fa-table__cell fa-table__cell--center">{{ item.gaps_remaining }}</td>
+                                <td class="fa-table__cell fa-table__cell--center">{{ item.estimated_weeks }}</td>
+                                <td class="fa-table__cell">
+                                    {% set status_variant = item.status == 'completed' ? 'success' : (item.status == 'on_track' ? 'info' : (item.status in ['in_progress', 'at_risk'] ? 'warning' : (item.status == 'critical' ? 'danger' : 'secondary'))) %}
+                                    {% include '_components/_badge.html.twig' with { variant: status_variant, content: item.status|replace({'_': ' '})|title } %}
+                                </td>
+                                <td class="fa-table__cell">
+                                    <div class="progress progress-h-20">
+                                        <div class="progress-bar
+                                            {% if item.current_compliance >= 80 %}bg-success
+                                            {% elseif item.current_compliance >= 50 %}bg-warning
+                                            {% else %}bg-danger{% endif %}
+                                        " style="width: {{ item.current_compliance }}%">
+                                            {{ item.current_compliance }}%
                                         </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% endblock %}
+                    {% endembed %}
                     {% else %}
                     <div class="text-center py-5">
                         <i class="fa-icon fa-icon--status-ok display-1" aria-hidden="true"></i>
@@ -353,9 +340,21 @@
 
 {% block javascripts %}
     {{ parent() }}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
         document.addEventListener('turbo:load', function() {
+            // Resolve Aurora design-tokens to actual color values for Chart.js.
+            // Chart.js does NOT resolve CSS custom properties — it needs literal
+            // color strings (hex/rgb/rgba). Read tokens at chart-init.
+            const _tokens = getComputedStyle(document.documentElement);
+            const T = (name) => _tokens.getPropertyValue(name).trim();
+            const COLORS = {
+                success: T('--success'),
+                warning: T('--warning'),
+                danger:  T('--danger'),
+                primary: T('--primary'),
+                fg3:     T('--fg-3'),
+            };
+
             // Framework Comparison Chart
             const comparisonCtx = document.getElementById('frameworkComparisonChart');
             if (comparisonCtx) {
@@ -368,17 +367,17 @@
                             {
                                 label: '{{ 'analytics.compliance.chart.compliant'|trans({}, 'analytics') }}',
                                 data: comparisonData.map(f => f.fulfilled),
-                                backgroundColor: 'var(--success)'
+                                backgroundColor: COLORS.success
                             },
                             {
                                 label: '{{ 'analytics.compliance.chart.partial'|trans({}, 'analytics') }}',
                                 data: comparisonData.map(f => f.in_progress),
-                                backgroundColor: 'var(--warning)'
+                                backgroundColor: COLORS.warning
                             },
                             {
                                 label: '{{ 'analytics.compliance.chart.non_compliant'|trans({}, 'analytics') }}',
                                 data: comparisonData.map(f => f.not_started),
-                                backgroundColor: 'var(--danger)'
+                                backgroundColor: COLORS.danger
                             }
                         ]
                     },
@@ -405,7 +404,7 @@
                         labels: ['{{ 'analytics.compliance.chart.shared'|trans({}, 'analytics') }}', '{{ 'analytics.compliance.chart.unique'|trans({}, 'analytics') }}'],
                         datasets: [{
                             data: [totalShared, Math.max(0, totalFrameworks - totalShared)],
-                            backgroundColor: ['var(--success)', 'var(--fg-3)']
+                            backgroundColor: [COLORS.success, COLORS.fg3]
                         }]
                     },
                     options: {

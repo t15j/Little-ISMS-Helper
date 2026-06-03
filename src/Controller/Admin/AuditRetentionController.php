@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Controller\Admin;
 
+use App\Entity\User;
 use App\Repository\SystemSettingsRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\AuditLogger;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
@@ -17,9 +20,15 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  *
  * Globales Setting (kein Tenant-Override, weil ISO 27001 Clause 9.1 + NIS2
  * Art. 21.2 + DSGVO Art. 5.1(e) organisations-einheitlich gelten).
+ *
+ * Phase 4c role-scope migration: class-level guard switched from the
+ * unknown legacy `ADMIN_EDIT` attribute (flagged by the Phase-7 baseline
+ * as `wrong:ADMIN_EDIT`) to `ADMIN_OWN_TENANT`. Tenant-admins manage
+ * retention for their org, SUPER_ADMIN may operate on any tenant context.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/admin/audit-log/retention')]
-#[IsGranted('ADMIN_EDIT')]
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
 class AuditRetentionController extends AbstractController
 {
     private const int MIN_DAYS = 365;   // NIS2 Art. 21.2
@@ -33,8 +42,10 @@ class AuditRetentionController extends AbstractController
     }
 
     #[Route('', name: 'app_admin_audit_retention', methods: ['GET', 'POST'])]
-    public function edit(Request $request): Response
-    {
+    public function edit(
+        Request $request,
+        #[CurrentUser] User $user,
+    ): Response {
         $current = (int) ($this->systemSettingsRepository->getSetting('audit', 'retention_days', self::DEFAULT_DAYS));
 
         if ($request->isMethod('POST')) {
@@ -55,8 +66,7 @@ class AuditRetentionController extends AbstractController
                 return $this->redirectToRoute('app_admin_audit_retention');
             }
 
-            $user = $this->getUser();
-            $updatedBy = method_exists($user, 'getUserIdentifier') ? $user->getUserIdentifier() : null;
+            $updatedBy = $user->getUserIdentifier();
 
             $this->systemSettingsRepository->setSetting(
                 category: 'audit',

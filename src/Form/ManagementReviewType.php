@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\Document;
 use App\Entity\ManagementReview;
 use App\Entity\Person;
 use App\Entity\User;
+use App\Form\SectionMapInterface;
+use App\Form\Trait\ModuleAwareFormTrait;
+use App\Form\Type\JsonStructuredType;
+use App\Service\ModuleConfigurationService;
+use App\Service\TenantContext;
+use Doctrine\ORM\EntityRepository;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
@@ -19,15 +27,35 @@ use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class ManagementReviewType extends AbstractType
+final class ManagementReviewType extends AbstractType implements SectionMapInterface
 {
+    use ModuleAwareFormTrait;
+
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleConfiguration,
+        private readonly TenantContext $tenantContext,
+    ) {
+    }
+
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview' => ['title', 'reviewDate', 'status', 'reviewedBy', 'reviewedByPerson', 'reviewedByDeputyPersons', 'participants', 'personParticipants'],
+            'inputs' => ['changesRelevantToISMS', 'feedbackFromInterestedParties', 'auditResults', 'performanceEvaluation', 'nonconformitiesReview', 'incidentsReview', 'risksReview', 'objectivesReview', 'contextChanges', 'previousReviewActions'],
+            'followup' => ['nonConformitiesStatus', 'correctiveActionsStatus', 'improvementOpportunities'],
+            'outputs' => ['opportunitiesForImprovement', 'decisions', 'actionItems', 'resourceNeeds', 'summary', 'actionItemsWithDeadlines'],
+            'audit_metadata' => ['topManagementAttended', 'nextReviewDate', 'meetingMinutesDocument', 'riskTreatmentEffectiveness', 'policyReviewOutcome'],
+            'compliance' => ['frameworkComplianceStatus'],
+        ];
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
+        $currentTenant = $this->tenantContext->getCurrentTenant();
         $builder
             ->add('title', TextType::class, [
                 'label' => 'management_review.field.title',
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'management_review.placeholder.title',
                 ],
                 'constraints' => [
@@ -37,7 +65,6 @@ class ManagementReviewType extends AbstractType
             ->add('reviewDate', DateType::class, [
                 'label' => 'management_review.field.review_date',
                 'widget' => 'single_text',
-                'attr' => ['class' => 'form-control'],
                 'constraints' => [
                     new NotBlank(),
                 ],
@@ -48,7 +75,6 @@ class ManagementReviewType extends AbstractType
                 'choice_label' => fn(User $user): string => $user->getFirstName() . ' ' . $user->getLastName(),
                 'placeholder' => 'common.please_select',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'management_review.help.reviewed_by',
             ])
             ->add('reviewedByPerson', EntityType::class, [
@@ -57,7 +83,6 @@ class ManagementReviewType extends AbstractType
                 'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
                 'placeholder' => 'management_review.placeholder.reviewed_by_person',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'management_review.help.reviewed_by_person',
             ])
             ->add('reviewedByDeputyPersons', EntityType::class, [
@@ -68,7 +93,6 @@ class ManagementReviewType extends AbstractType
                 'multiple' => true,
                 'expanded' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'management_review.help.reviewed_by_deputy_persons',
@@ -82,25 +106,46 @@ class ManagementReviewType extends AbstractType
                 'by_reference' => false,
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'size' => 6,
                 ],
             ])
+            ->add('personParticipants', EntityType::class, [
+                'label' => 'management_review.field.person_participants',
+                'help' => 'management_review.help.person_participants',
+                'class' => Person::class,
+                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
+                'multiple' => true,
+                'expanded' => false,
+                // ManyToMany — by_reference=false uses addPersonParticipant/removePersonParticipant.
+                'by_reference' => false,
+                'required' => false,
+                'attr' => [
+                    'data-controller' => 'tom-select',
+                ],
+            ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix, Sprint Y.5) ──
+            // Owned by `management_review_lifecycle`. ISO 27001 Cl. 9.3 —
+            // 4-eyes auf `complete` (Aufzeichnungs-Integrität). Transitions
+            // via LifecycleService::transition() only.
             ->add('status', ChoiceType::class, [
                 'label' => 'management_review.field.status',
+                'help' => 'management_review.help.status_readonly',
                 'choices' => [
                     'management_review.status.planned' => 'planned',
                     'management_review.status.completed' => 'completed',
                     'management_review.status.follow_up_required' => 'follow_up_required',
                 ],
-                'attr' => ['class' => 'form-select'],
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
                 'choice_translation_domain' => 'management_review',
             ])
             ->add('performanceEvaluation', TextareaType::class, [
                 'label' => 'management_review.field.performance_evaluation',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                 ],
                 'help' => 'management_review.help.performance_evaluation',
@@ -109,7 +154,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.changes_relevant_to_isms',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.changes_relevant_to_isms',
@@ -118,7 +162,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.feedback_from_interested_parties',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.feedback_from_interested_parties',
@@ -127,7 +170,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.audit_results',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.audit_results',
@@ -136,7 +178,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.nonconformities_review',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.nonconformities_review',
@@ -145,7 +186,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.incidents_review',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.incidents_review',
@@ -154,7 +194,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.risks_review',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.risks_review',
@@ -163,7 +202,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.objectives_review',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.objectives_review',
@@ -172,7 +210,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.context_changes',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.context_changes',
@@ -181,7 +218,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.previous_review_actions',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.previous_review_actions',
@@ -190,7 +226,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.non_conformities_status',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.non_conformities_status',
@@ -199,7 +234,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.corrective_actions_status',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.corrective_actions_status',
@@ -208,7 +242,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.improvement_opportunities',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                 ],
                 'help' => 'management_review.help.improvement_opportunities',
@@ -217,7 +250,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.opportunities_for_improvement',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                 ],
                 'help' => 'management_review.help.opportunities_for_improvement',
@@ -226,7 +258,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.decisions',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 5,
                 ],
                 'help' => 'management_review.help.decisions',
@@ -235,7 +266,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.action_items',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 5,
                 ],
                 'help' => 'management_review.help.action_items',
@@ -244,7 +274,6 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.resource_needs',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                 ],
                 'help' => 'management_review.help.resource_needs',
@@ -253,11 +282,83 @@ class ManagementReviewType extends AbstractType
                 'label' => 'management_review.field.summary',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                 ],
                 'help' => 'management_review.help.summary',
+            ])
+            // ── ISO 27001 §9.3 norm fields (T31.2.5) ──────────────────────
+            ->add('topManagementAttended', CheckboxType::class, [
+                'label' => 'management_review.field.top_management_attended',
+                'required' => false,
+                'help' => 'management_review.help.top_management_attended',
+            ])
+            ->add('nextReviewDate', DateType::class, [
+                'label' => 'management_review.field.next_review_date',
+                'widget' => 'single_text',
+                'required' => false,
+                'input' => 'datetime_immutable',
+                'help' => 'management_review.help.next_review_date',
+            ])
+            ->add('meetingMinutesDocument', EntityType::class, [
+                'label' => 'management_review.field.meeting_minutes_document',
+                'class' => Document::class,
+                'choice_label' => fn(Document $d): string => $d->getOriginalFilename() ?? $d->getFilename() ?? (string) $d->getId(),
+                'placeholder' => 'management_review.placeholder.meeting_minutes_document',
+                'required' => false,
+                'help' => 'management_review.help.meeting_minutes_document',
+                'query_builder' => function (EntityRepository $er) use ($currentTenant): \Doctrine\ORM\QueryBuilder {
+                    $qb = $er->createQueryBuilder('d')
+                        ->where('d.status != :deleted')
+                        ->setParameter('deleted', 'deleted')
+                        ->orderBy('d.originalFilename', 'ASC');
+                    if ($currentTenant !== null) {
+                        $qb->andWhere('d.tenant = :tenant')
+                           ->setParameter('tenant', $currentTenant);
+                    }
+                    return $qb;
+                },
+            ])
+            ->add('riskTreatmentEffectiveness', TextareaType::class, [
+                'label' => 'management_review.field.risk_treatment_effectiveness',
+                'required' => false,
+                'attr' => [
+                    'rows' => 4,
+                    'placeholder' => 'management_review.placeholder.risk_treatment_effectiveness',
+                ],
+                'help' => 'management_review.help.risk_treatment_effectiveness',
+            ])
+            ->add('policyReviewOutcome', TextareaType::class, [
+                'label' => 'management_review.field.policy_review_outcome',
+                'required' => false,
+                'attr' => [
+                    'rows' => 3,
+                    'placeholder' => 'management_review.placeholder.policy_review_outcome',
+                ],
+                'help' => 'management_review.help.policy_review_outcome',
+            ])
+            // C-06: JsonStructuredType applies JsonArrayTransformer automatically.
+            ->add('actionItemsWithDeadlines', JsonStructuredType::class, [
+                'label' => 'management_review.field.action_items_with_deadlines',
+                'required' => false,
+                'attr' => [
+                    'rows' => 6,
+                    'placeholder' => 'management_review.placeholder.action_items_with_deadlines',
+                ],
+                'help' => 'management_review.help.action_items_with_deadlines',
             ]);
+
+        if ($this->isModuleActive('compliance')) {
+            // C-06: JsonStructuredType applies JsonArrayTransformer automatically.
+            $builder->add('frameworkComplianceStatus', JsonStructuredType::class, [
+                'label' => 'management_review.field.framework_compliance_status',
+                'required' => false,
+                'attr' => [
+                    'rows' => 4,
+                    'placeholder' => 'management_review.placeholder.framework_compliance_status',
+                ],
+                'help' => 'management_review.help.framework_compliance_status',
+            ]);
+        }
     }
 
     public function configureOptions(OptionsResolver $resolver): void

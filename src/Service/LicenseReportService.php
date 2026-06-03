@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use RuntimeException;
 use Symfony\Component\Process\Process;
 
-class LicenseReportService
+final class LicenseReportService
 {
     public function __construct(private readonly string $projectDir)
     {
@@ -21,7 +20,7 @@ class LicenseReportService
         $scriptPath = $this->projectDir . '/license-report.sh';
 
         if (!file_exists($scriptPath)) {
-            throw new RuntimeException('License report script not found at: ' . $scriptPath);
+            throw new \App\Exception\Io\IoException('License report script not found at: ' . $scriptPath);
         }
 
         // Execute the shell script

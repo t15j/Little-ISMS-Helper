@@ -7,6 +7,7 @@ namespace App\Entity;
 use DateTimeImmutable;
 use DateTimeInterface;
 use App\Entity\Person;
+use App\Enum\DataSubjectRequestStatus;
 use App\Repository\DataSubjectRequestRepository;
 use App\Service\OwnerResolver;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -14,6 +15,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * GDPR Data Subject Request (Betroffenenantrag)
@@ -36,6 +38,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Index(name: 'idx_dsr_request_type', columns: ['request_type'])]
 #[ORM\Index(name: 'idx_dsr_deadline', columns: ['deadline_at'])]
 #[ORM\HasLifecycleCallbacks]
+#[Assert\Callback([self::class, 'validateResponseTracking'])]
 class DataSubjectRequest
 {
     public const array REQUEST_TYPES = [
@@ -104,6 +107,10 @@ class DataSubjectRequest
     #[ORM\Column(length: 20, options: ['default' => 'received'])]
     #[Assert\Choice(choices: self::STATUSES)]
     private string $status = 'received';
+
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /**
      * Name of the data subject making the request
@@ -189,22 +196,42 @@ class DataSubjectRequest
     private ?string $responseDescription = null;
 
     /**
-     * Reason for rejection (Art. 12(5): manifestly unfounded or excessive)
+     * Actual date/time the response was sent to the data subject (Art. 12(3))
      */
-    #[ORM\Column(type: Types::TEXT, nullable: true)]
-    private ?string $rejectionReason = null;
-
-    /**
-     * Reason for extending deadline (Art. 12(3): complexity, number of requests)
-     */
-    #[ORM\Column(type: Types::TEXT, nullable: true)]
-    private ?string $extensionReason = null;
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $responseAt = null;
 
     /**
      * Extended deadline (Art. 12(3): receivedAt + 90 days max)
      */
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $extendedDeadlineAt = null;
+
+    /**
+     * Reason for extending deadline (Art. 12(3): complexity, number of requests)
+     * Required when extendedDeadlineAt is set.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $extensionReason = null;
+
+    /**
+     * File path or UUID of the response artefact (letter, email archive, portal export)
+     */
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $responseDocument = null;
+
+    /**
+     * Channel used to deliver the response (Art. 12(1): same format as request where possible)
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $responseMethod = null;
+
+    /**
+     * Reason for rejection (Art. 12(5): manifestly unfounded or excessive)
+     * Required when status = 'rejected'. Implies responseAt must also be set.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $rejectionReason = null;
 
     // ============================================================================
     // Assignments & Relations
@@ -227,6 +254,15 @@ class DataSubjectRequest
     #[ORM\JoinColumn(name: 'data_subject_request_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
     #[ORM\InverseJoinColumn(name: 'person_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
     private Collection $assignedDeputyPersons;
+
+    /**
+     * Person-Rollout Phase B2 — governance-side DPO accountable for the
+     * Data Subject Request, distinct from `assignedTo` (action handler).
+     * Often an external Data Protection Officer.
+     */
+    #[ORM\ManyToOne(targetEntity: Person::class)]
+    #[ORM\JoinColumn(name: 'dpo_person_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Person $dpoPerson = null;
 
     /**
      * Linked processing activity (VVT Art. 30)
@@ -339,6 +375,62 @@ class DataSubjectRequest
         return sprintf('DSR-%d: %s', $this->id ?? 0, $this->dataSubjectName ?? 'Unknown');
     }
 
+    /**
+     * Whether the response has been sent (responseAt is set).
+     */
+    public function isResponded(): bool
+    {
+        return $this->responseAt !== null;
+    }
+
+    /**
+     * Whether the deadline has been extended (extendedDeadlineAt is set).
+     */
+    public function isExtended(): bool
+    {
+        return $this->extendedDeadlineAt !== null;
+    }
+
+    /**
+     * Number of days since receivedAt; null if receivedAt is not set.
+     */
+    public function getDaysSinceReceived(): ?int
+    {
+        if (!$this->receivedAt instanceof \DateTimeImmutable) {
+            return null;
+        }
+        $diff = $this->receivedAt->diff(new \DateTimeImmutable());
+        return $diff->days;
+    }
+
+    /**
+     * Cross-field constraint: Art. 12(3) response tracking rules.
+     *
+     * - extendedDeadlineAt set → extensionReason required
+     * - responseAt set         → responseMethod required
+     * - rejectionReason set    → responseAt required (rejection is itself a response)
+     */
+    public static function validateResponseTracking(self $entity, ExecutionContextInterface $context): void
+    {
+        if ($entity->getExtendedDeadlineAt() !== null && empty($entity->getExtensionReason())) {
+            $context->buildViolation('dsr.error.extension_reason_required_when_extended')
+                ->atPath('extensionReason')
+                ->addViolation();
+        }
+
+        if ($entity->getResponseAt() !== null && empty($entity->getResponseMethod())) {
+            $context->buildViolation('dsr.error.response_method_required_when_responded')
+                ->atPath('responseMethod')
+                ->addViolation();
+        }
+
+        if (!empty($entity->getRejectionReason()) && $entity->getResponseAt() === null) {
+            $context->buildViolation('dsr.error.response_at_required_when_rejected')
+                ->atPath('responseAt')
+                ->addViolation();
+        }
+    }
+
     // ============================================================================
     // Getters and Setters
     // ============================================================================
@@ -364,7 +456,7 @@ class DataSubjectRequest
         return $this->requestType;
     }
 
-    public function setRequestType(string $requestType): static
+    public function setRequestType(?string $requestType): static
     {
         $this->requestType = $requestType;
         return $this;
@@ -375,10 +467,23 @@ class DataSubjectRequest
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(DataSubjectRequestStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum
+        // while existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): DataSubjectRequestStatus
+    {
+        return DataSubjectRequestStatus::from($this->status);
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     public function getDataSubjectName(): ?string
@@ -386,7 +491,7 @@ class DataSubjectRequest
         return $this->dataSubjectName;
     }
 
-    public function setDataSubjectName(string $dataSubjectName): static
+    public function setDataSubjectName(?string $dataSubjectName): static
     {
         $this->dataSubjectName = $dataSubjectName;
         return $this;
@@ -419,7 +524,7 @@ class DataSubjectRequest
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -430,7 +535,7 @@ class DataSubjectRequest
         return $this->receivedAt;
     }
 
-    public function setReceivedAt(DateTimeImmutable $receivedAt): static
+    public function setReceivedAt(?DateTimeImmutable $receivedAt): static
     {
         $this->receivedAt = $receivedAt;
         return $this;
@@ -499,6 +604,39 @@ class DataSubjectRequest
     public function setResponseDescription(?string $responseDescription): static
     {
         $this->responseDescription = $responseDescription;
+        return $this;
+    }
+
+    public function getResponseAt(): ?\DateTimeImmutable
+    {
+        return $this->responseAt;
+    }
+
+    public function setResponseAt(?\DateTimeImmutable $responseAt): static
+    {
+        $this->responseAt = $responseAt;
+        return $this;
+    }
+
+    public function getResponseDocument(): ?string
+    {
+        return $this->responseDocument;
+    }
+
+    public function setResponseDocument(?string $responseDocument): static
+    {
+        $this->responseDocument = $responseDocument;
+        return $this;
+    }
+
+    public function getResponseMethod(): ?string
+    {
+        return $this->responseMethod;
+    }
+
+    public function setResponseMethod(?string $responseMethod): static
+    {
+        $this->responseMethod = $responseMethod;
         return $this;
     }
 
@@ -586,6 +724,28 @@ class DataSubjectRequest
     public function getAllAssignedOwners(): array
     {
         return OwnerResolver::resolveAll($this->assignedTo, $this->assignedPerson, null, $this->assignedDeputyPersons);
+    }
+
+    public function getDpoPerson(): ?Person
+    {
+        return $this->dpoPerson;
+    }
+
+    public function setDpoPerson(?Person $dpoPerson): static
+    {
+        $this->dpoPerson = $dpoPerson;
+        return $this;
+    }
+
+    /**
+     * Effective DPO display: prefer the new `dpoPerson.fullName`,
+     * fall back to the assignment User (action handler is often the DPO
+     * in single-DPO orgs). Returns null when neither is set.
+     */
+    public function getEffectiveDpoName(): ?string
+    {
+        return $this->dpoPerson?->getFullName()
+            ?? $this->assignedTo?->getFullName();
     }
 
     public function getProcessingActivity(): ?ProcessingActivity

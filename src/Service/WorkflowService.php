@@ -9,63 +9,107 @@ use DateTimeImmutable;
 use App\Entity\WorkflowInstance;
 use App\Entity\WorkflowStep;
 use App\Entity\User;
+use App\Enum\WorkflowInstanceStatus;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Repository\WorkflowRepository;
 use App\Repository\WorkflowInstanceRepository;
 use App\Repository\UserRepository;
+use App\Workflow\Loader\RegulatoryWorkflowLoader;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
 
 /**
- * Workflow Management Service
+ * Workflow Management Service — public API facade (Sprint Y.0 / Y.2).
  *
  * Manages the lifecycle of approval workflows for ISMS entities.
  * Supports multi-step approval processes with configurable approvers and SLA tracking.
  *
- * Features:
- * - Workflow instance creation and management
- * - Step-by-step approval tracking
- * - SLA-based due date calculation
- * - Approval/rejection with history tracking
- * - Role-based and user-based approver assignment
- * - Overdue workflow detection
- * - Pending approval queries per user
+ * Sprint Y.0: Internal status mutations have been replaced with
+ * LifecycleTransitionInterface::transition() calls against the
+ * `workflow_instance_lifecycle` Symfony state-machine
+ * (config/workflows/workflow_instance.yaml).
+ * The public method signatures are UNCHANGED — callers are unaffected.
  *
- * Workflow States:
- * - pending: Workflow created but not started
- * - in_progress: Actively being processed
- * - approved: Successfully completed all steps
- * - rejected: Rejected at any step
- * - cancelled: Manually cancelled
+ * Sprint Y.2: startWorkflow() now consults RegulatoryWorkflowLoader first;
+ * if the requested workflow name is registered in the Symfony Workflow Registry
+ * (config/workflows/regulatory/*.yaml), the YAML-defined steps are used to seed
+ * the WorkflowInstance. Falls back to DB-backed WorkflowRepository for tenant-custom
+ * workflows not yet migrated to YAML.
+ *
+ * Workflow States (now driven by Symfony Workflow):
+ * - pending:     Workflow created but not yet started (initial_marking)
+ * - in_progress: First step reached; actively being processed
+ * - approved:    All steps completed successfully
+ * - rejected:    Rejected at any step by an authorised reviewer
+ * - cancelled:   Manually cancelled (from pending or in_progress)
  */
 class WorkflowService
 {
+    private const WORKFLOW_NAME = 'workflow_instance_lifecycle';
+
+    /**
+     * Map: entityType → canonical YAML workflow name (Sprint Y.2).
+     * Used when startWorkflow() is called without an explicit $workflowName.
+     */
+    private const ENTITY_TYPE_TO_YAML_WORKFLOW = [
+        'DataBreach' => 'gdpr_data_breach',
+        'Incident' => 'incident_high_severity',
+        'Risk' => 'risk_treatment',
+        'DPIA' => 'dpia',
+        'DataSubjectRequest' => 'dsr',
+        'CorrectiveAction' => 'capa',
+        'ChangeRequest' => 'change_request',
+        'ManagementReview' => 'management_review',
+        'Control' => 'control_verification',
+        'Supplier' => 'supplier_assessment',
+        'Training' => 'training_verification',
+        'BusinessContinuityPlan' => 'bc_plan_activation',
+        'Document' => 'document_review',
+    ];
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly WorkflowRepository $workflowRepository,
         private readonly WorkflowInstanceRepository $workflowInstanceRepository,
         private readonly UserRepository $userRepository,
         private readonly EmailNotificationService $emailNotificationService,
-        private readonly Security $security
+        private readonly Security $security,
+        private readonly LifecycleTransitionInterface $lifecycleService,
+        private readonly RegulatoryWorkflowLoader $regulatoryWorkflowLoader,
     ) {}
 
     /**
-     * Start a workflow for an entity
+     * Start a workflow for an entity.
+     *
+     * Sprint Y.2: tries YAML-registered regulatory workflow first (via
+     * RegulatoryWorkflowLoader), then falls back to DB-backed WorkflowRepository
+     * for tenant-custom workflows not yet migrated to YAML.
      *
      * @param string $entityType The entity type (e.g., 'Incident', 'Risk')
      * @param int $entityId The entity ID
-     * @param string|null $workflowName Optional specific workflow name
+     * @param string|null $workflowName Optional specific workflow name (YAML name or DB name)
      * @param bool $autoFlush Whether to automatically flush after persisting (default: true)
      * @return WorkflowInstance|null The workflow instance or null if no workflow found
      * @throws DateMalformedStringException
      */
     public function startWorkflow(string $entityType, int $entityId, ?string $workflowName = null, bool $autoFlush = true): ?WorkflowInstance
     {
-        // Find appropriate workflow
+        // Sprint Y.2 — YAML-first lookup: resolve the YAML workflow name for this entity type.
+        // When a regulatory YAML is registered, we prefer it over the DB row.
+        $yamlWorkflowName = $workflowName ?? (self::ENTITY_TYPE_TO_YAML_WORKFLOW[$entityType] ?? null);
+        $yamlSteps = $yamlWorkflowName !== null
+            ? $this->regulatoryWorkflowLoader->getStepsForWorkflow($yamlWorkflowName)
+            : null;
+
+        // Find appropriate workflow — DB lookup (backwards-compat for tenant-custom workflows).
+        // Even when a YAML workflow is used, we still look up the DB row so that
+        // WorkflowInstance.workflow_id FK is set (required for history display until Y.4).
         $workflow = $workflowName
             ? $this->workflowRepository->findOneBy(['name' => $workflowName, 'entityType' => $entityType, 'isActive' => true])
             : $this->workflowRepository->findOneBy(['entityType' => $entityType, 'isActive' => true]);
 
-        if (!$workflow) {
+        // If neither YAML steps nor a DB workflow was found, give up
+        if ($yamlSteps === null && !$workflow) {
             return null;
         }
 
@@ -88,35 +132,70 @@ class WorkflowService
             return $existingInstance;
         }
 
-        // Create new workflow instance
-        $workflowInstance = new WorkflowInstance();
+        // Create new workflow instance — status starts at 'pending' (initial_marking).
+        // The setStatus() call here is the only allowed direct setter: it seeds the
+        // Symfony Workflow marking-store on a brand-new (pre-persist) entity.
+        // All subsequent mutations go through LifecycleTransitionInterface::transition().
+        // When only YAML steps are available (no DB row), startWorkflow cannot create
+        // a WorkflowInstance that satisfies the nullable: false FK constraint on workflow_id.
+        // In that case we return null — callers must ensure a DB row exists (see
+        // GenerateRegulatoryWorkflowsCommand which seeds DB rows from the same YAML data).
+        if (!$workflow) {
+            return null;
+        }
+
+        $workflowInstance = new WorkflowInstance(); // @lifecycle-initial-state
         $workflowInstance->setWorkflow($workflow);
         $workflowInstance->setEntityType($entityType);
         $workflowInstance->setEntityId($entityId);
-        $workflowInstance->setStatus('pending');
+        $workflowInstance->setStatus(WorkflowInstanceStatus::Pending); // @lifecycle-initial-state — seeds SM
         $workflowInstance->setInitiatedBy($this->security->getUser());
-
-        // Set first step as current
-        $steps = $workflow->getSteps();
-        if ($steps->count() > 0) {
-            $firstStep = $steps->first();
-            $workflowInstance->setCurrentStep($firstStep);
-
-            // Calculate due date based on first step's SLA
-            if ($firstStep->getDaysToComplete()) {
-                $dueDate = new DateTimeImmutable()->modify('+' . $firstStep->getDaysToComplete() . ' days');
-                $workflowInstance->setDueDate($dueDate);
-            }
-
-            $workflowInstance->setStatus('in_progress');
-
-            // Handle notification step auto-progression or send assignment notification
-            $this->handleStepAssignment($workflowInstance, $firstStep);
-        }
 
         $this->entityManager->persist($workflowInstance);
 
-        if ($autoFlush) {
+        // Resolve steps: YAML-loader takes precedence; fall back to DB-backed workflow.
+        // Sprint Y.2: when YAML steps are available, we resolve the first step from YAML
+        // metadata. DB workflow steps are still used for WorkflowStep entity FK references
+        // when the DB row exists.
+        $hasYamlSteps = $yamlSteps !== null && count($yamlSteps) > 0;
+        $dbSteps = $workflow?->getSteps();
+        $hasDbSteps = $dbSteps !== null && $dbSteps->count() > 0;
+
+        if ($hasYamlSteps || $hasDbSteps) {
+            // Prefer DB step entity for the currentStep FK if available (audit-trail)
+            $firstStep = $hasDbSteps ? $dbSteps->first() : null;
+            $firstStepDays = $hasYamlSteps
+                ? (int) ($yamlSteps[0]['days_to_complete'] ?? 0)
+                : ($firstStep?->getDaysToComplete() ?? 0);
+
+            if ($firstStep instanceof WorkflowStep) {
+                $workflowInstance->setCurrentStep($firstStep);
+            }
+            $workflowInstance->setCurrentStepIndex(0);
+
+            // Calculate due date based on first step's SLA
+            if ($firstStepDays > 0) {
+                $dueDate = new DateTimeImmutable()->modify('+' . $firstStepDays . ' days');
+                $workflowInstance->setDueDate($dueDate);
+            }
+
+            // Flush before transition so the entity has an ID for the SM
+            $this->entityManager->flush();
+
+            // Transition pending → in_progress via Symfony state-machine
+            $this->lifecycleService->transition(
+                $workflowInstance,
+                self::WORKFLOW_NAME,
+                'start',
+                $this->security->getUser() instanceof User ? $this->security->getUser() : null,
+            );
+
+            // Handle notification step auto-progression or send assignment notification
+            if ($firstStep instanceof WorkflowStep) {
+                $this->handleStepAssignment($workflowInstance, $firstStep);
+            }
+        } elseif ($autoFlush) {
+            // No steps — stay in 'pending'; flush if requested
             $this->entityManager->flush();
         }
 
@@ -128,7 +207,7 @@ class WorkflowService
      */
     public function approveStep(WorkflowInstance $workflowInstance, User $user, ?string $comments = null): bool
     {
-        if ($workflowInstance->getStatus() !== 'in_progress') {
+        if ($workflowInstance->getStatus() !== WorkflowInstanceStatus::InProgress->value) {
             return false;
         }
 
@@ -157,6 +236,8 @@ class WorkflowService
         $workflowInstance->addCompletedStep($currentStep->getId());
 
         // Move to next step or complete workflow
+        // NOTE: on the final step, moveToNextStep calls lifecycleService->transition('approve')
+        // which includes a flush. For intermediate steps, flush below handles persistence.
         $nextStep = $this->moveToNextStep($workflowInstance);
 
         // Handle next step (notification or approval notification)
@@ -164,6 +245,7 @@ class WorkflowService
             $this->handleStepAssignment($workflowInstance, $nextStep);
         }
 
+        // Flush for intermediate steps; harmless double-flush on final step (Doctrine no-ops empty EM)
         $this->entityManager->flush();
 
         return true;
@@ -174,7 +256,7 @@ class WorkflowService
      */
     public function rejectStep(WorkflowInstance $workflowInstance, User $user, string $reason): bool
     {
-        if ($workflowInstance->getStatus() !== 'in_progress') {
+        if ($workflowInstance->getStatus() !== WorkflowInstanceStatus::InProgress->value) {
             return false;
         }
 
@@ -199,11 +281,17 @@ class WorkflowService
             'timestamp' => new DateTimeImmutable()->format('Y-m-d H:i:s'),
         ]);
 
-        $workflowInstance->setStatus('rejected');
         $workflowInstance->setCompletedAt(new DateTimeImmutable());
         $workflowInstance->setComments($reason);
 
-        $this->entityManager->flush();
+        // Transition in_progress → rejected via Symfony state-machine (includes flush)
+        $this->lifecycleService->transition(
+            $workflowInstance,
+            self::WORKFLOW_NAME,
+            'reject',
+            $user,
+            $reason,
+        );
 
         return true;
     }
@@ -213,15 +301,30 @@ class WorkflowService
      */
     public function cancelWorkflow(WorkflowInstance $workflowInstance, string $reason): void
     {
-        $workflowInstance->setStatus('cancelled');
         $workflowInstance->setCompletedAt(new DateTimeImmutable());
         $workflowInstance->setComments($reason);
 
-        $this->entityManager->flush();
+        // Choose cancel vs cancel_in_progress depending on current state
+        $transitionName = $workflowInstance->getStatus() === WorkflowInstanceStatus::Pending->value ? 'cancel' : 'cancel_in_progress';
+
+        // Transition → cancelled via Symfony state-machine (includes flush)
+        $this->lifecycleService->transition(
+            $workflowInstance,
+            self::WORKFLOW_NAME,
+            $transitionName,
+            null,
+            $reason,
+        );
     }
 
     /**
-     * Move workflow to next step or complete
+     * Move workflow to next step or complete.
+     *
+     * Intermediate step advancement does NOT change WorkflowInstance.status — the SM
+     * only tracks the coarse-grained approval-chain state. Only the final step
+     * triggers a transition (in_progress → approved via LifecycleTransitionInterface).
+     * currentStepIndex is updated as a plain field write alongside the step-ID
+     * reference in currentStep.
      *
      * @return WorkflowStep|null The next step, or null if workflow is complete
      * @throws DateMalformedStringException
@@ -232,12 +335,13 @@ class WorkflowService
         $currentStep = $workflowInstance->getCurrentStep();
 
         $steps = $workflow->getSteps()->toArray();
-        $currentIndex = array_search($currentStep, $steps);
+        $currentIndex = array_search($currentStep, $steps, strict: true);
 
         if ($currentIndex !== false && isset($steps[$currentIndex + 1])) {
-            // Move to next step
+            // Move to next step — status stays in_progress; only index advances
             $nextStep = $steps[$currentIndex + 1];
             $workflowInstance->setCurrentStep($nextStep);
+            $workflowInstance->setCurrentStepIndex((int) $currentIndex + 1);
 
             // Update due date based on next step's SLA
             if ($nextStep->getDaysToComplete()) {
@@ -247,10 +351,18 @@ class WorkflowService
 
             return $nextStep;
         }
-        // Workflow completed
-        $workflowInstance->setStatus('approved');
+
+        // All steps completed → transition in_progress → approved via Symfony SM
         $workflowInstance->setCompletedAt(new DateTimeImmutable());
         $workflowInstance->setCurrentStep(null);
+
+        // LifecycleTransitionInterface::transition calls flush internally
+        $this->lifecycleService->transition(
+            $workflowInstance,
+            self::WORKFLOW_NAME,
+            'approve',
+        );
+
         return null;
     }
 
@@ -426,7 +538,7 @@ class WorkflowService
     public function getPendingApprovals(User $user): array
     {
         $tenant = $user->getTenant();
-        $criteria = ['status' => 'in_progress'];
+        $criteria = ['status' => WorkflowInstanceStatus::InProgress->value];
         if ($tenant !== null) {
             $criteria['tenant'] = $tenant;
         }

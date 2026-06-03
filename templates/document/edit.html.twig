@@ -1,79 +1,155 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% trans_default_domain 'document' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_norm_bridge.html.twig' as _fa_norm_bridge %}
 
 {% block title %}{{ 'document.edit'|trans({}, 'document') }} - {{ parent() }}{% endblock %}
 
 {% block body %}
+{# Junior-ISB-Audit-2026-05-22 P-12 rollout — 9001 norm-bridge for Document. #}
 {# Breadcrumb Navigation #}
 {% include '_components/_breadcrumb.html.twig' with {
     breadcrumbs: [
-        { label: 'nav.documents'|trans({}, 'nav'), url: path('app_document_index'), icon: 'bi-file-earmark-text' },
+        { label: 'nav.documents'|trans({}, 'nav'), url: path('app_document_index'), icon: 'nav-file-earmark-text' },
         { label: document.originalFilename, url: path('app_document_show', {id: document.id}) },
         { label: 'document.edit'|trans({}, 'document') }
     ]
 } %}
 
 {# Page Header #}
-{% include '_components/_page_header.html.twig' with {
+{{ _fa_page_header.render({
     title: 'document.edit'|trans({}, 'document') ~ ': ' ~ document.originalFilename,
-    icon: 'bi-pencil',
+    badge: { icon: 'ui-edit', label: '' },
     actions: [
-        { label: 'common.back'|trans({}, 'messages'), url: path('app_document_show', {id: document.id}), variant: 'secondary', icon: 'bi-arrow-left' }
+        { label: 'common.back'|trans({}, 'messages'), href: path('app_document_show', {id: document.id}), variant: 'secondary', icon: 'util-arrow-left' }
     ]
+}) }}
+
+{# 9001-bridge: Documented Information identical mapping ISO 27001 7.5 ↔ ISO 9001 7.5. P-12 rollout. #}
+{{ _fa_norm_bridge.render({
+    from_norm: 'ISO 27001 7.5',
+    to_norm:   'ISO 9001 7.5',
+    bridge_text: ('iso_9001_bridge.policy'|trans({}, 'document')),
+    prominence: 'subtle'
+}) }}
+
+{# C3-03 (S14, 2026-05-23) — conditional-fields Stimulus controller
+   toggles acknowledgementAudience visibility based on
+   requiresAcknowledgement checkbox. #}
+{# P-19 — Form-Step-Inline-Hint controller. See assets/controllers/alva_hint_in_form_controller.js. #}
+{{ form_start(form, {'attr': {
+    'enctype': 'multipart/form-data',
+    'data-controller': 'conditional-fields alva-hint-in-form',
+    'data-alva-hint-in-form-entity-type-value': 'document',
+    'data-alva-hint-in-form-form-name-value': 'document',
+    'data-alva-hint-in-form-endpoint-value': path('api_alva_hint_form_evaluate', {'entityType': 'document'}),
+    'data-alva-hint-in-form-csrf-token-value': csrf_token('alva_hint_form'),
+    'data-action': 'input->alva-hint-in-form#scheduleEvaluate change->alva-hint-in-form#scheduleEvaluate',
+}}) }}
+{{ _fa_alert.render({ variant: 'info', body: 'document.help.edit_file'|trans({}, 'document') }) }}
+
+{% include '_components/_auto_form.html.twig' with {
+    'form': form,
+    'layout': 'outline-rail',
+    'eyebrow': 'ISO 27001 A.5.9 · Document Management',
+    'title': 'document.edit'|trans({}, 'document') ~ ': ' ~ document.originalFilename,
+    'sections': {
+        'overview': {
+            'label': 'document.section.basic_info'|trans({}, 'document'),
+            'fields': ['originalFilename', 'description', 'category', 'status']
+        },
+        'classification': {
+            'label': 'document.section.classification'|trans({}, 'document'),
+            'fields': ['tisaxInformationClassification']
+        },
+        'lifecycle': {
+            'label': 'document.section.lifecycle'|trans({}, 'document'),
+            'fields': ['version', 'reviewIntervalMonths', 'requiresAcknowledgement', 'acknowledgementAudience']
+        },
+        'ownership': {
+            'label': 'document.section.ownership'|trans({}, 'document'),
+            'fields': ['inheritable', 'overrideAllowed']
+        },
+        'linkage': {
+            'label': 'document.section.linkage'|trans({}, 'document'),
+            'fields': ['linkedControls']
+        },
+        'content': {
+            'label': 'document.section.file_upload'|trans({}, 'document'),
+            'fields': ['file']
+        }
+    },
+    'col_widths': {
+        'originalFilename': 8,
+        'status': 4,
+        'description': 12,
+        'category': 6,
+        'tisaxInformationClassification': 6,
+        'version': 4,
+        'reviewIntervalMonths': 4,
+        'requiresAcknowledgement': 4,
+        'acknowledgementAudience': 12,
+        'inheritable': 6,
+        'overrideAllowed': 6,
+        'linkedControls': 12,
+        'file': 12
+    },
+    'tooltips': {
+        'category': 'document.tooltip.category',
+        'tisaxInformationClassification': 'document.tooltip.classification'
+    },
+    'exclude': ['policyBody'],
+    'translation_domain': 'document',
+    'actions': {
+        'close': { 'label': 'common.cancel'|trans({}, 'messages'), 'variant': 'ghost' },
+        'submit': { 'label': 'document.action.update'|trans({}, 'document'), 'variant': 'primary', 'icon': 'ui-check' }
+    }
 } %}
 
-{% embed '_components/_card.html.twig' %}
-    {% block card_body %}
-        {% import '_components/_fa_alert.html.twig' as _fa_alert %}
-        {{ _fa_alert.render({ variant: 'info', body: 'document.help.edit_file'|trans({}, 'document') }) }}
+{# Policy-body editor — only rendered for wizard-generated
+   documents (DocumentType conditionally adds the field via
+   PRE_SET_DATA when generatedFromTemplate is non-null). #}
+{% if form.policyBody is defined %}
+    <fieldset class="mb-4 mt-4">
+        <legend class="h5">
+            <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
+            {{ 'document.policy_body.section_title'|trans({}, 'document') }}
+        </legend>
 
-        {{ form_start(form, {'attr': {'enctype': 'multipart/form-data'}}) }}
-            {% include '_components/_auto_form.html.twig' with {
-                'form': form,
-                'sections': {
-                    'basic_info': {
-                        'label': 'document.section.basic_info'|trans({}, 'document'),
-                        'fields': ['originalFilename', 'description', 'category', 'tisaxInformationClassification']
-                    },
-                    'file_upload': {
-                        'label': 'document.section.file_upload'|trans({}, 'document'),
-                        'fields': ['file']
-                    }
-                },
-                'col_widths': {
-                    'originalFilename': 12,
-                    'description': 12,
-                    'category': 6,
-                    'tisaxInformationClassification': 6,
-                    'file': 12
-                },
-                'tooltips': {
-                    'category': 'document.tooltip.category',
-                    'tisaxInformationClassification': 'document.tooltip.classification'
-                }
-            } %}
+        {{ _fa_alert.render({
+            variant: 'warning',
+            title: 'document.policy_body.regen_warning_title'|trans({}, 'document'),
+            body: 'document.policy_body.regeneration_conflict_warning'|trans({}, 'document'),
+        }) }}
 
-            <div class="form-actions d-flex gap-2 justify-content-end">
-                <a href="{{ path('app_document_show', {id: document.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                    <i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i>
-                    {{ 'common.cancel'|trans({}, 'messages') }}
-                </a>
-                <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary">
-                    <i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i>
-                    {{ 'document.action.update'|trans({}, 'document') }}
-                </button>
-            </div>
-        {{ form_end(form) }}
-    {% endblock %}
-{% endembed %}
+        {% if document.hasPostGenerationEdits %}
+            {{ _fa_alert.render({
+                variant: 'info',
+                body: 'document.policy_body.edited_by'|trans({
+                    '%name%': document.policyBodyEditedBy ? document.policyBodyEditedBy.fullName : '—',
+                    '%date%': document.policyBodyEditedAt ? document.policyBodyEditedAt|date('d.m.Y H:i') : '—',
+                }, 'document'),
+            }) }}
+        {% endif %}
+
+        <div class="mb-3">
+            {{ form_label(form.policyBody) }}
+            {{ form_widget(form.policyBody) }}
+            {{ form_help(form.policyBody) }}
+            {{ form_errors(form.policyBody) }}
+        </div>
+    </fieldset>
+{% endif %}
+
+{{ form_end(form) }}
 
 {# Delete Danger Zone #}
 {% embed '_components/_card.html.twig' with {borderColor: 'danger', class: 'mt-4'} %}
     {% block card_header %}
-        <div class="card-header bg-danger text-white">
+        <div class="card-header">
             <h2 class="mb-0">
-                <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i>
+                <i class="fa-icon fa-icon--status-warning text-danger" aria-hidden="true"></i>
                 {{ 'common.danger_zone'|trans({}, 'messages') }}
             </h2>
         </div>

@@ -1,0 +1,125 @@
+{% extends 'base.html.twig' %}
+{% trans_default_domain 'admin' %}
+{% import '_components/_status_pill.html.twig' as pill %}
+
+{% block title %}{{ 'industry_preset.preview.badge'|trans }}: {{ config.name|default(preset) }} · {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
+
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+
+{% block body %}
+<main class="fa-aurora-surface">
+    {{ _fa_page_header.render({
+        badge:    { icon: 'ui-eye', label: 'industry_preset.preview.badge'|trans },
+        title:    config.name|default(preset),
+        subtitle: 'industry_preset.preview.subtitle'|trans,
+        actions: [
+            { label: 'industry_preset.action.back'|trans, variant: 'ghost', icon: 'util-arrow-left', href: path('app_admin_industry_preset_index') }
+        ]
+    }) }}
+
+    {# V3 W3-Aurora: Bootstrap .card → Aurora .fa-section across all preview-cards. #}
+    <div class="row g-3">
+        <div class="col-12 col-lg-8">
+            <section class="fa-section mb-3">
+                <div class="fa-section__header"><h2 class="fa-section__title mb-0">{{ 'industry_preset.preview.section_description'|trans }}</h2></div>
+                <div class="fa-section__body">
+                    <p class="text-muted">{{ config.description|default('—')|nl2br }}</p>
+                </div>
+            </section>
+
+            <section class="fa-section mb-3">
+                <div class="fa-section__header"><h2 class="fa-section__title mb-0">{{ 'industry_preset.preview.section_modules'|trans }} ({{ (config.modules|default([]))|length }})</h2></div>
+                <div class="fa-section__body">
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for module in config.modules|default([]) %}
+                            {% set isActive = module in active_modules %}
+                            <span class="{{ isActive ? 'fa-status-pill fa-status-pill--success' : 'badge bg-secondary' }}">
+                                {{ module }}{% if isActive %} <i class="fa-icon fa-icon--ui-check ms-1"></i>{% endif %}
+                            </span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </section>
+
+            <section class="fa-section mb-3">
+                <div class="fa-section__header"><h2 class="fa-section__title mb-0">{{ 'industry_preset.preview.section_frameworks'|trans }} ({{ (config.frameworks|default([]))|length }})</h2></div>
+                <div class="fa-section__body">
+                    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                        {% block table_head %}
+                            {% trans_default_domain 'admin' %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">{{ 'industry_preset.preview.table.code'|trans }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'industry_preset.preview.table.priority'|trans }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'industry_preset.preview.table.activate'|trans }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
+                            {% trans_default_domain 'admin' %}
+                            {% import '_components/_status_pill.html.twig' as pill %}
+                            {% for fw in config.frameworks|default([]) %}
+                                <tr class="fa-table__row">
+                                    <td class="fa-table__cell"><strong>{{ fw.code }}</strong></td>
+                                    <td class="fa-table__cell">{{ pill.render(fw.priority|default('—'), 'primary', {size: 'sm'}) }}</td>
+                                    <td class="fa-table__cell">{% if fw.activate ?? false %}<i class="fa-icon fa-icon--ui-check text-success"></i>{% else %}<span class="text-muted">{{ 'industry_preset.preview.table.optional'|trans }}</span>{% endif %}</td>
+                                </tr>
+                            {% endfor %}
+                        {% endblock %}
+                    {% endembed %}
+                </div>
+            </section>
+
+            {% if config.initial_controls|default([])|length > 0 %}
+            <section class="fa-section mb-3">
+                <div class="fa-section__header"><h2 class="fa-section__title mb-0">{{ 'industry_preset.preview.section_initial_controls'|trans }} ({{ config.initial_controls|length }})</h2></div>
+                <div class="fa-section__body">
+                    <ul class="list-group list-group-flush">
+                        {% for c in config.initial_controls %}
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span><strong>{{ c.identifier }}</strong> — {{ c.name }}</span>
+                                {{ pill.render(c.implementation_status|default('not_started'), 'neutral', {size: 'sm'}) }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </section>
+            {% endif %}
+
+            {% if config.initial_documents|default([])|length > 0 %}
+            <section class="fa-section mb-3">
+                <div class="fa-section__header"><h2 class="fa-section__title mb-0">{{ 'industry_preset.preview.section_initial_documents'|trans }} ({{ config.initial_documents|length }})</h2></div>
+                <div class="fa-section__body">
+                    <ul class="list-group list-group-flush">
+                        {% for d in config.initial_documents %}
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span>{{ d.title }}</span>
+                                {{ pill.render(d.type|default('policy'), 'neutral', {size: 'sm'}) }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </section>
+            {% endif %}
+        </div>
+
+        <div class="col-12 col-lg-4">
+            <section class="fa-section sticky-top" style="top: 1rem;">
+                <div class="fa-section__header"><h2 class="fa-section__title mb-0">{{ 'industry_preset.preview.section_apply'|trans }}</h2></div>
+                <div class="fa-section__body">
+                    <p class="small text-muted mb-3">
+                        {{ 'industry_preset.preview.apply_hint'|trans }}
+                    </p>
+                    <form method="post" action="{{ path('app_admin_industry_preset_apply', { preset: preset }) }}"
+                          data-controller="ui-actions"
+                          data-action="submit->ui-actions#confirm"
+                          data-ui-actions-message-param="{{ 'industry_preset.confirm.apply_short'|trans }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('industry_preset_' ~ preset) }}">
+                        <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary w-100">
+                            <i class="fa-icon fa-icon--ui-launch" aria-hidden="true"></i> {{ 'industry_preset.action.apply_button'|trans }}
+                        </button>
+                    </form>
+                </div>
+            </section>
+        </div>
+    </div>
+</main>
+{% endblock %}

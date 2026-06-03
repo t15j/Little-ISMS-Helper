@@ -5,8 +5,14 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Tenant;
-use App\Enum\IncidentStatus;
-use App\Enum\TreatmentStrategy;
+use App\Service\DataIntegrity\DuplicateFinder;
+use App\Service\DataIntegrity\EntityCountAggregator;
+use App\Service\DataIntegrity\HealthIssueAggregator;
+use App\Service\DataIntegrity\OrphanFinder;
+use App\Service\DataIntegrity\ReferenceIntegrityChecker;
+use App\Service\DataIntegrity\SchemaDriftChecker;
+use App\Service\DataIntegrity\StatusEnumDriftChecker;
+use App\Service\DataIntegrity\UploadOrphanChecker;
 use Doctrine\ORM\EntityManagerInterface;
 use App\Repository\AssetRepository;
 use App\Repository\RiskRepository;
@@ -33,17 +39,40 @@ use App\Repository\WorkflowInstanceRepository;
 use App\Repository\RiskTreatmentPlanRepository;
 
 /**
- * Comprehensive data integrity checker for tenant isolation and data consistency
+ * Comprehensive data integrity checker for tenant isolation and data consistency.
  *
- * Detects and reports:
- * - Orphaned entities (no tenant assigned)
- * - Duplicate entities within the same tenant
- * - Broken foreign key references
- * - Inconsistent entity relationships
- * - Missing required relationships
+ * This class is a pure facade — all detection logic is delegated to collaborators
+ * under the App\Service\DataIntegrity\ namespace:
+ *
+ *   - {@see OrphanFinder}              — orphaned entities + cascade orphans
+ *   - {@see DuplicateFinder}           — duplicate detection + merge
+ *   - {@see ReferenceIntegrityChecker} — broken refs, missing relationships, inconsistent data
+ *   - {@see HealthIssueAggregator}     — risk, compliance, operational, data-quality checks
+ *   - {@see SchemaDriftChecker}        — JSON-schema violations + AuditLog gaps
+ *   - {@see UploadOrphanChecker}       — filesystem orphan scan (already extracted pre-split)
+ *   - {@see StatusEnumDriftChecker}    — status-enum drift (already extracted pre-split)
+ *
+ * The facade retains the original public API for backward-compat with all call-sites
+ * (admin UI, data-repair commands, Jobs, etc.). The only logic in this class is:
+ *   - getEntityCountsByTenant()   — delegates to {@see EntityCountAggregator::countByTenant()}
+ *   - getSummaryStatistics()      — aggregates counts from delegates
+ *   - getGlobalCatalogueEntityClasses() — exposes constant from OrphanFinder
+ *   - runFullIntegrityCheck()     — dispatches all checks and returns unified result
  */
-class DataIntegrityService
+final class DataIntegrityService
 {
+    /**
+     * Entity classes that are INTENTIONALLY globally scoped (tenant_id = NULL by design).
+     *
+     * These entities are shared across all tenants as catalogue data. The orphan-repair
+     * logic MUST NOT reassign a tenant_id to them — doing so triggers a
+     * UniqueConstraintViolationException when multiple seeded rows share the same
+     * unique key (e.g. NotificationTemplate.uniq_template_key_tenant).
+     *
+     * Source of truth: {@see OrphanFinder::GLOBAL_CATALOGUE_ENTITIES}.
+     * The facade returns the constant from there to avoid duplication.
+     */
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly AssetRepository $assetRepository,
@@ -68,8 +97,60 @@ class DataIntegrityService
         private readonly ?CorrectiveActionRepository $correctiveActionRepository = null,
         private readonly ?ManagementReviewRepository $managementReviewRepository = null,
         private readonly ?WorkflowInstanceRepository $workflowInstanceRepository = null,
-        private readonly ?RiskTreatmentPlanRepository $riskTreatmentPlanRepository = null
+        private readonly ?RiskTreatmentPlanRepository $riskTreatmentPlanRepository = null,
+        /**
+         * %kernel.project_dir% — needed for filesystem-orphan scan (uploads-vs-DB).
+         * Optional with default null so existing constructor call-sites + unit-tests
+         * keep compiling; downstream methods handle the null case gracefully.
+         */
+        private readonly ?string $projectDir = null,
+        /**
+         * Filesystem upload-orphan scanner. Injected by the container when
+         * $projectDir is available; null-safe — DataIntegrityService keeps
+         * compiling in unit-test contexts that don't provide this dep.
+         */
+        private readonly ?UploadOrphanChecker $uploadOrphanChecker = null,
+        /**
+         * Status-enum drift checker. Optional for backward-compat with
+         * unit-test setUp() that constructs without the new dep.
+         */
+        private readonly ?StatusEnumDriftChecker $statusEnumDriftChecker = null,
+        /**
+         * Orphan + cascade-orphan detector.
+         */
+        private readonly ?OrphanFinder $orphanFinder = null,
+        /**
+         * Duplicate entity finder + merger.
+         */
+        private readonly ?DuplicateFinder $duplicateFinder = null,
+        /**
+         * Reference integrity checker (broken refs, missing relationships, inconsistent data).
+         */
+        private readonly ?ReferenceIntegrityChecker $referenceIntegrityChecker = null,
+        /**
+         * Health issue aggregator (risk, compliance, operational, data-quality checks).
+         */
+        private readonly ?HealthIssueAggregator $healthIssueAggregator = null,
+        /**
+         * JSON-schema and AuditLog integrity drift checker.
+         */
+        private readonly ?SchemaDriftChecker $schemaDriftChecker = null,
+        /**
+         * Per-tenant entity count aggregator + health-score calculator.
+         */
+        private readonly ?EntityCountAggregator $entityCountAggregator = null,
     ) {
+    }
+
+    /**
+     * Returns the list of entity FQCN that are globally scoped (tenant_id=NULL by design).
+     * The repair-orphan logic skips these to prevent UniqueConstraintViolationException.
+     *
+     * @return list<class-string>
+     */
+    public function getGlobalCatalogueEntityClasses(): array
+    {
+        return OrphanFinder::GLOBAL_CATALOGUE_ENTITIES;
     }
 
     /**
@@ -84,881 +165,112 @@ class DataIntegrityService
             'missing_relationships' => $this->findMissingRelationships(),
             'inconsistent_data' => $this->findInconsistentData(),
             'entity_counts' => $this->getEntityCountsByTenant(),
+            // Extended coverage (2026-05): file-orphans, cascade orphans,
+            // JSON-schema violations, AuditLog integrity gaps, status-enum drift.
+            // All detection-only except the first two — repair paths live
+            // in DataRepairController.
+            'orphaned_uploads' => $this->findOrphanedUploads(),
+            'cascade_orphans' => $this->findCascadeOrphans(),
+            'json_schema_violations' => $this->findJsonSchemaViolations(),
+            'audit_log_integrity' => $this->findAuditLogIntegrityIssues(),
+            'status_enum_drift' => $this->findStatusEnumDriftIssues(),
         ];
     }
 
     /**
-     * Find all entities without tenant assignment
-     *
-     * WICHTIG: TenantFilter muss hier deaktiviert sein, sonst kombiniert
-     * Doctrine das "tenant IS NULL" mit dem automatischen
-     * "tenant_id = :current" zu einer widersprüchlichen Bedingung
-     * und liefert 0 Resultate zurück. Orphans bleiben unsichtbar.
+     * Find all entities without tenant assignment.
+     * Delegates to {@see OrphanFinder}.
      */
     public function findAllOrphanedEntities(): array
     {
-        $filters = $this->entityManager->getFilters();
-        $wasEnabled = $filters->isEnabled('tenant_filter');
-        if ($wasEnabled) {
-            $filters->disable('tenant_filter');
-        }
-
-        try {
-            return $this->queryOrphanedEntities();
-        } finally {
-            if ($wasEnabled) {
-                $filters->enable('tenant_filter');
-            }
-        }
+        return $this->orphanFinder?->findAllOrphanedEntities() ?? [];
     }
 
     /**
-     * Generischer Scan: alle Doctrine-gemappten Entities mit tenant-Assoziation
-     * auf NULL-Tenant prüfen. Entdeckt automatisch neue Entity-Typen — kein
-     * Ctor-Argument pro Entity-Klasse mehr nötig.
-     */
-    private function queryOrphanedEntities(): array
-    {
-        $orphaned = [];
-        $metadataFactory = $this->entityManager->getMetadataFactory();
-
-        // User wird ausgeschlossen — Super-Admins dürfen legitim tenant-los sein.
-        $excludedClasses = [Tenant::class, \App\Entity\User::class];
-
-        foreach ($metadataFactory->getAllMetadata() as $metadata) {
-            $className = $metadata->getName();
-
-            if (in_array($className, $excludedClasses, true) || !$metadata->hasAssociation('tenant')) {
-                continue;
-            }
-
-            // Abstract/Mapped-Superclass können nicht direkt abgefragt werden
-            if ($metadata->isMappedSuperclass || $metadata->isEmbeddedClass) {
-                continue;
-            }
-
-            $orphans = $this->entityManager->createQueryBuilder()
-                ->select('e')
-                ->from($className, 'e')
-                ->where('e.tenant IS NULL')
-                ->getQuery()->getResult();
-
-            if (count($orphans) > 0) {
-                // Key ist kurzer Entity-Name in snake_case-Plural (z.B. DataBreach → data_breaches)
-                $shortName = substr($className, strrpos($className, '\\') + 1);
-                $snake = strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $shortName));
-                $key = $snake . (str_ends_with($snake, 's') ? '' : 's');
-                $orphaned[$key] = $orphans;
-            }
-        }
-
-        ksort($orphaned);
-        return $orphaned;
-    }
-
-    /**
-     * Find duplicate entities within the same tenant
-     * (e.g., same audit number, same asset name)
+     * Find duplicate entities within the same tenant.
+     * Delegates to {@see DuplicateFinder}.
      */
     public function findDuplicateEntities(): array
     {
-        $duplicates = [];
-
-        // Find audits with duplicate audit numbers within same tenant
-        $audits = $this->auditRepository->findAll();
-        $auditsByTenant = [];
-        foreach ($audits as $audit) {
-            if ($audit->getTenant()) {
-                $key = $audit->getTenant()->getId() . '_' . $audit->getAuditNumber();
-                if (!isset($auditsByTenant[$key])) {
-                    $auditsByTenant[$key] = [];
-                }
-                $auditsByTenant[$key][] = $audit;
-            }
-        }
-        foreach ($auditsByTenant as $key => $group) {
-            if (count($group) > 1) {
-                $duplicates['audits'][] = [
-                    'key' => $key,
-                    'count' => count($group),
-                    'entities' => $group,
-                    'field' => 'auditNumber',
-                    'value' => $group[0]->getAuditNumber(),
-                ];
-            }
-        }
-
-        // Find assets with duplicate names within same tenant
-        $assets = $this->assetRepository->findAll();
-        $assetsByTenant = [];
-        foreach ($assets as $asset) {
-            if ($asset->getTenant()) {
-                $key = $asset->getTenant()->getId() . '_' . strtolower((string) $asset->getName());
-                if (!isset($assetsByTenant[$key])) {
-                    $assetsByTenant[$key] = [];
-                }
-                $assetsByTenant[$key][] = $asset;
-            }
-        }
-        foreach ($assetsByTenant as $key => $group) {
-            if (count($group) > 1) {
-                $duplicates['assets'][] = [
-                    'key' => $key,
-                    'count' => count($group),
-                    'entities' => $group,
-                    'field' => 'name',
-                    'value' => $group[0]->getName(),
-                ];
-            }
-        }
-
-        // Find risks with duplicate titles within same tenant
-        $risks = $this->riskRepository->findAll();
-        $risksByTenant = [];
-        foreach ($risks as $risk) {
-            if ($risk->getTenant()) {
-                $key = $risk->getTenant()->getId() . '_' . strtolower((string) $risk->getTitle());
-                if (!isset($risksByTenant[$key])) {
-                    $risksByTenant[$key] = [];
-                }
-                $risksByTenant[$key][] = $risk;
-            }
-        }
-        foreach ($risksByTenant as $key => $group) {
-            if (count($group) > 1) {
-                $duplicates['risks'][] = [
-                    'key' => $key,
-                    'count' => count($group),
-                    'entities' => $group,
-                    'field' => 'title',
-                    'value' => $group[0]->getTitle(),
-                ];
-            }
-        }
-
-        // Incident duplicates by title
-        $incidentsByTenant = [];
-        foreach ($this->incidentRepository->findAll() as $incident) {
-            if ($incident->getTenant()) {
-                $key = $incident->getTenant()->getId() . '_' . strtolower(trim($incident->getTitle()));
-                $incidentsByTenant[$key][] = $incident;
-            }
-        }
-        foreach ($incidentsByTenant as $group) {
-            if (count($group) > 1) {
-                $duplicates['incidents'][] = $group;
-            }
-        }
-
-        // Document duplicates by original filename (Document has no getTitle())
-        $docsByTenant = [];
-        foreach ($this->documentRepository->findAll() as $doc) {
-            $name = $doc->getOriginalFilename() ?? $doc->getFilename();
-            if ($doc->getTenant() && $name !== null && $name !== '') {
-                $key = $doc->getTenant()->getId() . '_' . strtolower(trim($name));
-                $docsByTenant[$key][] = $doc;
-            }
-        }
-        foreach ($docsByTenant as $group) {
-            if (count($group) > 1) {
-                $duplicates['documents'][] = $group;
-            }
-        }
-
-        return $duplicates;
+        return $this->duplicateFinder?->findDuplicateEntities() ?? [];
     }
 
     /**
-     * Find broken foreign key references
+     * Find broken foreign key references.
+     * Delegates to {@see ReferenceIntegrityChecker}.
      */
     public function findBrokenReferences(): array
     {
-        $broken = [];
-
-        // Check risks with invalid asset references
-        $allRisks = $this->riskRepository->findAll();
-        foreach ($allRisks as $risk) {
-            $asset = $risk->getAsset();
-            if ($asset && !$this->entityManager->contains($asset)) {
-                $broken[] = [
-                    'type' => 'risk_invalid_asset',
-                    'entity_type' => 'Risk',
-                    'entity_id' => $risk->getId(),
-                    'entity_name' => $risk->getTitle(),
-                    'issue' => 'References non-existent asset',
-                ];
-            }
-
-            // Check tenant mismatch
-            if ($asset && $risk->getTenant() && $asset->getTenant() &&
-                $risk->getTenant()->getId() !== $asset->getTenant()->getId()) {
-                $broken[] = [
-                    'type' => 'risk_asset_tenant_mismatch',
-                    'entity_type' => 'Risk',
-                    'entity_id' => $risk->getId(),
-                    'entity_name' => $risk->getTitle(),
-                    'issue' => sprintf('Risk tenant (%s) differs from asset tenant (%s)',
-                        $risk->getTenant()->getName(),
-                        $asset->getTenant()->getName()),
-                ];
-            }
-        }
-
-        // Check incidents with invalid asset references
-        $allIncidents = $this->incidentRepository->findAll();
-        foreach ($allIncidents as $incident) {
-            foreach ($incident->getAffectedAssets() as $asset) {
-                if (!$this->entityManager->contains($asset)) {
-                    $broken[] = [
-                        'type' => 'incident_invalid_asset',
-                        'entity_type' => 'Incident',
-                        'entity_id' => $incident->getId(),
-                        'entity_name' => $incident->getTitle(),
-                        'issue' => 'References non-existent asset',
-                    ];
-                    break;
-                }
-
-                // Check tenant mismatch
-                if ($incident->getTenant() && $asset->getTenant() &&
-                    $incident->getTenant()->getId() !== $asset->getTenant()->getId()) {
-                    $broken[] = [
-                        'type' => 'incident_asset_tenant_mismatch',
-                        'entity_type' => 'Incident',
-                        'entity_id' => $incident->getId(),
-                        'entity_name' => $incident->getTitle(),
-                        'issue' => sprintf('Incident tenant (%s) differs from asset tenant (%s)',
-                            $incident->getTenant()->getName(),
-                            $asset->getTenant()->getName()),
-                    ];
-                    break;
-                }
-            }
-        }
-
-        // Check controls with invalid risk references
-        $allControls = $this->controlRepository->findAll();
-        foreach ($allControls as $control) {
-            foreach ($control->getRisks() as $risk) {
-                if (!$this->entityManager->contains($risk)) {
-                    $broken[] = [
-                        'type' => 'control_invalid_risk',
-                        'entity_type' => 'Control',
-                        'entity_id' => $control->getId(),
-                        'entity_name' => $control->getName(),
-                        'issue' => 'References non-existent risk',
-                    ];
-                    break;
-                }
-            }
-        }
-
-        return $broken;
+        return $this->referenceIntegrityChecker?->findBrokenReferences() ?? [];
     }
 
     /**
-     * Find entities with missing required relationships
+     * Find entities with missing required relationships.
+     * Delegates to {@see ReferenceIntegrityChecker}.
      */
     public function findMissingRelationships(): array
     {
-        $missing = [];
-
-        // Risks without assets
-        $risksWithoutAsset = $this->riskRepository->createQueryBuilder('r')
-            ->where('r.asset IS NULL')
-            ->getQuery()->getResult();
-        if (count($risksWithoutAsset) > 0) {
-            $missing['risks_without_asset'] = $risksWithoutAsset;
-        }
-
-        // Incidents without affected assets
-        $incidentsWithoutAssets = [];
-        $allIncidents = $this->incidentRepository->findAll();
-        foreach ($allIncidents as $incident) {
-            if ($incident->getAffectedAssets()->isEmpty()) {
-                $incidentsWithoutAssets[] = $incident;
-            }
-        }
-        if (count($incidentsWithoutAssets) > 0) {
-            $missing['incidents_without_assets'] = $incidentsWithoutAssets;
-        }
-
-        // Applicable controls without risks (and without framework mapping)
-        $controlsWithoutRisks = [];
-        $allControls = $this->controlRepository->findAll();
-        foreach ($allControls as $control) {
-            if ($control->isApplicable() && $control->getRisks()->isEmpty()) {
-                $controlsWithoutRisks[] = $control;
-            }
-        }
-        if (count($controlsWithoutRisks) > 0) {
-            $missing['controls_without_risks'] = $controlsWithoutRisks;
-        }
-
-        // Applicable controls without protected assets
-        $controlsWithoutAssets = [];
-        foreach ($allControls as $control) {
-            if ($control->isApplicable() && $control->getProtectedAssets()->isEmpty()) {
-                $controlsWithoutAssets[] = $control;
-            }
-        }
-        if (count($controlsWithoutAssets) > 0) {
-            $missing['controls_without_assets'] = $controlsWithoutAssets;
-        }
-
-        // BC Plans without business processes
-        $bcPlansWithoutProcesses = [];
-        $allBcPlans = $this->bcPlanRepository->findAll();
-        foreach ($allBcPlans as $plan) {
-            if (!$plan->getBusinessProcess()) {
-                $bcPlansWithoutProcesses[] = $plan;
-            }
-        }
-        if (count($bcPlansWithoutProcesses) > 0) {
-            $missing['bc_plans_without_process'] = $bcPlansWithoutProcesses;
-        }
-
-        // Trainings without participants assigned
-        $trainingsWithoutParticipants = [];
-        foreach ($this->trainingRepository->findAll() as $training) {
-            if (empty($training->getParticipants())) {
-                $trainingsWithoutParticipants[] = $training;
-            }
-        }
-        if (count($trainingsWithoutParticipants) > 0) {
-            $missing['trainings_without_participants'] = $trainingsWithoutParticipants;
-        }
-
-        // DataSubjectRequests without assignee
-        if ($this->dataSubjectRequestRepository !== null) {
-            $unassignedDsr = $this->dataSubjectRequestRepository->createQueryBuilder('d')
-                ->where('d.assignedTo IS NULL')
-                ->andWhere('d.status NOT IN (:terminal)')
-                ->setParameter('terminal', ['completed', 'rejected'])
-                ->getQuery()->getResult();
-            if (count($unassignedDsr) > 0) {
-                $missing['dsr_without_assignee'] = $unassignedDsr;
-            }
-        }
-
-        return $missing;
+        return $this->referenceIntegrityChecker?->findMissingRelationships() ?? [];
     }
 
     /**
-     * Find inconsistent data (e.g., dates, status)
+     * Find inconsistent data (e.g., dates, status).
+     * Delegates to {@see ReferenceIntegrityChecker}.
      */
     public function findInconsistentData(): array
     {
-        $inconsistent = [];
-
-        // Audits with completed status but no actual completion date
-        $audits = $this->auditRepository->findAll();
-        foreach ($audits as $audit) {
-            if (in_array($audit->getStatus(), ['completed', 'reported']) && !$audit->getActualDate()) {
-                $inconsistent['audits_completed_without_date'][] = $audit;
-            }
-        }
-
-        // Risks with residual risk higher than inherent risk
-        $risks = $this->riskRepository->findAll();
-        foreach ($risks as $risk) {
-            if ($risk->getResidualRiskLevel() && $risk->getInherentRiskLevel() &&
-                $risk->getResidualRiskLevel() > $risk->getInherentRiskLevel()) {
-                $inconsistent['risks_residual_higher_than_inherent'][] = $risk;
-            }
-        }
-
-        // Incidents with resolved status but no resolution date
-        $incidents = $this->incidentRepository->findAll();
-        foreach ($incidents as $incident) {
-            if ($incident->getStatus() === IncidentStatus::Resolved && !$incident->getResolvedAt()) {
-                $inconsistent['incidents_resolved_without_date'][] = $incident;
-            }
-        }
-
-        // Risk status validation
-        $validRiskStatuses = \App\Enum\RiskStatus::cases();
-        try {
-            $invalidRiskStatuses = $this->riskRepository->createQueryBuilder('r')
-                ->where('r.status NOT IN (:valid)')->setParameter('valid', $validRiskStatuses)
-                ->getQuery()->getResult();
-            if (is_array($invalidRiskStatuses) && count($invalidRiskStatuses) > 0) {
-                $inconsistent['invalid_risk_status'] = $invalidRiskStatuses;
-            }
-        } catch (\Throwable) {
-            // Skip if query fails (e.g., in unit tests with mocked repos)
-        }
-
-        // Risk: accept without formal acceptance
-        $unacceptedAccepts = array_filter($risks, fn($r) => $r->getTreatmentStrategy() === TreatmentStrategy::Accept && !$r->isFormallyAccepted());
-        if (count($unacceptedAccepts) > 0) {
-            $inconsistent['accept_without_formal'] = array_values($unacceptedAccepts);
-        }
-
-        // Incident status validation
-        $validIncidentStatuses = ['reported', 'in_investigation', 'in_resolution', 'resolved', 'closed'];
-        try {
-            $invalidIncidentStatuses = $this->incidentRepository->createQueryBuilder('i')
-                ->where('i.status NOT IN (:valid)')->setParameter('valid', $validIncidentStatuses)
-                ->getQuery()->getResult();
-            if (is_array($invalidIncidentStatuses) && count($invalidIncidentStatuses) > 0) {
-                $inconsistent['invalid_incident_status'] = $invalidIncidentStatuses;
-            }
-        } catch (\Throwable) {
-        }
-
-        // DataSubjectRequest checks
-        if ($this->dataSubjectRequestRepository !== null) {
-            $validDsrStatuses = ['received', 'identity_verification', 'in_progress', 'completed', 'rejected', 'extended'];
-            $invalidDsr = $this->dataSubjectRequestRepository->createQueryBuilder('d')
-                ->where('d.status NOT IN (:valid)')->setParameter('valid', $validDsrStatuses)
-                ->getQuery()->getResult();
-            if (count($invalidDsr) > 0) {
-                $inconsistent['invalid_dsr_status'] = $invalidDsr;
-            }
-
-            $allDsr = $this->dataSubjectRequestRepository->findAll();
-            $overdueOpen = array_filter($allDsr, fn($d) =>
-                $d->getEffectiveDeadline() !== null &&
-                $d->getEffectiveDeadline() < new \DateTimeImmutable() &&
-                !in_array($d->getStatus(), ['completed', 'rejected'])
-            );
-            if (count($overdueOpen) > 0) {
-                $inconsistent['overdue_data_subject_requests'] = array_values($overdueOpen);
-            }
-
-            $completedNoResponse = array_filter($allDsr, fn($d) =>
-                $d->getStatus() === 'completed' && empty($d->getResponseDescription())
-            );
-            if (count($completedNoResponse) > 0) {
-                $inconsistent['completed_dsr_without_response'] = array_values($completedNoResponse);
-            }
-        }
-
-        // KpiSnapshot with empty data
-        if ($this->kpiSnapshotRepository !== null) {
-            $emptySnapshots = array_filter(
-                $this->kpiSnapshotRepository->findAll(),
-                fn($s) => empty($s->getKpiData())
-            );
-            if (count($emptySnapshots) > 0) {
-                $inconsistent['empty_kpi_snapshots'] = array_values($emptySnapshots);
-            }
-        }
-
-        // Documents without owner (now nullable after schema change)
-        try {
-            $docsWithoutOwner = $this->documentRepository->createQueryBuilder('d')
-                ->where('d.user IS NULL')->getQuery()->getResult();
-            if (is_array($docsWithoutOwner) && count($docsWithoutOwner) > 0) {
-                $inconsistent['documents_without_owner'] = $docsWithoutOwner;
-            }
-        } catch (\Throwable) {
-        }
-
-        return $inconsistent;
+        return $this->referenceIntegrityChecker?->findInconsistentData() ?? [];
     }
 
     /**
      * Risk-specific health checks (ISO 27005 / ISO 27001 Clause 6.1.2).
+     * Delegates to {@see HealthIssueAggregator}.
      *
-     * Returns four keyed arrays, each an array of Risk objects:
-     *   - 'risks_missing_treatment_strategy': status not 'identified' but no treatment strategy set
-     *   - 'risks_residual_exceeds_inherent': residual risk level > inherent (mathematically impossible)
-     *   - 'risks_treatment_plan_without_controls': treatmentDescription filled but no controls linked
-     *   - 'risks_past_review_date': reviewDate is in the past and risk is not closed/treated
+     * @return array{
+     *     risks_missing_treatment_strategy?: list<mixed>,
+     *     risks_residual_exceeds_inherent?: list<mixed>,
+     *     risks_treatment_plan_without_controls?: list<mixed>,
+     *     risks_past_review_date?: list<mixed>,
+     * }
      */
     public function findRiskHealthIssues(): array
     {
-        $issues = [];
-        $now = new \DateTimeImmutable();
-
-        // Terminal statuses where review/treatment checks no longer apply
-        $terminalStatuses = [
-            \App\Enum\RiskStatus::Closed,
-            \App\Enum\RiskStatus::Treated,
-        ];
-
-        $risks = $this->riskRepository->findAll();
-
-        $missingStrategy = [];
-        $residualExceedsInherent = [];
-        $treatmentWithoutControls = [];
-        $pastReviewDate = [];
-
-        foreach ($risks as $risk) {
-            $status = $risk->getStatus();
-
-            // Check 1: Non-identified status but no treatment strategy set
-            if (
-                $status !== \App\Enum\RiskStatus::Identified
-                && $risk->getTreatmentStrategy() === null
-                && !in_array($status, $terminalStatuses, true)
-            ) {
-                $missingStrategy[] = $risk;
-            }
-
-            // Check 2: Residual risk > inherent risk (impossible in a correctly assessed risk)
-            if ($risk->getResidualRiskLevel() > $risk->getInherentRiskLevel()) {
-                $residualExceedsInherent[] = $risk;
-            }
-
-            // Check 3: Treatment description filled but no controls linked
-            if (
-                !empty($risk->getTreatmentDescription())
-                && $risk->getControls()->isEmpty()
-                && !in_array($status, $terminalStatuses, true)
-            ) {
-                $treatmentWithoutControls[] = $risk;
-            }
-
-            // Check 4: Review date in the past and risk not in a terminal status
-            $reviewDate = $risk->getReviewDate();
-            if (
-                $reviewDate !== null
-                && $reviewDate < $now
-                && !in_array($status, $terminalStatuses, true)
-            ) {
-                $pastReviewDate[] = $risk;
-            }
-        }
-
-        if (count($missingStrategy) > 0) {
-            $issues['risks_missing_treatment_strategy'] = $missingStrategy;
-        }
-        if (count($residualExceedsInherent) > 0) {
-            $issues['risks_residual_exceeds_inherent'] = $residualExceedsInherent;
-        }
-        if (count($treatmentWithoutControls) > 0) {
-            $issues['risks_treatment_plan_without_controls'] = $treatmentWithoutControls;
-        }
-        if (count($pastReviewDate) > 0) {
-            $issues['risks_past_review_date'] = $pastReviewDate;
-        }
-
-        return $issues;
+        return $this->healthIssueAggregator?->findRiskHealthIssues() ?? [];
     }
 
     /**
      * Compliance-specific health checks (GDPR / ISO 27001 privacy extensions).
+     * Delegates to {@see HealthIssueAggregator}.
      *
-     * Returns five keyed arrays:
-     *   - 'assets_without_cia'    : Asset objects where all three CIA values are NULL or 0
-     *   - 'breaches_overdue_72h'  : DataBreach objects requiring authority notification but overdue
-     *   - 'dsr_overdue_30d'       : DataSubjectRequest objects past their deadline and still open
-     *   - 'dpia_without_dpo'      : DataProtectionImpactAssessment objects approved without DPO consultation
-     *   - 'vvt_incomplete'        : ProcessingActivity objects active but incomplete per Art. 30
+     * @return array{
+     *     assets_without_cia?: list<mixed>,
+     *     breaches_overdue_72h?: list<mixed>,
+     *     dsr_overdue_30d?: list<mixed>,
+     *     dpia_without_dpo?: list<mixed>,
+     *     vvt_incomplete?: list<mixed>,
+     * }
      */
     public function findComplianceHealthIssues(): array
     {
-        $issues = [];
-
-        // Check 1: Assets without CIA values (all three NULL or 0 = no classification)
-        try {
-            $assetsWithoutCia = $this->assetRepository->createQueryBuilder('a')
-                ->where(
-                    '(a.confidentialityValue IS NULL OR a.confidentialityValue = 0) AND ' .
-                    '(a.integrityValue IS NULL OR a.integrityValue = 0) AND ' .
-                    '(a.availabilityValue IS NULL OR a.availabilityValue = 0)'
-                )
-                ->getQuery()
-                ->getResult();
-            if (count($assetsWithoutCia) > 0) {
-                $issues['assets_without_cia'] = $assetsWithoutCia;
-            }
-        } catch (\Throwable) {
-        }
-
-        // Check 2: Data Breaches overdue 72h supervisory authority notification (GDPR Art. 33)
-        try {
-            $cutoff = new \DateTimeImmutable('-72 hours');
-            $overdueBreaches = $this->dataBreachRepository->createQueryBuilder('db')
-                ->where('db.requiresAuthorityNotification = :req')
-                ->andWhere('db.supervisoryAuthorityNotifiedAt IS NULL')
-                ->andWhere('db.detectedAt IS NOT NULL')
-                ->andWhere('db.detectedAt < :cutoff')
-                ->setParameter('req', true)
-                ->setParameter('cutoff', $cutoff)
-                ->getQuery()
-                ->getResult();
-            if (count($overdueBreaches) > 0) {
-                $issues['breaches_overdue_72h'] = $overdueBreaches;
-            }
-        } catch (\Throwable) {
-        }
-
-        // Check 3: Data Subject Requests past 30-day deadline and still open (GDPR Art. 12(3))
-        if ($this->dataSubjectRequestRepository !== null) {
-            try {
-                $now = new \DateTimeImmutable();
-                $overdueDsr = $this->dataSubjectRequestRepository->createQueryBuilder('d')
-                    ->where('d.deadlineAt IS NOT NULL')
-                    ->andWhere('d.deadlineAt < :now')
-                    ->andWhere('d.status NOT IN (:terminal)')
-                    ->setParameter('now', $now)
-                    ->setParameter('terminal', ['completed', 'rejected'])
-                    ->getQuery()
-                    ->getResult();
-                if (count($overdueDsr) > 0) {
-                    $issues['dsr_overdue_30d'] = $overdueDsr;
-                }
-            } catch (\Throwable) {
-            }
-        }
-
-        // Check 4: DPIA approved without DPO consultation (GDPR Art. 35/36)
-        if ($this->dpiaRepository !== null) {
-            try {
-                $dpiaWithoutDpo = $this->dpiaRepository->createQueryBuilder('d')
-                    ->where('d.status = :approved')
-                    ->andWhere('d.dpoConsultationDate IS NULL')
-                    ->setParameter('approved', 'approved')
-                    ->getQuery()
-                    ->getResult();
-                if (count($dpiaWithoutDpo) > 0) {
-                    $issues['dpia_without_dpo'] = $dpiaWithoutDpo;
-                }
-            } catch (\Throwable) {
-            }
-        }
-
-        // Check 5: Active processing activities incomplete per Art. 30 VVT
-        try {
-            $allActiveActivities = $this->processingActivityRepository->createQueryBuilder('pa')
-                ->where('pa.status = :active')
-                ->setParameter('active', 'active')
-                ->getQuery()
-                ->getResult();
-            $incomplete = array_filter(
-                $allActiveActivities,
-                fn($pa): bool =>
-                    empty($pa->getName()) ||
-                    empty($pa->getPurposes()) ||
-                    empty($pa->getLegalBasis())
-            );
-            if (count($incomplete) > 0) {
-                $issues['vvt_incomplete'] = array_values($incomplete);
-            }
-        } catch (\Throwable) {
-        }
-
-        return $issues;
+        return $this->healthIssueAggregator?->findComplianceHealthIssues() ?? [];
     }
 
     /**
      * Operational health checks (ISO 27001 Tier 2 operational gaps).
-     *
-     * Returns up to 7 keyed arrays:
-     *   - 'suppliers_unassessed'  : Supplier with criticality='critical' and no security assessment
-     *   - 'bc_plans_untested'     : BusinessContinuityPlan active but never tested
-     *   - 'findings_overdue'      : AuditFinding open/in_progress past due date
-     *   - 'capa_overdue'          : CorrectiveAction in_progress past planned completion date
-     *   - 'training_overdue'      : Training whose scheduledDate passed but not completed/cancelled
-     *   - 'documents_stale'       : Policy/procedure/guideline documents not updated for >1 year
-     *   - 'reviews_overdue'       : ManagementReview planned but reviewDate in the past
+     * Delegates to {@see HealthIssueAggregator}.
      */
     public function findOperationalHealthIssues(): array
     {
-        $issues = [];
-        $now = new \DateTimeImmutable();
-
-        // Check 1: Critical suppliers never assessed
-        try {
-            $unassessed = $this->supplierRepository->createQueryBuilder('s')
-                ->where('s.criticality = :crit')
-                ->andWhere('s.lastSecurityAssessment IS NULL')
-                ->setParameter('crit', 'critical')
-                ->getQuery()
-                ->getResult();
-            if (count($unassessed) > 0) {
-                $issues['suppliers_unassessed'] = $unassessed;
-            }
-        } catch (\Throwable) {
-        }
-
-        // Check 2: Active BC Plans never tested
-        try {
-            $untested = $this->bcPlanRepository->createQueryBuilder('bc')
-                ->where('bc.status = :active')
-                ->andWhere('bc.lastTested IS NULL')
-                ->setParameter('active', 'active')
-                ->getQuery()
-                ->getResult();
-            if (count($untested) > 0) {
-                $issues['bc_plans_untested'] = $untested;
-            }
-        } catch (\Throwable) {
-        }
-
-        // Check 3: Audit findings overdue (open/in_progress past dueDate)
-        if ($this->auditFindingRepository !== null) {
-            try {
-                $overdueFindings = $this->auditFindingRepository->createQueryBuilder('af')
-                    ->where('af.status IN (:open)')
-                    ->andWhere('af.dueDate IS NOT NULL')
-                    ->andWhere('af.dueDate < :now')
-                    ->setParameter('open', ['open', 'in_progress'])
-                    ->setParameter('now', $now)
-                    ->getQuery()
-                    ->getResult();
-                if (count($overdueFindings) > 0) {
-                    $issues['findings_overdue'] = $overdueFindings;
-                }
-            } catch (\Throwable) {
-            }
-        }
-
-        // Check 4: Corrective actions in_progress past plannedCompletionDate
-        if ($this->correctiveActionRepository !== null) {
-            try {
-                $overdueCapas = $this->correctiveActionRepository->createQueryBuilder('ca')
-                    ->where('ca.status = :prog')
-                    ->andWhere('ca.plannedCompletionDate IS NOT NULL')
-                    ->andWhere('ca.plannedCompletionDate < :now')
-                    ->setParameter('prog', 'in_progress')
-                    ->setParameter('now', $now)
-                    ->getQuery()
-                    ->getResult();
-                if (count($overdueCapas) > 0) {
-                    $issues['capa_overdue'] = $overdueCapas;
-                }
-            } catch (\Throwable) {
-            }
-        }
-
-        // Check 5: Trainings with scheduledDate in the past and not completed/cancelled
-        try {
-            $overdueTrainings = $this->trainingRepository->createQueryBuilder('tr')
-                ->where('tr.scheduledDate < :now')
-                ->andWhere('tr.status NOT IN (:terminal)')
-                ->setParameter('now', $now)
-                ->setParameter('terminal', ['completed', 'cancelled'])
-                ->getQuery()
-                ->getResult();
-            if (count($overdueTrainings) > 0) {
-                $issues['training_overdue'] = $overdueTrainings;
-            }
-        } catch (\Throwable) {
-        }
-
-        // Check 6: Policy/procedure/guideline documents stale (no update in >1 year)
-        try {
-            $staleThreshold = $now->modify('-1 year');
-            $staleDocuments = $this->documentRepository->createQueryBuilder('d')
-                ->where('d.category IN (:cats)')
-                ->andWhere('d.updatedAt IS NOT NULL')
-                ->andWhere('d.updatedAt < :threshold')
-                ->setParameter('cats', ['policy', 'procedure', 'guideline'])
-                ->setParameter('threshold', $staleThreshold)
-                ->getQuery()
-                ->getResult();
-            if (count($staleDocuments) > 0) {
-                $issues['documents_stale'] = $staleDocuments;
-            }
-        } catch (\Throwable) {
-        }
-
-        // Check 7: Management reviews planned but reviewDate in the past
-        if ($this->managementReviewRepository !== null) {
-            try {
-                $overdueReviews = $this->managementReviewRepository->createQueryBuilder('mr')
-                    ->where('mr.status = :planned')
-                    ->andWhere('mr.reviewDate < :now')
-                    ->setParameter('planned', 'planned')
-                    ->setParameter('now', $now)
-                    ->getQuery()
-                    ->getResult();
-                if (count($overdueReviews) > 0) {
-                    $issues['reviews_overdue'] = $overdueReviews;
-                }
-            } catch (\Throwable) {
-            }
-        }
-
-        return $issues;
+        return $this->healthIssueAggregator?->findOperationalHealthIssues() ?? [];
     }
 
     /**
-     * Tier 3 data quality checks — business-process issues that go beyond
-     * structural integrity and compliance but indicate operational gaps.
-     *
-     * Returns up to four keyed arrays:
-     *   - 'workflows_stuck'       : WorkflowInstance in_progress for > 30 days
-     *   - 'risks_zero_values'     : Risk with probability/impact NULL or 0, not closed
-     *   - 'incidents_no_rca'      : Incident closed without root cause
-     *   - 'treatments_unreviewed' : RiskTreatmentPlan completed without actualCompletionDate
+     * Tier 3 data quality checks — business-process issues.
+     * Delegates to {@see HealthIssueAggregator}.
      */
     public function findDataQualityIssues(): array
     {
-        $issues = [];
-
-        // Check 1: Workflow instances stuck in progress for more than 30 days
-        if ($this->workflowInstanceRepository !== null) {
-            try {
-                $cutoff = new \DateTimeImmutable('-30 days');
-                $stuckWorkflows = $this->workflowInstanceRepository->createQueryBuilder('wi')
-                    ->where('wi.status = :status')
-                    ->andWhere('wi.startedAt < :cutoff')
-                    ->setParameter('status', 'in_progress')
-                    ->setParameter('cutoff', $cutoff)
-                    ->orderBy('wi.startedAt', 'ASC')
-                    ->getQuery()
-                    ->getResult();
-                if (count($stuckWorkflows) > 0) {
-                    $issues['workflows_stuck'] = $stuckWorkflows;
-                }
-            } catch (\Throwable) {
-            }
-        }
-
-        // Check 2: Risks with zero or null probability/impact that are not closed
-        try {
-            $risksZeroValues = $this->riskRepository->createQueryBuilder('r')
-                ->where('(r.probability = 0 OR r.probability IS NULL)')
-                ->andWhere('r.status NOT IN (:excludedStatuses)')
-                ->setParameter('excludedStatuses', [\App\Enum\RiskStatus::Closed])
-                ->orderBy('r.id', 'ASC')
-                ->getQuery()
-                ->getResult();
-            if (count($risksZeroValues) > 0) {
-                $issues['risks_zero_values'] = $risksZeroValues;
-            }
-        } catch (\Throwable) {
-        }
-
-        // Check 3: Incidents closed without a root cause analysis
-        try {
-            $incidentsNoRca = $this->incidentRepository->createQueryBuilder('i')
-                ->where('i.status = :status')
-                ->andWhere('i.rootCause IS NULL')
-                ->setParameter('status', 'closed')
-                ->orderBy('i.id', 'ASC')
-                ->getQuery()
-                ->getResult();
-            if (count($incidentsNoRca) > 0) {
-                $issues['incidents_no_rca'] = $incidentsNoRca;
-            }
-        } catch (\Throwable) {
-        }
-
-        // Check 4: Risk treatment plans completed without an actual completion date (effectiveness review missing)
-        if ($this->riskTreatmentPlanRepository !== null) {
-            try {
-                $unreviewedTreatments = $this->riskTreatmentPlanRepository->createQueryBuilder('rtp')
-                    ->where('rtp.status = :status')
-                    ->andWhere('rtp.actualCompletionDate IS NULL')
-                    ->setParameter('status', 'completed')
-                    ->orderBy('rtp.id', 'ASC')
-                    ->getQuery()
-                    ->getResult();
-                if (count($unreviewedTreatments) > 0) {
-                    $issues['treatments_unreviewed'] = $unreviewedTreatments;
-                }
-            } catch (\Throwable) {
-            }
-        }
-
-        return $issues;
+        return $this->healthIssueAggregator?->findDataQualityIssues() ?? [];
     }
 
     /**
@@ -966,83 +278,22 @@ class DataIntegrityService
      * with the lowest ID (oldest) and removing the rest.
      *
      * Returns the number of deleted duplicate entities.
+     * Delegates to {@see DuplicateFinder}.
      *
      * Supported entity types: audits, assets, risks, incidents, documents
      */
     public function mergeDuplicates(string $entityType): int
     {
-        $duplicates = $this->findDuplicateEntities();
-
-        if (!isset($duplicates[$entityType]) || count($duplicates[$entityType]) === 0) {
-            return 0;
-        }
-
-        $deleted = 0;
-
-        foreach ($duplicates[$entityType] as $group) {
-            // Normalise: groups for audits/assets/risks have an 'entities' key;
-            // incidents/documents groups are plain entity arrays.
-            $entities = is_array($group) && isset($group['entities'])
-                ? $group['entities']
-                : (array) $group;
-
-            if (count($entities) < 2) {
-                continue;
-            }
-
-            // Sort ascending by ID so the oldest survives
-            usort($entities, fn($a, $b) => ($a->getId() ?? 0) <=> ($b->getId() ?? 0));
-
-            // Keep the first (lowest ID), delete the rest
-            $toDelete = array_slice($entities, 1);
-            foreach ($toDelete as $entity) {
-                $this->entityManager->remove($entity);
-                $deleted++;
-            }
-        }
-
-        if ($deleted > 0) {
-            $this->entityManager->flush();
-        }
-
-        return $deleted;
+        return $this->duplicateFinder?->mergeDuplicates($entityType) ?? 0;
     }
 
     /**
-     * Get entity counts grouped by tenant
+     * Get entity counts grouped by tenant.
+     * Delegates to {@see EntityCountAggregator::countByTenant()}.
      */
     public function getEntityCountsByTenant(): array
     {
-        $tenants = $this->tenantRepository->findAll();
-        $counts = [];
-
-        foreach ($tenants as $tenant) {
-            $counts[$tenant->getId()] = [
-                'tenant' => $tenant,
-                'assets' => (int) $this->assetRepository->createQueryBuilder('a')->select('COUNT(a.id)')->where('a.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'risks' => (int) $this->riskRepository->createQueryBuilder('r')->select('COUNT(r.id)')->where('r.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'incidents' => (int) $this->incidentRepository->createQueryBuilder('i')->select('COUNT(i.id)')->where('i.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'audits' => (int) $this->auditRepository->createQueryBuilder('au')->select('COUNT(au.id)')->where('au.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'documents' => (int) $this->documentRepository->createQueryBuilder('d')->select('COUNT(d.id)')->where('d.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'trainings' => (int) $this->trainingRepository->createQueryBuilder('tr')->select('COUNT(tr.id)')->where('tr.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'business_processes' => (int) $this->businessProcessRepository->createQueryBuilder('bp')->select('COUNT(bp.id)')->where('bp.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'bc_plans' => (int) $this->bcPlanRepository->createQueryBuilder('bc')->select('COUNT(bc.id)')->where('bc.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'data_breaches' => (int) $this->dataBreachRepository->createQueryBuilder('db')->select('COUNT(db.id)')->where('db.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'processing_activities' => (int) $this->processingActivityRepository->createQueryBuilder('pa')->select('COUNT(pa.id)')->where('pa.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'suppliers' => (int) $this->supplierRepository->createQueryBuilder('s')->select('COUNT(s.id)')->where('s.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'locations' => (int) $this->locationRepository->createQueryBuilder('l')->select('COUNT(l.id)')->where('l.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-                'people' => (int) $this->personRepository->createQueryBuilder('p')->select('COUNT(p.id)')->where('p.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult(),
-            ];
-
-            if ($this->dataSubjectRequestRepository !== null) {
-                $counts[$tenant->getId()]['data_subject_requests'] = (int) $this->dataSubjectRequestRepository->createQueryBuilder('dsr')->select('COUNT(dsr.id)')->where('dsr.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult();
-            }
-            if ($this->kpiSnapshotRepository !== null) {
-                $counts[$tenant->getId()]['kpi_snapshots'] = (int) $this->kpiSnapshotRepository->createQueryBuilder('ks')->select('COUNT(ks.id)')->where('ks.tenant = :t')->setParameter('t', $tenant)->getQuery()->getSingleScalarResult();
-            }
-        }
-
-        return $counts;
+        return $this->entityCountAggregator?->countByTenant() ?? [];
     }
 
     /**
@@ -1083,30 +334,105 @@ class DataIntegrityService
             'broken_references_count' => count($broken),
             'duplicates_count' => $totalDuplicates,
             'inconsistent_count' => $totalInconsistent,
-            'health_score' => $this->calculateHealthScore($totalOrphaned, $totalMissing, count($broken), $totalDuplicates, $totalInconsistent),
+            'health_score' => $this->entityCountAggregator?->calculateHealthScore(
+                $totalOrphaned, $totalMissing, count($broken), $totalDuplicates, $totalInconsistent
+            ) ?? 100,
         ];
     }
 
     /**
-     * Calculate overall data health score (0-100)
+     * Scans the filesystem under {projectDir}/public/uploads/ and cross-checks
+     * every regular file against the set of file-paths actually referenced
+     * by Doctrine entities. Reports files present on disk with no DB owner.
+     *
+     * Repair path: {@see DataRepairController::quarantineOrphanedUploads()}
+     * Implementation delegated to {@see UploadOrphanChecker}.
+     *
+     * @return array{
+     *     files: list<array{path: string, relative: string, size: int, mtime: int}>,
+     *     scanned: int,
+     *     referenced: int,
+     *     uploads_dir: string|null,
+     * }
      */
-    private function calculateHealthScore(int $orphaned, int $missing, int $broken, int $duplicates, int $inconsistent): int
+    public function findOrphanedUploads(): array
     {
-        $totalEntities = count($this->assetRepository->findAll()) +
-                        count($this->riskRepository->findAll()) +
-                        count($this->incidentRepository->findAll()) +
-                        count($this->auditRepository->findAll()) +
-                        count($this->documentRepository->findAll());
-
-        if ($totalEntities === 0) {
-            return 100;
+        if ($this->uploadOrphanChecker !== null) {
+            return $this->uploadOrphanChecker->findOrphanedUploads();
         }
+        // Fallback when helper is not injected (e.g. legacy unit-test setUp
+        // that constructs DataIntegrityService without the new optional dep).
+        return ['files' => [], 'scanned' => 0, 'referenced' => 0, 'uploads_dir' => null];
+    }
 
-        $totalIssues = ($orphaned * 3) + ($broken * 5) + ($missing) + ($duplicates * 2) + ($inconsistent);
-        $maxPossibleIssues = $totalEntities * 5; // Max severity weight
+    /**
+     * Cross-entity cascade cleanup detection.
+     * Delegates to {@see OrphanFinder}.
+     *
+     * @return array<string, list<array{id: int, label: string, hint?: string}>>
+     */
+    public function findCascadeOrphans(): array
+    {
+        return $this->orphanFinder?->findCascadeOrphans() ?? [
+            'workflow_instances' => [],
+            'mfa_tokens' => [],
+            'sso_user_approvals' => [],
+            'evidence_tasks' => [],
+            'notification_deliveries' => [],
+        ];
+    }
 
-        $healthScore = max(0, 100 - (($totalIssues / $maxPossibleIssues) * 100));
+    /**
+     * Decodes JSON columns and validates their minimal shape. NO auto-repair.
+     * Delegates to {@see SchemaDriftChecker}.
+     *
+     * @return array<string, list<array{id: int, tenant?: ?string, error: string}>>
+     */
+    public function findJsonSchemaViolations(): array
+    {
+        return $this->schemaDriftChecker?->findJsonSchemaViolations() ?? [
+            'tenant_settings' => [],
+            'tenant_policy_settings' => [],
+            'notification_rule_conditions' => [],
+            'workflow_step_metadata' => [],
+        ];
+    }
 
-        return (int) round($healthScore);
+    /**
+     * AuditLog integrity gap detection.
+     * Delegates to {@see SchemaDriftChecker}.
+     *
+     * @return array{
+     *     bulk_batch_mismatches: list<array{batch_id: string, expected: int, actual: int}>,
+     *     day_gaps: list<array{date: string}>,
+     *     null_tenant_entries: list<array{id: int, action: string, entity_type: string}>,
+     * }
+     */
+    public function findAuditLogIntegrityIssues(): array
+    {
+        return $this->schemaDriftChecker?->findAuditLogIntegrityIssues() ?? [
+            'bulk_batch_mismatches' => [],
+            'day_gaps' => [],
+            'null_tenant_entries' => [],
+        ];
+    }
+
+    /**
+     * Status-Enum drift detection.
+     * Implementation delegated to {@see StatusEnumDriftChecker}.
+     *
+     * @return list<array{
+     *     entity: string,
+     *     enum: string,
+     *     unknown_values: array<string, int>,
+     * }>
+     */
+    public function findStatusEnumDriftIssues(): array
+    {
+        if ($this->statusEnumDriftChecker !== null) {
+            return $this->statusEnumDriftChecker->findDriftIssues();
+        }
+        // Fallback when helper not injected (legacy unit-test setUp without new dep).
+        return [];
     }
 }

@@ -1,14 +1,33 @@
 {#
 /**
- * Standardized Card Component
+ * Standardized Card Component — Aurora v4 (Tier-2 Refactor 2026-05-09)
  *
- * Provides consistent card styling across the application with dark mode support.
- * Based on UI/UX Audit Issue 3.1 - Card Standardization
+ * Audit V2 §F1+F3: This macro now emits PURE AURORA classes
+ * (.fa-section, .fa-feature-card, .fa-widget-card) as primary anchor.
+ * For backward compatibility, the legacy Bootstrap class (.card) is still
+ * appended one final release so consumers that target both
+ * `.card > .card-header` (Bootstrap-bridge in fairy-aurora-components.css)
+ * AND `.fa-section__header` continue to render correctly while the 244
+ * raw card-header/body/footer Templates are migrated by Agent G/H (Tier-3).
+ *
+ * Slot-Markup-Strategy:
+ * - Default-Variant emits `<div class="fa-section card">` (Aurora-primary)
+ *   with header/body/footer rendered as DUAL slots:
+ *   `<div class="fa-section__header card-header">` etc., so existing CSS
+ *   in fairy-aurora-components.css §sections-bridge continues to apply.
+ * - KPI-Variant emits `<article class="fa-feature-card kpi-card kpi-card-{tone} fa-feature-card--{tone}">`.
+ * - Widget/Feature variants follow same dual-class pattern.
+ *
+ * After Tier-3 (244 templates migrated to fa-section__* directly), the
+ * .card / .card-header / .card-body / .card-footer aliases can be dropped
+ * from this macro AND the bridge selectors removed from
+ * fairy-aurora-components.css.
  *
  * Parameters:
  *   - variant: 'default'|'kpi'|'stat'|'widget'|'feature'|'bordered' (default: 'default')
  *   - header: Card header content (optional)
- *   - headerIcon: Bootstrap icon class for header (optional, e.g., 'bi-graph-up')
+ *   - headerIcon: Aurora icon name (without 'fa-icon--' prefix) for header (optional, e.g., 'nav-bar-chart').
+ *                 Legacy `bi-*` prefixed names are auto-stripped + Aurora-rendered.
  *   - title: Card title (alternative to header for simple text)
  *   - titleDomain: Translation domain for title (default: 'messages')
  *   - actions: Card header actions HTML (optional)
@@ -20,27 +39,31 @@
  *   - hoverable: Add hover effect (default: false)
  *
  * Variant Notes:
- *   - 'kpi': Primary metric card (ui-components.css) - use for KPIs and metrics
- *   - 'stat': Legacy alias for 'kpi' (deprecated, use 'kpi' instead)
- *   - 'widget': Dashboard widget card (premium.css) - similar to kpi
- *   - 'feature': Feature showcase card (premium.css) - centered content
- *   - 'bordered': Card with left border accent
+ *   - 'kpi'      → .fa-feature-card (Aurora KPI tile)
+ *   - 'stat'     → deprecated alias for 'kpi'
+ *   - 'widget'   → .fa-widget-card (Aurora dashboard widget)
+ *   - 'feature'  → .fa-feature-card (Aurora feature showcase)
+ *   - 'bordered' → .fa-section with left-border accent (BC: card-border-left-{color})
+ *   - 'default'  → .fa-section (Aurora section wrapper)
  *
  * Usage Examples:
  *
  * 1. Simple card with title:
  *   {% include '_components/_card.html.twig' with {
  *       'title': 'Risk Overview',
- *       'headerIcon': 'bi-shield-check',
+ *       'headerIcon': 'shield-check',
  *       'body': '<p>Content here</p>'
  *   } %}
  *
- * 2. KPI Card:
- *   {% include '_components/_card.html.twig' with {
- *       'variant': 'kpi',
- *       'borderColor': 'primary',
- *       'body': '<div class="kpi-card-content"><div class="kpi-card-value">42</div></div>'
- *   } %}
+ * 2. KPI Card — DEPRECATED variant:'kpi'. New code MUST use the dedicated
+ *    Aurora macro `_fa_feature_card`:
+ *   {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
+ *   {{ _fa_feature_card.render({
+ *       label:   'Risk Score',
+ *       value:   42,
+ *       variant: 'primary',
+ *       icon:    'shield-check'
+ *   }) }}
  *
  * 3. Card with block content:
  *   {% embed '_components/_card.html.twig' with {
@@ -59,27 +82,28 @@
 {% set noPadding = noPadding|default(false) %}
 {% set borderColor = borderColor|default('primary') %}
 
-{# Build card classes — Aurora-bridge: each variant emits both the
-   existing class names AND the Aurora-native fa-* names so legacy CSS
-   keeps working AND the v4 spec rules (.fa-section, .fa-kpi-card,
-   .fa-feature-card) apply. Legacy classes can be retired once all
-   templates have migrated. #}
+{# Aurora-Primary: build BEM-class set for the chosen variant.
+   BC-suffix appended one final release so legacy CSS (card.card-header
+   etc. in fairy-aurora-components.css bridge) keeps applying.
+   Migration target: drop the BC tail aliases after Tier-3. #}
 {% set faBorderColor = borderColor == 'info' ? 'primary' : borderColor %}
-{% set cardClasses = ['card'] %}
+
 {% if variant == 'kpi' %}
-    {% set cardClasses = cardClasses|merge(['kpi-card', 'kpi-card-' ~ borderColor, 'fa-kpi-card', 'fa-kpi-card--' ~ faBorderColor]) %}
+    {% set cardClasses = ['fa-feature-card', 'fa-feature-card--' ~ faBorderColor, 'kpi-card', 'kpi-card-' ~ borderColor, 'card'] %}
 {% elseif variant == 'stat' %}
     {# stat is deprecated alias for kpi #}
-    {% set cardClasses = cardClasses|merge(['stat-card', 'fa-kpi-card']) %}
+    {% set cardClasses = ['fa-feature-card', 'fa-feature-card--' ~ faBorderColor, 'stat-card', 'card'] %}
 {% elseif variant == 'widget' %}
-    {% set cardClasses = cardClasses|merge(['widget-card']) %}
-{% elseif variant == 'bordered' %}
-    {% set cardClasses = cardClasses|merge(['card-border-left-' ~ borderColor]) %}
+    {% set cardClasses = ['fa-widget-card', 'widget-card', 'card'] %}
 {% elseif variant == 'feature' %}
-    {% set cardClasses = cardClasses|merge(['feature-card', 'fa-feature-card']) %}
+    {% set cardClasses = ['fa-feature-card', 'fa-feature-card--' ~ faBorderColor, 'feature-card', 'card'] %}
+{% elseif variant == 'bordered' %}
+    {# 'bordered' uses .fa-section + a left-border accent class.
+       BC alias card-border-left-{color} kept for current CSS. #}
+    {% set cardClasses = ['fa-section', 'fa-section--bordered', 'fa-section--' ~ faBorderColor, 'card', 'card-border-left-' ~ borderColor] %}
 {% else %}
-    {# default — pair Bootstrap .card with Aurora .fa-section spec #}
-    {% set cardClasses = cardClasses|merge(['fa-section']) %}
+    {# default — pure Aurora .fa-section as primary, .card as BC-tail #}
+    {% set cardClasses = ['fa-section', 'card'] %}
 {% endif %}
 
 {% if hoverable %}
@@ -96,25 +120,29 @@
 
 {# Allow custom attributes on card div via block #}
 <div class="{{ cardClasses|join(' ') }}" {% block card_attrs %}{% endblock %}>
-    {# Card Header - block takes precedence over parameters #}
+    {# Card Header — block takes precedence over parameters.
+       Slot uses BOTH .fa-section__header and .card-header for BC. #}
     {% set headerBlockContent %}{% block card_header %}{% endblock %}{% endset %}
     {% if headerBlockContent|trim %}
         {{ headerBlockContent|raw }}
     {% elseif header is defined or title is defined or actions is defined %}
-    <div class="card-header">
+    <div class="fa-section__header card-header">
         {% if header is defined %}
             {{ header|raw }}
         {% elseif title is defined %}
-            <h5 class="mb-0">
+            <h5 class="fa-section__title mb-0">
                 {% if headerIcon is defined %}
-                    <i class="{{ headerIcon }}" aria-hidden="true"></i>
+                    {# Auto-strip legacy bi-* prefix so callers passing either Bootstrap-Icon
+                       or Aurora names render correctly under Aurora. #}
+                    {% set _headerIconName = headerIcon starts with 'bi-' ? headerIcon[3:] : headerIcon %}
+                    <i class="fa-icon fa-icon--{{ _headerIconName }}" aria-hidden="true"></i>
                 {% endif %}
                 {{ title|trans({}, titleDomain|default('messages')) }}
             </h5>
         {% endif %}
 
         {% if actions is defined %}
-            <div class="card-actions">
+            <div class="fa-section__tools card-actions">
                 {{ actions|raw }}
             </div>
         {% endif %}
@@ -122,7 +150,7 @@
     {% endif %}
 
     {# Card Body #}
-    <div class="card-body{% if noPadding %} p-0{% endif %}">
+    <div class="fa-section__body card-body{% if noPadding %} p-0{% endif %}">
         {% if body is defined %}
             {{ body|raw }}
         {% else %}
@@ -130,12 +158,12 @@
         {% endif %}
     </div>
 
-    {# Card Footer - block takes precedence over parameter #}
+    {# Card Footer — block takes precedence over parameter #}
     {% set footerBlockContent %}{% block card_footer %}{% endblock %}{% endset %}
     {% if footerBlockContent|trim %}
         {{ footerBlockContent|raw }}
     {% elseif footer is defined %}
-    <div class="card-footer">
+    <div class="fa-section__footer card-footer">
         {{ footer|raw }}
     </div>
     {% endif %}

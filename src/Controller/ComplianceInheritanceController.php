@@ -17,11 +17,13 @@ use App\Service\CompliancePolicyService;
 use App\Service\TenantContext;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/compliance/inheritance', name: 'app_compliance_inheritance_')]
 #[IsGranted('ROLE_MANAGER')]
 final class ComplianceInheritanceController extends AbstractController
@@ -34,6 +36,7 @@ final class ComplianceInheritanceController extends AbstractController
         private readonly UserRepository $userRepository,
         private readonly TenantContext $tenantContext,
         private readonly CompliancePolicyService $policy,
+        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -158,6 +161,10 @@ final class ComplianceInheritanceController extends AbstractController
     #[Route('/{id}/confirm', name: 'confirm', methods: ['POST'], requirements: ['id' => '\d+'])]
     public function confirm(FulfillmentInheritanceLog $log, Request $request): Response
     {
+        if (!$this->isCsrfTokenValid('inheritance_confirm_' . $log->getId(), $request->request->get('_token', ''))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
         $this->denyAccessUnlessGranted(ComplianceInheritanceVoter::CONFIRM, $log);
         $this->assertSameTenant($log);
 
@@ -185,6 +192,10 @@ final class ComplianceInheritanceController extends AbstractController
     #[Route('/{id}/reject', name: 'reject', methods: ['POST'], requirements: ['id' => '\d+'])]
     public function reject(FulfillmentInheritanceLog $log, Request $request): Response
     {
+        if (!$this->isCsrfTokenValid('inheritance_reject_' . $log->getId(), $request->request->get('_token', ''))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
         $this->denyAccessUnlessGranted(ComplianceInheritanceVoter::REJECT, $log);
         $this->assertSameTenant($log);
 
@@ -204,6 +215,10 @@ final class ComplianceInheritanceController extends AbstractController
     #[Route('/{id}/override', name: 'override', methods: ['POST'], requirements: ['id' => '\d+'])]
     public function override(FulfillmentInheritanceLog $log, Request $request): Response
     {
+        if (!$this->isCsrfTokenValid('inheritance_override_' . $log->getId(), $request->request->get('_token', ''))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
         $this->denyAccessUnlessGranted(ComplianceInheritanceVoter::OVERRIDE, $log);
         $this->assertSameTenant($log);
 
@@ -263,6 +278,6 @@ final class ComplianceInheritanceController extends AbstractController
 
     private function trans(string $key): string
     {
-        return $key;
+        return $this->translator->trans($key, [], 'messages');
     }
 }

@@ -1,5 +1,4 @@
 {% extends 'base.html.twig' %}
-{% trans_default_domain 'report_builder' %}
 
 {% block title %}{{ report.name }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
 
@@ -7,11 +6,19 @@
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.reports'|trans({}, 'nav'), path: path('app_reports_overview') },
-            { label: 'page.title'|trans, path: path('report_builder_index') },
+            { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_overview') },
+            { label: 'report_builder.page.title'|trans({},'report_builder'), url: path('report_builder_index') },
             { label: report.name }
         ]
     } %}
+
+    {% if render_error is defined and render_error %}
+        <div class="alert alert-danger" role="alert">
+            <i class="fa-icon fa-icon--status-error" aria-hidden="true"></i>
+            <strong>{{ 'report_builder.error.preview_failed'|trans({},'report_builder') }}</strong>
+            <pre class="mb-0 mt-2 small">{{ render_error }}</pre>
+        </div>
+    {% endif %}
 
     {# Report Actions #}
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -20,10 +27,10 @@
         </h1>
         <div class="btn-group">
             <a href="{{ path('report_builder_edit', {id: report.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'action.edit'|trans }}
+                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'report_builder.action.edit'|trans({},'report_builder') }}
             </a>
             <a href="{{ path('report_builder_export_pdf', {id: report.id}) }}" class="fa-cyber-btn fa-cyber-btn--danger">
-                <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'action.export_pdf'|trans }}
+                <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'report_builder.action.export_pdf'|trans({},'report_builder') }}
             </a>
         </div>
     </div>
@@ -32,8 +39,10 @@
     <div class="row mb-4">
         <div class="col">
             <div class="d-flex gap-3 text-muted small">
-                <span><i class="bi bi-folder" aria-hidden="true"></i> {{ report.category }}</span>
+                <span><i class="fa-icon fa-icon--nav-collection" aria-hidden="true"></i> {{ report.category }}</span>
+                {% if report_data.report.generated_at is defined %}
                 <span><i class="fa-icon fa-icon--ui-calendar" aria-hidden="true"></i> {{ report_data.report.generated_at|date('d.m.Y H:i') }}</span>
+                {% endif %}
                 <span><i class="fa-icon fa-icon--ui-person" aria-hidden="true"></i> {{ report.owner.fullName }}</span>
             </div>
         </div>
@@ -114,7 +123,7 @@
                 {# Line Chart #}
                 <canvas class="chart-canvas" data-chart-type="line" data-chart-labels="{{ data.labels|json_encode }}" data-chart-datasets="{{ data.datasets|json_encode }}" height="200"></canvas>
                 {% else %}
-                <div class="alert alert-secondary">{{ 'preview.chart_placeholder'|trans({'%type%': data.type}) }}</div>
+                <div class="fa-alert fa-alert--info">{{ 'report_builder.preview.chart_placeholder'|trans({'%type%': data.type}, 'report_builder') }}</div>
                 {% endif %}
             </div>
 
@@ -122,28 +131,26 @@
             {% elseif widgetType starts with 'table_' %}
             <div class="table-widget">
                 {% if data.rows|length > 0 %}
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover">
-                        <thead class="table-light">
-                            <tr>
-                                {% for col in data.columns %}
-                                <th scope="col">{{ col }}</th>
-                                {% endfor %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in data.rows %}
-                            <tr>
-                                {% for key, value in row|filter((v, k) => k != 'id') %}
-                                <td>{{ value }}</td>
-                                {% endfor %}
-                            </tr>
+                {% embed '_components/_fa_table.html.twig' with { compact: true, hover: true } %}
+                    {% block table_head %}
+                        <tr>
+                            {% for col in data.columns %}
+                            <th scope="col" class="fa-table__th">{{ col }}</th>
                             {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                        </tr>
+                    {% endblock %}
+                    {% block table_body %}
+                        {% for row in data.rows %}
+                        <tr class="fa-table__row">
+                            {% for key, value in row|filter((v, k) => k != 'id') %}
+                            <td class="fa-table__cell">{{ value }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    {% endblock %}
+                {% endembed %}
                 {% else %}
-                <p class="text-muted text-center py-3">{{ 'preview.no_data'|trans }}</p>
+                <p class="text-muted text-center py-3">{{ 'report_builder.preview.no_data'|trans({},'report_builder') }}</p>
                 {% endif %}
             </div>
 
@@ -152,7 +159,7 @@
             <div class="status-widget text-center p-4">
                 {% set statusColor = data.status == 'green' ? 'success' : (data.status == 'amber' ? 'warning' : 'danger') %}
                 <div class="display-1">
-                    <i class="bi bi-circle-fill text-{{ statusColor }}" aria-hidden="true"></i>
+                    <i class="fa-icon text-{{ statusColor }} fa-icon--status-pending" aria-hidden="true"></i>
                 </div>
                 <div class="h5 mt-2">{{ data.label }}</div>
                 {% if data.factors is defined %}
@@ -177,7 +184,7 @@
             </div>
 
             {% else %}
-            <div class="alert alert-secondary">{{ 'preview.unknown_widget'|trans({'%type%': widgetType}) }}</div>
+            <div class="fa-alert fa-alert--info">{{ 'report_builder.preview.unknown_widget'|trans({'%type%': widgetType}, 'report_builder') }}</div>
             {% endif %}
         </div>
         {% endfor %}
@@ -186,8 +193,10 @@
     {# Report Footer #}
     <div class="report-footer mt-5 pt-4 border-top text-muted small">
         <div class="d-flex justify-content-between">
-            <span>{{ 'preview.generated_by'|trans }} {{ app.user.fullName }}</span>
+            <span>{{ 'report_builder.preview.generated_by'|trans({},'report_builder') }} {{ app.user.fullName }}</span>
+            {% if report_data.report.generated_at is defined %}
             <span>{{ report_data.report.generated_at|date('d.m.Y H:i') }}</span>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -242,10 +251,14 @@
 </style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+function initReportPreviewCharts() {
     // Initialize charts if Chart.js is available
     if (typeof Chart !== 'undefined') {
         document.querySelectorAll('.chart-canvas').forEach(canvas => {
+            // Skip already-initialized canvases to avoid duplicate charts on turbo:load
+            if (canvas.dataset.chartInitialized) return;
+            canvas.dataset.chartInitialized = '1';
+
             const type = canvas.dataset.chartType;
             const labels = JSON.parse(canvas.dataset.chartLabels || '[]');
             const data = JSON.parse(canvas.dataset.chartData || '[]');
@@ -277,6 +290,9 @@ document.addEventListener('DOMContentLoaded', function() {
             new Chart(canvas, config);
         });
     }
-});
+}
+
+document.addEventListener('DOMContentLoaded', initReportPreviewCharts);
+document.addEventListener('turbo:load', initReportPreviewCharts);
 </script>
 {% endblock %}

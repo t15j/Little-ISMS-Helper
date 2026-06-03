@@ -6,7 +6,11 @@ namespace App\Entity;
 
 use DateTimeInterface;
 use DateTimeImmutable;
+use App\Entity\Person;
 use App\Entity\Tenant;
+use App\Entity\User;
+use App\Enum\InternalAuditStatus;
+use App\Service\OwnerResolver;
 use ApiPlatform\Doctrine\Orm\Filter\DateFilter;
 use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
@@ -72,14 +76,14 @@ class InternalAudit
 
     #[ORM\Column(length: 50)]
     #[Groups(['audit:read', 'audit:write'])]
-    #[Assert\NotBlank(message: 'Audit number is required')]
-    #[Assert\Length(max: 50, maxMessage: 'Audit number cannot exceed {{ limit }} characters')]
+    #[Assert\NotBlank(message: 'internal_audit.validation.number_required')]
+    #[Assert\Length(max: 50, maxMessage: 'internal_audit.validation.number_max_length')]
     private ?string $auditNumber = null;
 
     #[ORM\Column(length: 255)]
     #[Groups(['audit:read', 'audit:write'])]
-    #[Assert\NotBlank(message: 'Audit title is required')]
-    #[Assert\Length(max: 255, maxMessage: 'Title cannot exceed {{ limit }} characters')]
+    #[Assert\NotBlank(message: 'internal_audit.validation.title_required')]
+    #[Assert\Length(max: 255, maxMessage: 'internal_audit.validation.title_max_length')]
     private ?string $title = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
@@ -102,7 +106,7 @@ class InternalAudit
     #[Groups(['audit:read', 'audit:write'])]
     #[Assert\Choice(
         choices: ['full_isms', 'compliance_framework', 'asset', 'asset_type', 'asset_group', 'location', 'department', 'corporate_wide', 'corporate_subsidiaries'],
-        message: 'Scope type must be one of: {{ choices }}'
+        message: 'internal_audit.validation.scope_type_invalid'
     )]
     private ?string $scopeType = 'full_isms';
 
@@ -160,36 +164,102 @@ class InternalAudit
 
     #[ORM\Column(type: Types::DATE_MUTABLE)]
     #[Groups(['audit:read', 'audit:write'])]
-    #[Assert\NotNull(message: 'Planned date is required')]
+    #[Assert\NotNull(message: 'internal_audit.validation.planned_date_required')]
     private ?DateTimeInterface $plannedDate = null;
 
     #[ORM\Column(type: Types::DATE_MUTABLE, nullable: true)]
     #[Groups(['audit:read', 'audit:write'])]
     private ?DateTimeInterface $actualDate = null;
 
-    #[ORM\Column(length: 100)]
+    /**
+     * Legacy free-text lead auditor name. P-15 DataReuse: kept read-only for
+     * migration display once `leadAuditorUser` or `leadAuditorPerson` is set.
+     * No longer NotBlank — the Pattern-A validator on the form enforces that
+     * at least one of legacy/user/person is provided.
+     */
+    #[ORM\Column(length: 100, nullable: true)]
     #[Groups(['audit:read', 'audit:write'])]
-    #[Assert\NotBlank(message: 'Lead auditor is required')]
-    #[Assert\Length(max: 100, maxMessage: 'Lead auditor name cannot exceed {{ limit }} characters')]
+    #[Assert\Length(max: 100, maxMessage: 'internal_audit.validation.lead_auditor_max_length')]
     private ?string $leadAuditor = null;
 
+    /**
+     * Pattern A dual-state (P-15 DataReuse): preferred structured lead auditor
+     * as an application User. Falls back to leadAuditorPerson, then legacy
+     * `leadAuditor` string.
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'lead_auditor_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['audit:read', 'audit:write'])]
+    private ?User $leadAuditorUser = null;
+
+    /**
+     * Pattern A dual-state (P-15 DataReuse): preferred structured lead auditor
+     * as a Stammdaten Person (external auditor without app login).
+     */
+    #[ORM\ManyToOne(targetEntity: Person::class)]
+    #[ORM\JoinColumn(name: 'lead_auditor_person_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['audit:read', 'audit:write'])]
+    private ?Person $leadAuditorPerson = null;
+
+    /**
+     * Legacy free-text audit team list ("Names, comma-separated"). P-15
+     * DataReuse: kept read-only for migration display once the typed
+     * `auditTeamMembers` collection is populated.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['audit:read', 'audit:write'])]
     private ?string $auditTeam = null;
+
+    /**
+     * Pattern A dual-state (P-15 DataReuse): typed audit-team roster as a
+     * Collection<Person>. Replaces the legacy comma-separated `auditTeam`
+     * textarea.
+     *
+     * @var Collection<int, Person>
+     */
+    #[ORM\ManyToMany(targetEntity: Person::class)]
+    #[ORM\JoinTable(name: 'internal_audit_team_member')]
+    #[ORM\JoinColumn(name: 'internal_audit_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'person_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[Groups(['audit:read', 'audit:write'])]
+    private ?Collection $auditTeamMembers = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['audit:read', 'audit:write'])]
     private ?string $auditedDepartments = null;
 
+    /**
+     * S3 P0-26 — Audit-Bericht 4-Augen-Approval-Workflow (ISO 27001 Cl. 9.2.2 d).
+     *
+     * Lifecycle:
+     *   planned → conducted → reported → approved → closed
+     *                              ↓
+     *                          rejected → reported (rework loop)
+     *   planned / conducted can branch to → cancelled
+     *
+     * Legacy values `in_progress` and `completed` are kept in the Choice
+     * list for backward compatibility with historical audits, but the new
+     * UI transitions go through `conducted`.
+     */
     #[ORM\Column(length: 50)]
     #[Groups(['audit:read', 'audit:write'])]
-    #[Assert\NotBlank(message: 'Status is required')]
+    #[Assert\NotBlank(message: 'internal_audit.validation.status_required')]
     #[Assert\Choice(
-        choices: ['planned', 'in_progress', 'completed', 'reported'],
-        message: 'Status must be one of: {{ choices }}'
+        choices: ['planned', 'conducted', 'reported', 'approved', 'rejected', 'closed', 'cancelled', 'in_progress', 'completed', 'postponed'],
+        message: 'internal_audit.validation.status_invalid'
     )]
     private ?string $status = 'planned';
 
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: Doppelpflege-Deprecation —
+     * use AuditFinding entity (structuredFindings collection) instead.
+     * Legacy data preserved for read-only display. Closes data-reuse violation
+     * per ISO 27001 Cl. 9.2 — structured audit-findings with traceability to CAPAs.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['audit:read', 'audit:write'])]
     private ?string $findings = null;
@@ -202,10 +272,22 @@ class InternalAudit
     #[Groups(['audit:read', 'audit:write'])]
     private ?string $observations = null;
 
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: Doppelpflege-Deprecation —
+     * use AuditFinding entity (structuredFindings collection) instead.
+     * Legacy data preserved for read-only display. Closes data-reuse violation
+     * per ISO 27001 Cl. 9.2 — structured audit-findings with traceability to CAPAs.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['audit:read', 'audit:write'])]
     private ?string $recommendations = null;
 
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: Doppelpflege-Deprecation —
+     * use AuditFinding entity (structuredFindings collection) instead.
+     * Legacy data preserved for read-only display. Closes data-reuse violation
+     * per ISO 27001 Cl. 9.2 — structured audit-findings with traceability to CAPAs.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['audit:read', 'audit:write'])]
     private ?string $conclusion = null;
@@ -258,6 +340,69 @@ class InternalAudit
     #[ORM\OneToMany(targetEntity: AuditFinding::class, mappedBy: 'audit', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $structuredFindings;
 
+    // ==========================================================================
+    // S3 P0-26 — Audit-Bericht 4-Augen-Approval-Workflow (ISO 27001 Cl. 9.2.2 d)
+    // ==========================================================================
+
+    /**
+     * Lifecycle stages with allowed transitions and Aurora tone.
+     * Reads as: status => { transitions: [next…], tone: <aurora-tone> }.
+     *
+     * Server-side enforcement: any setStatus()-via-controller must check the
+     * `transitions` entry of the current status against the requested target.
+     *
+     * @var array<string, array{transitions: list<string>, tone: string}>
+     */
+    public const array LIFECYCLE_STAGES = [
+        'planned'   => ['transitions' => ['conducted', 'cancelled'], 'tone' => 'primary'],
+        'conducted' => ['transitions' => ['reported', 'cancelled'], 'tone' => 'warning'],
+        'reported'  => ['transitions' => ['approved', 'rejected'], 'tone' => 'accent'],
+        'approved'  => ['transitions' => ['closed'], 'tone' => 'success'],
+        'rejected'  => ['transitions' => ['reported'], 'tone' => 'danger'],
+        'closed'    => ['transitions' => [], 'tone' => 'neutral'],
+        'cancelled' => ['transitions' => [], 'tone' => 'neutral'],
+        // legacy buckets — no transitions wired; UI hides approval actions
+        'in_progress' => ['transitions' => ['completed', 'reported', 'cancelled'], 'tone' => 'warning'],
+        'completed'   => ['transitions' => ['reported'], 'tone' => 'success'],
+        'postponed'   => ['transitions' => ['planned', 'cancelled'], 'tone' => 'neutral'],
+    ];
+
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'reported_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['audit:read'])]
+    private ?User $reportedBy = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    #[Groups(['audit:read'])]
+    private ?DateTimeImmutable $reportedAt = null;
+
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'approved_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['audit:read'])]
+    private ?User $approvedBy = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    #[Groups(['audit:read'])]
+    private ?DateTimeImmutable $approvedAt = null;
+
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['audit:read'])]
+    private ?string $rejectionReason = null;
+
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'closed_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['audit:read'])]
+    private ?User $closedBy = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    #[Groups(['audit:read'])]
+    private ?DateTimeImmutable $closedAt = null;
+
+    // Audit Programme cross-link (ISO 19011 §5.4)
+    #[ORM\ManyToOne(targetEntity: AuditProgram::class, inversedBy: 'internalAudits')]
+    #[ORM\JoinColumn(name: 'audit_program_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?AuditProgram $auditProgram = null;
+
 public function __construct()
     {
         $this->scopedAssets = new ArrayCollection();
@@ -265,6 +410,7 @@ public function __construct()
         $this->structuredFindings = new ArrayCollection();
         $this->derivedAudits = new ArrayCollection();
         $this->additionalScopedFrameworks = new ArrayCollection();
+        $this->auditTeamMembers = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
     }
 
@@ -370,7 +516,7 @@ public function __construct()
         return $this->auditNumber;
     }
 
-    public function setAuditNumber(string $auditNumber): static
+    public function setAuditNumber(?string $auditNumber): static
     {
         $this->auditNumber = $auditNumber;
         return $this;
@@ -381,7 +527,7 @@ public function __construct()
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -414,7 +560,7 @@ public function __construct()
         return $this->plannedDate;
     }
 
-    public function setPlannedDate(DateTimeInterface $plannedDate): static
+    public function setPlannedDate(?DateTimeInterface $plannedDate): static
     {
         $this->plannedDate = $plannedDate;
         return $this;
@@ -450,10 +596,46 @@ public function __construct()
         return $this->leadAuditor;
     }
 
-    public function setLeadAuditor(string $leadAuditor): static
+    public function setLeadAuditor(?string $leadAuditor): static
     {
         $this->leadAuditor = $leadAuditor;
         return $this;
+    }
+
+    public function getLeadAuditorUser(): ?User
+    {
+        return $this->leadAuditorUser;
+    }
+
+    public function setLeadAuditorUser(?User $leadAuditorUser): static
+    {
+        $this->leadAuditorUser = $leadAuditorUser;
+        return $this;
+    }
+
+    public function getLeadAuditorPerson(): ?Person
+    {
+        return $this->leadAuditorPerson;
+    }
+
+    public function setLeadAuditorPerson(?Person $leadAuditorPerson): static
+    {
+        $this->leadAuditorPerson = $leadAuditorPerson;
+        return $this;
+    }
+
+    /**
+     * P-15 DataReuse Tri-State resolver — prefer structured User name, then
+     * Person, fall back to legacy `leadAuditor` free-text. Templates should
+     * read this instead of accessing the raw fields directly.
+     */
+    public function getEffectiveLeadAuditorName(): ?string
+    {
+        return OwnerResolver::resolveEffective(
+            $this->leadAuditorUser,
+            $this->leadAuditorPerson,
+            $this->leadAuditor,
+        );
     }
 
     public function getAuditTeam(): ?string
@@ -464,6 +646,26 @@ public function __construct()
     public function setAuditTeam(?string $auditTeam): static
     {
         $this->auditTeam = $auditTeam;
+        return $this;
+    }
+
+    /** @return Collection<int, Person> */
+    public function getAuditTeamMembers(): Collection
+    {
+        return $this->auditTeamMembers ??= new ArrayCollection();
+    }
+
+    public function addAuditTeamMember(Person $person): static
+    {
+        if (!$this->getAuditTeamMembers()->contains($person)) {
+            $this->getAuditTeamMembers()->add($person);
+        }
+        return $this;
+    }
+
+    public function removeAuditTeamMember(Person $person): static
+    {
+        $this->getAuditTeamMembers()->removeElement($person);
         return $this;
     }
 
@@ -483,17 +685,38 @@ public function __construct()
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(InternalAuditStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
     }
 
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?InternalAuditStatus
+    {
+        return $this->status !== null ? InternalAuditStatus::tryFrom($this->status) : null;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
+    }
+
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: use AuditFinding entity
+     * via getStructuredFindings(). Kept for legacy read-only display.
+     */
     public function getFindings(): ?string
     {
         return $this->findings;
     }
 
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: use AuditFinding entity
+     * via addStructuredFinding(). Kept for legacy backfill paths only.
+     */
     public function setFindings(?string $findings): static
     {
         $this->findings = $findings;
@@ -522,22 +745,38 @@ public function __construct()
         return $this;
     }
 
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: use AuditFinding entity
+     * (recommendations attached per-finding). Kept for legacy read-only display.
+     */
     public function getRecommendations(): ?string
     {
         return $this->recommendations;
     }
 
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: use AuditFinding entity.
+     * Kept for legacy backfill paths only.
+     */
     public function setRecommendations(?string $recommendations): static
     {
         $this->recommendations = $recommendations;
         return $this;
     }
 
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: conclusion now derived
+     * from AuditFinding rollup. Kept for legacy read-only display.
+     */
     public function getConclusion(): ?string
     {
         return $this->conclusion;
     }
 
+    /**
+     * @deprecated since v3.6 — Junior-ISB-Audit-2026-05-22 C2-04: use AuditFinding entity.
+     * Kept for legacy backfill paths only.
+     */
     public function setConclusion(?string $conclusion): static
     {
         $this->conclusion = $conclusion;
@@ -560,7 +799,7 @@ public function __construct()
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -717,6 +956,135 @@ public function __construct()
     public function setTenant(?Tenant $tenant): static
     {
         $this->tenant = $tenant;
+        return $this;
+    }
+
+    // ==========================================================================
+    // S3 P0-26 — Approval-Workflow getters/setters + helpers
+    // ==========================================================================
+
+    public function getReportedBy(): ?User
+    {
+        return $this->reportedBy;
+    }
+
+    public function setReportedBy(?User $reportedBy): static
+    {
+        $this->reportedBy = $reportedBy;
+        return $this;
+    }
+
+    public function getReportedAt(): ?DateTimeImmutable
+    {
+        return $this->reportedAt;
+    }
+
+    public function setReportedAt(?DateTimeImmutable $reportedAt): static
+    {
+        $this->reportedAt = $reportedAt;
+        return $this;
+    }
+
+    public function getApprovedBy(): ?User
+    {
+        return $this->approvedBy;
+    }
+
+    public function setApprovedBy(?User $approvedBy): static
+    {
+        $this->approvedBy = $approvedBy;
+        return $this;
+    }
+
+    public function getApprovedAt(): ?DateTimeImmutable
+    {
+        return $this->approvedAt;
+    }
+
+    public function setApprovedAt(?DateTimeImmutable $approvedAt): static
+    {
+        $this->approvedAt = $approvedAt;
+        return $this;
+    }
+
+    public function getRejectionReason(): ?string
+    {
+        return $this->rejectionReason;
+    }
+
+    public function setRejectionReason(?string $rejectionReason): static
+    {
+        $this->rejectionReason = $rejectionReason;
+        return $this;
+    }
+
+    public function getClosedBy(): ?User
+    {
+        return $this->closedBy;
+    }
+
+    public function setClosedBy(?User $closedBy): static
+    {
+        $this->closedBy = $closedBy;
+        return $this;
+    }
+
+    public function getClosedAt(): ?DateTimeImmutable
+    {
+        return $this->closedAt;
+    }
+
+    public function setClosedAt(?DateTimeImmutable $closedAt): static
+    {
+        $this->closedAt = $closedAt;
+        return $this;
+    }
+
+    /**
+     * Return the Aurora tone (`primary`, `accent`, `success`, …) for the
+     * current status. Used by `_fa_status_chip` / `_status_pill` macros.
+     */
+    public function getStatusTone(): string
+    {
+        return self::LIFECYCLE_STAGES[$this->status ?? 'planned']['tone'] ?? 'neutral';
+    }
+
+    /**
+     * Whether the requested target is reachable from the current status
+     * according to LIFECYCLE_STAGES. Approve-/reject-/close-actions must
+     * call this before mutating state.
+     */
+    public function canTransitionTo(string $target): bool
+    {
+        $current = $this->status ?? 'planned';
+        if (!isset(self::LIFECYCLE_STAGES[$current])) {
+            return false;
+        }
+
+        return in_array($target, self::LIFECYCLE_STAGES[$current]['transitions'], true);
+    }
+
+    /**
+     * Allowed next-stage targets for the current status. Twig uses this
+     * to decide which action-buttons to render.
+     *
+     * @return list<string>
+     */
+    public function getAllowedTransitions(): array
+    {
+        $current = $this->status ?? 'planned';
+
+        return self::LIFECYCLE_STAGES[$current]['transitions'] ?? [];
+    }
+    public function getAuditProgram(): ?AuditProgram
+    {
+        return $this->auditProgram;
+    }
+
+    public function setAuditProgram(?AuditProgram $auditProgram): static
+    {
+        $this->auditProgram = $auditProgram;
+
         return $this;
     }
 }

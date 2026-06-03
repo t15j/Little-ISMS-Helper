@@ -15,7 +15,9 @@ use App\Repository\ComplianceFrameworkRepository;
 use App\Repository\ComplianceMappingRepository;
 use App\Repository\ComplianceRequirementRepository;
 use App\Repository\ImportSessionRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\CompliancePolicyService;
+use App\Service\FileUploadSecurityService;
 use App\Service\Import\BsiProfileXmlImporter;
 use App\Service\Import\ImportSessionRecorder;
 use App\Service\TenantContext;
@@ -41,8 +43,17 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * var/uploads/compliance-import/ and tracked via a session-scoped
  * preview record. Only a preview (no DB writes) is produced before the
  * explicit commit step.
+ *
+ * Authorization (Phase 4b of Role-Scope Architecture, spec
+ * `docs/superpowers/specs/2026-05-18-role-scope-architecture.md`):
+ *  - Class-level {@see TenantScopedAdminVoter::ADMIN_OWN_TENANT} —
+ *    ROLE_ADMIN imports inside their own tenant tree (ImportSession is
+ *    tagged with the current tenant); ROLE_SUPER_ADMIN passes
+ *    transparently. The catalog frameworks/requirements themselves are
+ *    global, but the audit trail is tenant-scoped.
  */
-#[IsGranted('ROLE_ADMIN')]
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route(
     path: '/admin/import/compliance',
     name: 'admin_compliance_import_'
@@ -81,6 +92,7 @@ final class ComplianceImportController extends AbstractController
         private readonly ImportSessionRecorder $importSessionRecorder,
         private readonly ImportSessionRepository $importSessionRepository,
         private readonly TenantContext $tenantContext,
+        private readonly FileUploadSecurityService $fileUploadSecurityService,
         #[Autowire('%kernel.project_dir%')]
         private readonly string $projectDir,
     ) {
@@ -149,6 +161,14 @@ final class ComplianceImportController extends AbstractController
                 return $this->redirectToRoute('admin_compliance_import_upload');
             }
 
+            // Security: deep validation beyond Symfony form constraints (magic bytes, extension whitelist)
+            try {
+                $this->fileUploadSecurityService->validateUploadedFile($file);
+            } catch (FileException $secException) {
+                $this->addFlash('error', $secException->getMessage());
+                return $this->redirectToRoute('admin_compliance_import_upload');
+            }
+
             $sessionId = bin2hex(random_bytes(12));
             $extension = $format === self::FORMAT_BSI_XML ? 'xml' : 'csv';
             $storedName = $sessionId . '.' . $extension;
@@ -204,11 +224,15 @@ final class ComplianceImportController extends AbstractController
             return $this->redirectToRoute('admin_compliance_import_preview');
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/compliance_import/upload.html.twig', [
             'form' => $form->createView(),
             'active_step' => 1,
             'template_url' => $this->generateUrl('admin_compliance_import_template'),
-        ]);
+        ], new Response(status: $status));
     }
 
     #[Route('/preview', name: 'preview', methods: ['GET'])]

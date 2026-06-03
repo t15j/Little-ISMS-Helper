@@ -24,8 +24,10 @@
     <meta name="theme-color" content="#0284c7" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#38bdf8" media="(prefers-color-scheme: dark)">
 
-    <link rel="preload" href="{{ asset('fonts/inter-500.woff2') }}" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="{{ asset('fonts/inter-600.woff2') }}" as="font" type="font/woff2" crossorigin>
+    {# Static paths to match @font-face src in fairy-aurora.css — avoids
+       AssetMapper URL mismatch that triggers "preload but not used" warnings. #}
+    <link rel="preload" href="/fonts/inter-500.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/inter-600.woff2" as="font" type="font/woff2" crossorigin>
 
     <script>
         (function () {
@@ -40,10 +42,11 @@
     </script>
 
     {% block stylesheets %}
-        {# Bootstrap zuerst — Aurora-Styles kommen via importmap danach und überschreiben. #}
+        {# Bootstrap zuerst — Aurora-Layer danach (Cascade-Order). #}
         <link href="{{ asset('vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
-        <link rel="stylesheet" href="{{ asset('vendor/bootstrap-icons/font/bootstrap-icons.min.css') }}">
-        {{ importmap(['app', 'styles']) }}
+        {# Aurora-Layer als parallele <link> (kein @import-Barrel → kein FOUC). #}
+        {{ include('_aurora_styles.html.twig') }}
+        {{ importmap(['app']) }}
     {% endblock %}
 </head>
 <body class="fa-auth-body">

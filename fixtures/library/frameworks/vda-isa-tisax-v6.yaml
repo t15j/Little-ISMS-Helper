@@ -1,0 +1,44 @@
+# TISAX VDA ISA v6.0 - Skeleton-only (ENX-licence compliant, OQ-1)
+#
+# This skeleton creates the framework row in the database and establishes
+# the category structure, but does NOT contain any ENX-licensed control
+# content (titles, descriptions, objectives, or Prueffragen).
+#
+# To populate this framework with real ISA controls, use the BYO-Import
+# Wizard. You need a valid ENX licence to access the VDA ISA workbook.
+#
+# Legal reference: ENX_VDA_ISA_LICENSING_ANALYSIS.md OQ-1
+
+metadata:
+  code: TISAX-VDA-ISA-6
+  name: TISAX VDA ISA v6.0 (Skeleton)
+  version: "6.0"
+  releaseDate: "2024-03-01"
+  body: Verband der Automobilindustrie (VDA) / ENX Association
+  language: de
+  externalReference: https://enx.com/en-US/TISAX/
+  requiresUpload: true
+  legalNote: >
+    VDA-ISA workbook is ENX Association-licensed. Original content
+    not redistributed. Use BYO-Import wizard for your licensed copy.
+
+# Maturity levels per ISO/IEC 33020 (generic -- not ENX-specific content)
+maturityLevels:
+  0: { code: incomplete,   name: Incomplete   }
+  1: { code: performed,    name: Performed    }
+  2: { code: managed,      name: Managed      }
+  3: { code: established,  name: Established  }
+  4: { code: predictable,  name: Predictable  }
+  5: { code: optimising,   name: Optimising   }
+
+# Category structure (publicly documented TISAX scope areas)
+categories:
+  - code: information_security
+    name: Information Security
+  - code: prototype_protection
+    name: Prototype Protection
+  - code: data_protection
+    name: Data Protection
+
+# No controls -- use BYO-Import wizard to populate from your licensed copy
+kontrollen: []

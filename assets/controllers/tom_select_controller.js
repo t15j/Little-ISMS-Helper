@@ -10,12 +10,16 @@ import 'tom-select/dist/css/tom-select.default.min.css'
  *   data-tom-select-max-options-value="500"
  *   data-tom-select-placeholder-value="Pick some..."
  *   data-tom-select-remove-button-value="true"  (default: true when multiple)
+ *   data-tom-select-dropdown-parent-value="body" (escape ancestor overflow:hidden)
  */
 export default class extends Controller {
     static values = {
         maxOptions: { type: Number, default: 500 },
         placeholder: { type: String, default: '' },
         removeButton: { type: Boolean, default: true },
+        create: { type: Boolean, default: false },
+        delimiter: { type: String, default: ',' },
+        dropdownParent: { type: String, default: '' },
     }
 
     connect() {
@@ -25,14 +29,37 @@ export default class extends Controller {
             plugins.push('remove_button')
         }
 
-        this.tomSelect = new TomSelect(this.element, {
+        const opts = {
             plugins,
             maxOptions: this.maxOptionsValue,
             placeholder: this.placeholderValue || this.element.getAttribute('placeholder') || '',
             closeAfterSelect: !isMultiple,
             hidePlaceholder: false,
             allowEmptyOption: true,
-        })
+        }
+
+        // Render the dropdown under a different parent (e.g. <body>) so it is
+        // not clipped by an ancestor with `overflow: hidden` — the case for
+        // TomSelects inside rounded form-section cards (framework-references).
+        if (this.dropdownParentValue) {
+            opts.dropdownParent = this.dropdownParentValue
+        }
+
+        // Free-tag input: accept new values typed by the user (Enter / comma).
+        // Used by JsonTagsType-backed fields where the underlying entity column
+        // is a JSON array of strings (competencies, objectives, references, …).
+        if (this.createValue) {
+            opts.create = true
+            opts.createOnBlur = true
+            opts.persist = true
+            opts.delimiter = this.delimiterValue
+            opts.render = {
+                option_create: (data, escape) =>
+                    `<div class="create"><strong>${escape(data.input)}</strong> &nbsp;⏎</div>`,
+            }
+        }
+
+        this.tomSelect = new TomSelect(this.element, opts)
 
         // Re-initialise after Turbo frame swaps so the enhanced control is not
         // left orphaned from a cached frame.

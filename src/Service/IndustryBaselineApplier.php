@@ -29,7 +29,7 @@ use Doctrine\ORM\EntityManagerInterface;
  * Idempotent: running apply() twice has no additional effect.
  * Tenant-strict: all writes are scoped to the passed tenant.
  */
-class IndustryBaselineApplier
+final class IndustryBaselineApplier
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -68,7 +68,7 @@ class IndustryBaselineApplier
             if ($existingRisk !== null) {
                 continue;
             }
-            $risk = (new Risk())
+            $risk = (new Risk()) // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist Risk from industry baseline; 'identified' is the risk_lifecycle initial_marking)
                 ->setTenant($tenant)
                 ->setTitle($title)
                 ->setCategory((string) ($data['category'] ?? 'operational'))

@@ -1,10 +1,12 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_status_pill.html.twig' as pill %}
 
 {% block title %}{{ 'compliance.page_title'|trans({}, 'compliance') }}{% endblock %}
 
 {% block body %}
 {% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 <div class="container">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
@@ -13,16 +15,23 @@
     } %}
 
     {{ _fa_page_header.render({
-        badge: { icon: 'bullseye', label: 'compliance.page_title'|trans({}, 'compliance') },
+        badge: { icon: 'nav-bullseye', label: 'compliance.page_title'|trans({}, 'compliance') },
         title: 'compliance.page_title'|trans({}, 'compliance'),
         subtitle: 'compliance.page_subtitle'|trans({}, 'compliance'),
         actions: [
-            { label: 'compliance.mapping_quality.title'|trans({}, 'compliance'), href: path('app_mapping_quality_dashboard'), variant: 'ghost', icon: 'search' },
-            { label: 'compliance.button.cross_framework'|trans({}, 'compliance'), href: path('app_compliance_cross_framework'), variant: 'ghost', icon: 'link-45deg' },
-            { label: 'compliance.button.transitive'|trans({}, 'compliance'), href: path('app_compliance_transitive'), variant: 'ghost', icon: 'bar-chart-line' },
-            { label: 'compliance.button.compare_frameworks'|trans({}, 'compliance'), href: path('app_compliance_compare'), variant: 'ghost', icon: 'sliders' }
-        ]|merge(is_granted('ROLE_ADMIN') ? [{ label: 'compliance.manage_frameworks'|trans({}, 'compliance'), href: path('admin_compliance_index'), variant: 'primary', icon: 'gear' }] : [])
+            { label: 'compliance.mapping_quality.title'|trans({}, 'compliance'), href: path('app_mapping_quality_dashboard'), variant: 'ghost', icon: 'ui-search' },
+            { label: 'compliance.button.cross_framework'|trans({}, 'compliance'), href: path('app_compliance_cross_framework'), variant: 'ghost', icon: 'link' },
+            { label: 'compliance.button.transitive'|trans({}, 'compliance'), href: path('app_compliance_transitive'), variant: 'ghost', icon: 'nav-bar-chart' },
+            { label: 'compliance.button.compare_frameworks'|trans({}, 'compliance'), href: path('app_compliance_compare'), variant: 'ghost', icon: 'nav-sliders' }
+        ]|merge(is_granted('ROLE_ADMIN') ? [{ label: 'compliance.manage_frameworks'|trans({}, 'compliance'), href: path('admin_compliance_index'), variant: 'primary', icon: 'nav-gear' }] : [])
     }) }}
+{% set _global_hints = alva_hints('compliance_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
     <main class="fa-aurora-surface">
 
     {# Maturity Heatmap — CMMI Levels per Framework (C2) #}
@@ -46,45 +55,43 @@
                 </div>
             {% endblock %}
             {% block card_body %}
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead>
-                            <tr>
-                                <th scope="col">{{ 'compliance.maturity.framework'|trans({}, 'compliance') }}</th>
-                                <th scope="col" style="width: 140px;">{{ 'compliance.maturity.level'|trans({}, 'compliance') }}</th>
-                                <th scope="col" style="width: 100px;">{{ 'compliance.maturity.coverage'|trans({}, 'compliance') }}</th>
-                                <th scope="col" style="width: 100px;">{{ 'compliance.maturity.mappings'|trans({}, 'compliance') }}</th>
-                                <th scope="col">{{ 'compliance.maturity.missing'|trans({}, 'compliance') }}</th>
+                {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                    {% block table_head %}
+                        <tr>
+                            <th scope="col" class="fa-table__th">{{ 'compliance.maturity.framework'|trans({}, 'compliance') }}</th>
+                            <th scope="col" class="fa-table__th" style="width: 140px;">{{ 'compliance.maturity.level'|trans({}, 'compliance') }}</th>
+                            <th scope="col" class="fa-table__th fa-table__th--num" style="width: 100px;">{{ 'compliance.maturity.coverage'|trans({}, 'compliance') }}</th>
+                            <th scope="col" class="fa-table__th fa-table__th--num" style="width: 100px;">{{ 'compliance.maturity.mappings'|trans({}, 'compliance') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'compliance.maturity.missing'|trans({}, 'compliance') }}</th>
+                        </tr>
+                    {% endblock %}
+                    {% block table_body %}
+                        {% import '_components/_status_pill.html.twig' as pill %}
+                        {% for code, row in maturity_portfolio %}
+                            {% set m = row.maturity %}
+                            {% set variant = level_variant[m.level] ?? 'secondary' %}
+                            <tr class="fa-table__row">
+                                <td class="fa-table__cell">
+                                    <span class="border fa-status-pill fa-status-pill--neutral">{{ code }}</span>
+                                    <span class="ms-1">{{ row.framework.name }}</span>
+                                </td>
+                                <td class="fa-table__cell">
+                                    {% set _pill_tone = variant == 'secondary' ? 'neutral' : (variant == 'info' ? 'primary' : variant) %}
+                                    {{ pill.render('L' ~ m.level ~ ' — ' ~ ('compliance.maturity.label.' ~ m.label)|trans({}, 'compliance'), _pill_tone) }}
+                                </td>
+                                <td class="fa-table__cell fa-table__cell--num">{{ m.coverage_pct }}%</td>
+                                <td class="fa-table__cell fa-table__cell--num">{{ m.cross_mappings }}</td>
+                                <td class="fa-table__cell small text-muted">
+                                    {% if m.missing|length == 0 %}
+                                        <em>{{ 'compliance.maturity.none_missing'|trans({}, 'compliance') }}</em>
+                                    {% else %}
+                                        {{ m.missing|first }}{% if m.missing|length > 1 %} <span class="text-muted">(+ {{ m.missing|length - 1 }})</span>{% endif %}
+                                    {% endif %}
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {% for code, row in maturity_portfolio %}
-                                {% set m = row.maturity %}
-                                {% set variant = level_variant[m.level] ?? 'secondary' %}
-                                <tr>
-                                    <td>
-                                        <span class="badge bg-body-secondary border fa-status-pill fa-status-pill--neutral">{{ code }}</span>
-                                        <span class="ms-1">{{ row.framework.name }}</span>
-                                    </td>
-                                    <td>
-                                        <span class="badge text-bg-{{ variant }}">
-                                            L{{ m.level }} — {{ ('compliance.maturity.label.' ~ m.label)|trans({}, 'compliance') }}
-                                        </span>
-                                    </td>
-                                    <td>{{ m.coverage_pct }}%</td>
-                                    <td>{{ m.cross_mappings }}</td>
-                                    <td class="small text-muted">
-                                        {% if m.missing|length == 0 %}
-                                            <em>{{ 'compliance.maturity.none_missing'|trans({}, 'compliance') }}</em>
-                                        {% else %}
-                                            {{ m.missing|first }}{% if m.missing|length > 1 %} <span class="text-muted">(+ {{ m.missing|length - 1 }})</span>{% endif %}
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                        {% endfor %}
+                    {% endblock %}
+                {% endembed %}
             {% endblock %}
         {% endembed %}
     {% endif %}

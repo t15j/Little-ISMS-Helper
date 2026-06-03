@@ -12,17 +12,17 @@
         name="{{ field_name }}"
         data-subcontractor-chain-editor-target="hidden">{{ hidden_value }}</textarea>
 
-    <div class="table-responsive">
-        <table class="table table-sm align-middle mb-2">
-            <thead class="table-light small">
+    <div class="fa-table-wrap">
+        <table class="fa-table fa-table--compact align-middle mb-2">
+            <thead>
                 <tr>
-                    <th scope="col" style="width: 80px;">{{ 'supplier.subcontractor.tier'|trans({}, 'suppliers') }}</th>
-                    <th scope="col">{{ 'supplier.subcontractor.name'|trans({}, 'suppliers') }}</th>
-                    <th scope="col" style="width: 150px;">{{ 'supplier.subcontractor.lei'|trans({}, 'suppliers') }}</th>
-                    <th scope="col" style="width: 80px;">{{ 'supplier.subcontractor.country'|trans({}, 'suppliers') }}</th>
-                    <th scope="col">{{ 'supplier.subcontractor.service'|trans({}, 'suppliers') }}</th>
-                    <th scope="col" style="width: 120px;">{{ 'supplier.subcontractor.criticality'|trans({}, 'suppliers') }}</th>
-                    <th scope="col" style="width: 60px;"></th>
+                    <th scope="col" class="fa-table__th" style="width: 80px;">{{ 'supplier.subcontractor.tier'|trans({}, 'suppliers') }}</th>
+                    <th scope="col" class="fa-table__th">{{ 'supplier.subcontractor.name'|trans({}, 'suppliers') }}</th>
+                    <th scope="col" class="fa-table__th" style="width: 150px;">{{ 'supplier.subcontractor.lei'|trans({}, 'suppliers') }}</th>
+                    <th scope="col" class="fa-table__th" style="width: 80px;">{{ 'supplier.subcontractor.country'|trans({}, 'suppliers') }}</th>
+                    <th scope="col" class="fa-table__th">{{ 'supplier.subcontractor.service'|trans({}, 'suppliers') }}</th>
+                    <th scope="col" class="fa-table__th" style="width: 120px;">{{ 'supplier.subcontractor.criticality'|trans({}, 'suppliers') }}</th>
+                    <th scope="col" class="fa-table__th" style="width: 60px;"></th>
                 </tr>
             </thead>
             <tbody data-subcontractor-chain-editor-target="body"></tbody>
@@ -47,7 +47,7 @@
     <template data-subcontractor-chain-editor-target="template">
         <tr>
             <td>
-                <select class="form-select form-select-sm"
+                <select class="form-select fa-cyber-input__field form-select-sm"
                         data-index="__INDEX__" data-field="tier"
                         data-action="change->subcontractor-chain-editor#updateField">
                     <option value="1" __TIER_SEL_1__>T1</option>
@@ -58,31 +58,31 @@
                 </select>
             </td>
             <td>
-                <input type="text" class="form-control form-control-sm"
+                <input type="text" class="form-control form-control-sm fa-cyber-input__field"
                        data-index="__INDEX__" data-field="name"
                        data-action="input->subcontractor-chain-editor#updateField"
                        value="__NAME__" placeholder="Acme Corp">
             </td>
             <td>
-                <input type="text" class="form-control form-control-sm"
+                <input type="text" class="form-control form-control-sm fa-cyber-input__field"
                        data-index="__INDEX__" data-field="lei"
                        data-action="input->subcontractor-chain-editor#updateField"
                        value="__LEI__" placeholder="529900…" maxlength="20">
             </td>
             <td>
-                <input type="text" class="form-control form-control-sm text-uppercase"
+                <input type="text" class="form-control form-control-sm text-uppercase fa-cyber-input__field"
                        data-index="__INDEX__" data-field="country"
                        data-action="input->subcontractor-chain-editor#updateField"
-                       value="__COUNTRY__" placeholder="DE" maxlength="2">
+                       value="__COUNTRY__" placeholder="{{ 'supplier.subcontractor.country_placeholder'|trans({}, 'suppliers') }}" maxlength="2">
             </td>
             <td>
-                <input type="text" class="form-control form-control-sm"
+                <input type="text" class="form-control form-control-sm fa-cyber-input__field"
                        data-index="__INDEX__" data-field="service"
                        data-action="input->subcontractor-chain-editor#updateField"
-                       value="__SERVICE__" placeholder="Cloud hosting">
+                       value="__SERVICE__" placeholder="{{ 'supplier.subcontractor.service_placeholder'|trans({}, 'suppliers') }}">
             </td>
             <td>
-                <select class="form-select form-select-sm"
+                <select class="form-select fa-cyber-input__field form-select-sm"
                         data-index="__INDEX__" data-field="criticality"
                         data-action="change->subcontractor-chain-editor#updateField">
                     <option value="" __CRIT_SEL___ >—</option>

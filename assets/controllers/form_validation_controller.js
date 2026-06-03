@@ -23,19 +23,60 @@ export default class extends Controller {
     }
 
     connect() {
+        // The controller is mounted either on the <form> itself (e.g. login)
+        // or on a wrapper such as `.fa-form-layout` that lives *inside* the
+        // form. Resolve the real form element for both cases.
+        this.form = this.element.closest('form')
+            || this.element.querySelector('form')
+            || (this.element.tagName === 'FORM' ? this.element : null);
+
+        if (this.form) {
+            // Disable native HTML5 validation. A `required` field inside a
+            // collapsed fa-form-section is not focusable, so the browser aborts
+            // submit silently ("An invalid form control … is not focusable")
+            // before our submit handler can reveal the section. We run the
+            // validation ourselves on submit — see handleSubmit().
+            this.form.noValidate = true;
+            this._onSubmit = this.handleSubmit.bind(this);
+            this.form.addEventListener('submit', this._onSubmit);
+        }
+
         // Check for errors on page load (server-side validation)
         this.checkForErrors();
     }
 
+    disconnect() {
+        if (this.form && this._onSubmit) {
+            this.form.removeEventListener('submit', this._onSubmit);
+        }
+    }
+
     /**
-     * Handle form submission
-     * Checks for client-side validation errors before submit
+     * Handle form submission. With native validation disabled (see connect),
+     * the submit event always fires — so we can reveal the collapsed section /
+     * inactive tab that hides the first invalid field *before* the browser
+     * reports the constraint, instead of being silently blocked.
      */
     handleSubmit(event) {
-        // Let browser's native validation run first
-        if (!this.element.checkValidity()) {
+        if (!this.form || typeof this.form.checkValidity !== 'function') {
+            return;
+        }
+        if (!this.form.checkValidity()) {
             event.preventDefault();
-            this.scrollToFirstError();
+            const firstInvalid = this.form.querySelector(
+                'input:invalid, select:invalid, textarea:invalid'
+            );
+            if (firstInvalid) {
+                // Reveal the collapsed section / inactive tab first, then let
+                // the now-visible field receive focus + the native bubble.
+                this.revealHiddenAncestors(firstInvalid);
+                requestAnimationFrame(() => {
+                    this.scrollToError(firstInvalid);
+                    try { firstInvalid.focus({ preventScroll: true }); } catch (e) { /* not focusable yet */ }
+                    this.form.reportValidity();
+                });
+            }
+            this.announceErrors();
             return false;
         }
     }
@@ -58,9 +99,63 @@ export default class extends Controller {
         const firstError = this.findFirstError();
 
         if (firstError) {
-            this.scrollToError(firstError);
-            this.focusErrorField(firstError);
+            // Reveal collapsed section / inactive tab BEFORE scroll+focus,
+            // otherwise the field is hidden and scroll-into-view jumps to a
+            // collapsed container (user sees nothing actionable).
+            this.revealHiddenAncestors(firstError);
+            // Give the reveal animation a frame to start, then scroll+focus.
+            requestAnimationFrame(() => {
+                this.scrollToError(firstError);
+                this.focusErrorField(firstError);
+            });
             this.announceErrors();
+        }
+    }
+
+    /**
+     * Walk up the DOM from the first error and open any closed container that
+     * hides it:
+     *   - fa-form-layout sections (`.fa-form-section--collapsed`) — click head
+     *     to delegate to `form-layout#toggleSection`
+     *   - fa-tabs panels (`[role="tabpanel"]` not `.is-active`) — find the
+     *     matching nav-item button and click it (delegates to `tabs#switchTo`)
+     *   - Bootstrap-style `[hidden]` / `.d-none` ancestors — clear so the field
+     *     becomes layout-visible (last resort; safest before scrolling)
+     */
+    revealHiddenAncestors(errorElement) {
+        let node = errorElement;
+        let safety = 20;
+        while (node && node !== this.element && safety-- > 0) {
+            // 1. fa-form-section collapsed → click head to toggle open
+            if (node.classList && node.classList.contains('fa-form-section--collapsed')) {
+                const head = node.querySelector('.fa-form-section__head');
+                if (head) head.click();
+            }
+
+            // 2. Inactive tab panel → find nav-item with matching tab-id and click
+            if (node.matches && node.matches('[role="tabpanel"]') && !node.classList.contains('is-active')) {
+                const tabId = node.dataset.tabId;
+                if (tabId) {
+                    const navItem = document.querySelector(
+                        `[role="tab"][data-tab-id="${tabId}"]`
+                    );
+                    if (navItem) navItem.click();
+                }
+            }
+
+            // 3. Bootstrap accordion: collapsed `.collapse` without `.show`
+            if (node.classList && node.classList.contains('collapse') && !node.classList.contains('show')) {
+                // Find the toggle button targeting this collapse, click it
+                const id = node.id;
+                if (id) {
+                    const toggle = document.querySelector(
+                        `[data-bs-toggle="collapse"][data-bs-target="#${id}"], [aria-controls="${id}"]`
+                    );
+                    if (toggle) toggle.click();
+                }
+            }
+
+            node = node.parentElement;
         }
     }
 

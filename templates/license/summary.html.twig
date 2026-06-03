@@ -1,6 +1,5 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
-
 {% block title %}Lizenz-Zusammenfassung{% endblock %}
 
 {% block body %}
@@ -18,7 +17,7 @@
     {% include '_components/_page_header.html.twig' with {
         title: 'Lizenz-Compliance Zusammenfassung',
         subtitle: 'Schnellübersicht über die Lizenz-Compliance',
-        icon: 'bi-bar-chart'
+        icon: 'nav-bar-chart'
     } %}
 
     <div class="row">
@@ -181,60 +180,41 @@
                                 </tr>
                             {% endblock %}
                             {% block table_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                                 <tr>
-                                    <td>{% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle', content: 'Erlaubt' } %}</td>
+                                    <td>{% include '_components/_badge.html.twig' with { variant: 'success', icon: 'status-ok', content: 'Erlaubt' } %}</td>
                                     <td><small>Permissive Lizenzen (MIT, BSD, Apache)</small></td>
                                     <td class="text-end"><strong>{{ stats.allowed }}</strong></td>
                                     <td class="text-end">{{ (stats.allowed / stats.total * 100)|round(1) }}%</td>
                                     <td>
-                                        <div class="progress progress-h-20">
-                                            <div class="progress-bar bg-success" role="progressbar"
-                                                 style="width: {{ (stats.allowed / stats.total * 100)|round(1) }}%"
-                                                 aria-valuenow="{{ stats.allowed }}" aria-valuemin="0" aria-valuemax="{{ stats.total }}">
-                                            </div>
-                                        </div>
+                                        {{ _fa_progress.render({ value: stats.allowed, max: stats.total, tone: 'success' }) }}
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td>{% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'bi-exclamation-triangle', content: 'Eingeschränkt' } %}</td>
+                                    <td>{% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'status-warning', content: 'Eingeschränkt' } %}</td>
                                     <td><small>Weak copyleft (MPL, EPL, CC-BY)</small></td>
                                     <td class="text-end"><strong>{{ stats.restricted }}</strong></td>
                                     <td class="text-end">{{ (stats.restricted / stats.total * 100)|round(1) }}%</td>
                                     <td>
-                                        <div class="progress progress-h-20">
-                                            <div class="progress-bar bg-warning" role="progressbar"
-                                                 style="width: {{ (stats.restricted / stats.total * 100)|round(1) }}%"
-                                                 aria-valuenow="{{ stats.restricted }}" aria-valuemin="0" aria-valuemax="{{ stats.total }}">
-                                            </div>
-                                        </div>
+                                        {{ _fa_progress.render({ value: stats.restricted, max: stats.total, tone: 'warning' }) }}
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td>{% include '_components/_badge.html.twig' with { variant: 'info', icon: 'bi-arrow-repeat', content: 'Copyleft' } %}</td>
+                                    <td>{% include '_components/_badge.html.twig' with { variant: 'info', icon: 'util-refresh', content: 'Copyleft' } %}</td>
                                     <td><small>Strong copyleft (GPL, LGPL, AGPL)</small></td>
                                     <td class="text-end"><strong>{{ stats.copyleft }}</strong></td>
                                     <td class="text-end">{{ (stats.copyleft / stats.total * 100)|round(1) }}%</td>
                                     <td>
-                                        <div class="progress progress-h-20">
-                                            <div class="progress-bar bg-info" role="progressbar"
-                                                 style="width: {{ (stats.copyleft / stats.total * 100)|round(1) }}%"
-                                                 aria-valuenow="{{ stats.copyleft }}" aria-valuemin="0" aria-valuemax="{{ stats.total }}">
-                                            </div>
-                                        </div>
+                                        {{ _fa_progress.render({ value: stats.copyleft, max: stats.total, tone: 'info' }) }}
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td>{% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'bi-x-circle', content: 'Nicht erlaubt' } %}</td>
+                                    <td>{% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'status-critical', content: 'Nicht erlaubt' } %}</td>
                                     <td><small>Non-commercial Lizenzen</small></td>
                                     <td class="text-end"><strong>{{ stats.not_allowed }}</strong></td>
                                     <td class="text-end">{{ (stats.not_allowed / stats.total * 100)|round(1) }}%</td>
                                     <td>
-                                        <div class="progress progress-h-20">
-                                            <div class="progress-bar bg-danger" role="progressbar"
-                                                 style="width: {{ (stats.not_allowed / stats.total * 100)|round(1) }}%"
-                                                 aria-valuenow="{{ stats.not_allowed }}" aria-valuemin="0" aria-valuemax="{{ stats.total }}">
-                                            </div>
-                                        </div>
+                                        {{ _fa_progress.render({ value: stats.not_allowed, max: stats.total, tone: 'danger' }) }}
                                     </td>
                                 </tr>
                                 <tr>
@@ -243,12 +223,7 @@
                                     <td class="text-end"><strong>{{ stats.unknown }}</strong></td>
                                     <td class="text-end">{{ (stats.unknown / stats.total * 100)|round(1) }}%</td>
                                     <td>
-                                        <div class="progress progress-h-20">
-                                            <div class="progress-bar bg-secondary" role="progressbar"
-                                                 style="width: {{ (stats.unknown / stats.total * 100)|round(1) }}%"
-                                                 aria-valuenow="{{ stats.unknown }}" aria-valuemin="0" aria-valuemax="{{ stats.total }}">
-                                            </div>
-                                        </div>
+                                        {{ _fa_progress.render({ value: stats.unknown, max: stats.total, tone: 'neutral' }) }}
                                     </td>
                                 </tr>
                             {% endblock %}
@@ -260,9 +235,9 @@
                 {% if stats.unknown > 0 or stats.not_allowed > 0 %}
                     {% embed '_components/_card.html.twig' with {class: 'mb-4', borderColor: 'warning'} %}
                         {% block card_header %}
-                            <div class="card-header bg-warning-subtle text-warning">
+                            <div class="card-header">
                                 <h2 class="h5 mb-0">
-                                    <i class="fa-icon fa-icon--status-warning me-2" aria-hidden="true"></i>Handlungsbedarf
+                                    <i class="fa-icon fa-icon--status-warning text-warning me-2" aria-hidden="true"></i>Handlungsbedarf
                                 </h2>
                             </div>
                         {% endblock %}

@@ -1,8 +1,10 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
+{% import '_components/_fa_norm_bridge.html.twig' as _fa_norm_bridge %}
 {% trans_default_domain 'soa' %}
 {% import '_macros/inheritance_badge.html.twig' as inheritance %}
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
-
+{% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
 {% block title %}{{ 'soa.page.title'|trans({}, 'soa') }} - Little ISMS Helper{% endblock %}
 
 {% block stylesheets %}
@@ -19,18 +21,35 @@
     ]
 } %}
 
+{# Direct download / preview actions opt out of Turbo via attrs.data-turbo: 'false'
+   so the browser keeps the binary/PDF stream instead of letting Turbo swallow it. #}
 {{ _fa_page_header.render({
     badge: { icon: 'shield-check', label: 'nav.soa'|trans({}, 'nav') },
     title: 'soa.page.title'|trans({}, 'soa'),
     subtitle: 'soa.page.subtitle'|trans({}, 'soa'),
     actions: [
-        { label: 'soa.action.export_html'|trans({}, 'soa'), variant: 'ghost', icon: 'file-earmark-text', href: path('app_soa_export') },
-        { label: 'soa.action.export_pdf'|trans({}, 'soa'), variant: 'secondary', icon: 'file-earmark-pdf', href: path('app_soa_export_pdf') },
-        { label: 'soa.action.preview_pdf'|trans({}, 'soa'), variant: 'ghost', icon: 'eye', href: path('app_soa_preview_pdf') }
-    ]
+        { label: 'soa.action.export_html'|trans({}, 'soa'), variant: 'ghost', icon: 'nav-file-earmark-text', href: path('app_soa_export'), attrs: { 'data-turbo': 'false' } },
+        { label: 'soa.action.export_pdf'|trans({}, 'soa'), variant: 'secondary', icon: 'nav-file-pdf', href: path('app_soa_export_pdf'), attrs: { 'data-turbo': 'false' } },
+        { label: 'soa.action.preview_pdf'|trans({}, 'soa'), variant: 'ghost', icon: 'ui-eye', href: path('app_soa_preview_pdf'), attrs: { 'data-turbo': 'false' } }
+    ]|merge(is_granted('ROLE_AUDITOR') ? [{ label: 'audit_workbook.action.export_xlsx'|trans({}, 'audit_workbook'), variant: 'success', icon: 'download', href: path('app_audit_workbook_index'), attrs: { 'data-turbo': 'false' } }] : [])
+     |merge(is_granted('ROLE_MANAGER') ? [{ label: 'filtered_export.button.label'|trans({}, 'filtered_export'), href: path('app_filtered_export_entity', { entityType: 'control', format: 'xlsx' }) ~ (app.request.queryString ? '?' ~ app.request.queryString : ''), variant: 'ghost', icon: 'nav-file-earmark-spreadsheet', attrs: { 'data-turbo': 'false' } }] : [])
 }) }}
-{# TODO: export/preview actions above use Turbo navigation; add data-turbo="false" via custom markup if full-page download is required #}
-<p class="text-muted small mb-0 mt-n2"><a href="{{ path('app_help_glossary') }}#glossary-soa" class="text-muted" title="{{ 'common.glossary_link'|trans({}, 'messages') }}" data-bs-toggle="tooltip"><i class="bi bi-question-circle" aria-hidden="true" style="font-size: 0.75rem;"></i> {{ 'common.glossary_link'|trans({}, 'messages') }}</a></p>
+{% set _global_hints = alva_hints('soa_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
+<p class="text-muted small mb-3"><a href="{{ path('app_help_glossary') }}#glossary-soa" class="text-muted" title="{{ 'common.glossary_link'|trans({}, 'messages') }}" data-bs-toggle="tooltip"><i class="fa-icon fa-icon--ui-help" aria-hidden="true" style="font-size: 0.75rem;"></i> {{ 'common.glossary_link'|trans({}, 'messages') }}</a></p>
+
+{# 9001-bridge: SoA ↔ Prozesslandkarte. P-12 rollout. #}
+{{ _fa_norm_bridge.render({
+    from_norm: 'ISO 27001 6.1.3',
+    to_norm:   'ISO 9001 4.4',
+    bridge_text: ('iso_9001_bridge.soa'|trans({}, 'control')),
+    prominence: 'subtle'
+}) }}
 
 <main class="fa-aurora-surface">
 
@@ -44,7 +63,7 @@
             <label for="view-filter" class="mb-0 fw-bold">
                 <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i> {{ 'common.view'|trans({}, 'messages') }}:
             </label>
-            <select class="form-select form-select-sm w-auto" id="view-filter" name="view" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+            <select class="form-select fa-cyber-input__field form-select-sm w-auto" id="view-filter" name="view" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                 <option value="own" {{ inheritanceInfo.currentView == 'own' ? 'selected' : '' }}>
                     {{ 'corporate.view.own_only'|trans({}, 'messages') }}
                 </option>
@@ -67,7 +86,10 @@
 {% endembed %}
 {% endif %}
 
-{# KPI Cards #}
+{# KPI Cards — compute applicable/implemented ONCE (perf fix T-1: was 6 redundant filter passes) #}
+{% set _kpi_applicable = controls|filter(c => c.applicable)|length %}
+{% set _kpi_implemented = controls|filter(c => c.applicable and c.implementationStatus == 'implemented')|length %}
+{% set _kpi_percentage = _kpi_applicable > 0 ? (_kpi_implemented / _kpi_applicable * 100)|round : 0 %}
 <div class="kpi-grid">
     <div class="col-auto">
         {% if currentTenant %}
@@ -78,18 +100,13 @@
         {% endif %}
     </div>
     <div class="col-auto">
-        {{ _fa_feature_card.render({ label: 'soa.kpi.applicable_controls'|trans({}, 'soa'), value: controls|filter(c => c.applicable)|length, variant: 'success' }) }}
+        {{ _fa_feature_card.render({ label: 'soa.kpi.applicable_controls'|trans({}, 'soa'), value: _kpi_applicable, variant: 'success' }) }}
     </div>
     <div class="col-auto">
-        {% set implemented = controls|filter(c => c.applicable and c.implementationStatus == 'implemented')|length %}
-        {% set applicable = controls|filter(c => c.applicable)|length %}
-        {{ _fa_feature_card.render({ label: 'soa.kpi.implemented_controls'|trans({}, 'soa'), value: implemented, hint: ('soa.kpi.of'|trans({}, 'soa')) ~ ' ' ~ applicable, variant: 'info' }) }}
+        {{ _fa_feature_card.render({ label: 'soa.kpi.implemented_controls'|trans({}, 'soa'), value: _kpi_implemented, hint: ('soa.kpi.of'|trans({}, 'soa')) ~ ' ' ~ _kpi_applicable, variant: 'info' }) }}
     </div>
     <div class="col-auto">
-        {% set applicable = controls|filter(c => c.applicable)|length %}
-        {% set implemented = controls|filter(c => c.applicable and c.implementationStatus == 'implemented')|length %}
-        {% set percentage = applicable > 0 ? (implemented / applicable * 100)|round : 0 %}
-        {{ _fa_feature_card.render({ label: 'soa.kpi.compliance_rate'|trans({}, 'soa'), value: percentage ~ '%', variant: 'warning' }) }}
+        {{ _fa_feature_card.render({ label: 'soa.kpi.compliance_rate'|trans({}, 'soa'), value: _kpi_percentage ~ '%', variant: 'warning' }) }}
     </div>
 </div>
 
@@ -97,22 +114,27 @@
 <h2>{{ 'soa.section.by_category'|trans({}, 'soa') }}</h2>
 
 <div class="module-grid">
+    {# T7.7 (UX-P1): canonical category keys match the lowercase values the
+       FormType persists (control.category.{organizational,people,physical,
+       technological}). Comparison is case-insensitive so historical mixed-case
+       rows still surface in the matching tile. #}
     {% set categories = {
-        'Organizational': '🏢',
-        'People': '👥',
-        'Physical': '🏠',
-        'Technological': '💻'
+        'organizational': '🏢',
+        'people': '👥',
+        'physical': '🏠',
+        'technological': '💻'
     } %}
 
     {% for category, icon in categories %}
-        {% set cat_controls = controls|filter(c => c.category == category) %}
+        {% set cat_controls = controls|filter(c => (c.category|default('')|lower) == category) %}
         {% set applicable_controls = cat_controls|filter(c => c.applicable) %}
         {% set implemented_controls = applicable_controls|filter(c => c.implementationStatus == 'implemented') %}
 
         {% embed '_components/_card.html.twig' %}
             {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                 <div class="fs-2-mb-sm">{{ icon }}</div>
-                <h2>{{ ('soa.category.' ~ category)|trans({}, 'soa') }} {{ 'soa.label.controls'|trans({}, 'soa') }}</h2>
+                <h2>{{ ('soa.category.' ~ category|capitalize)|trans({}, 'soa') }} {{ 'soa.label.controls'|trans({}, 'soa') }}</h2>
                 <div class="stats-grid mt-2">
                     <div class="stat-item">
                         <strong>{{ cat_controls|length }}</strong>
@@ -129,14 +151,10 @@
                 </div>
 
                 {% set impl_percentage = applicable_controls|length > 0 ? (implemented_controls|length / applicable_controls|length * 100)|round : 0 %}
-                <div class="progress mt-2">
-                    <div class="progress-bar" style="width: {{ impl_percentage }}%">
-                        {{ impl_percentage }}%
-                    </div>
-                </div>
+                {{ _fa_progress.render({ value: impl_percentage, showText: true, class: 'mt-2' }) }}
 
                 <div class="mt-2">
-                    <a href="{{ path('app_soa_by_category', {category: category}) }}" class="btn btn-sm">{{ 'soa.action.view_details'|trans({}, 'soa') }}</a>
+                    <a href="{{ path('app_soa_by_category', {category: category}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">{{ 'soa.action.view_details'|trans({}, 'soa') }}</a>
                 </div>
             {% endblock %}
         {% endembed %}
@@ -157,33 +175,43 @@
     } only %}
 {% endif %}
 
-{# C3 Bulk-Edit Applicability (Sprint 3) — power-user tool for CM #}
+{# T7.5 (UX-P1): Power-user shortcut. The canonical bulk-edit path is the
+   checkbox-selection toolbar above (Aurora bulk-action-bar). This
+   <details>-disclosure exposes a comma-separated ID input for CMs who
+   paste control-ID lists from Excel — kept collapsed by default and
+   explicitly labelled as an alternative entry point so juniors are not
+   confused by two visible paths. #}
 {% if is_granted('ROLE_MANAGER') %}
     <details class="card fa-section mb-3">
         <summary class="card-header" style="cursor: pointer;">
             <i class="fa-icon fa-icon--ui-check" aria-hidden="true"></i>
             <strong>{{ 'control.bulk.title'|trans({}, 'control') }}</strong>
             <small class="text-muted ms-2">{{ 'control.bulk.hint'|trans({}, 'control') }}</small>
+            <span class="badge bg-secondary ms-2">{{ 'control.bulk.power_user_badge'|trans({}, 'control') }}</span>
         </summary>
         <div class="card-body">
             <form method="post" action="{{ path('app_soa_bulk_applicability') }}" class="row g-2 align-items-end">
                 <input type="hidden" name="_token" value="{{ csrf_token('soa_bulk_applicability') }}">
                 <div class="col-md-4">
-                    <label for="bulk-control-ids" class="form-label small">{{ 'control.bulk.ids'|trans({}, 'control') }}</label>
-                    <input type="text" id="bulk-control-ids" name="control_ids_raw" class="form-control form-control-sm"
-                           placeholder="12, 34, 56">
+                    {{ _fa_cyber.text('control_ids_raw', {
+                        id: 'bulk-control-ids',
+                        label: 'control.bulk.ids'|trans({}, 'control'),
+                        placeholder: '12, 34, 56'
+                    }) }}
                 </div>
                 <div class="col-md-2">
                     <label for="bulk-applicable" class="form-label small">{{ 'control.bulk.status'|trans({}, 'control') }}</label>
-                    <select id="bulk-applicable" name="applicable" class="form-select form-select-sm">
+                    <select id="bulk-applicable" name="applicable" class="form-select form-select-sm fa-cyber-input__field">
                         <option value="0">{{ 'control.bulk.non_applicable'|trans({}, 'control') }}</option>
                         <option value="1">{{ 'control.bulk.applicable'|trans({}, 'control') }}</option>
                     </select>
                 </div>
                 <div class="col-md-4">
-                    <label for="bulk-reason" class="form-label small">{{ 'control.bulk.reason'|trans({}, 'control') }}</label>
-                    <input type="text" id="bulk-reason" name="reason" class="form-control form-control-sm"
-                           placeholder="{{ 'control.bulk.reason_placeholder'|trans({}, 'control') }}">
+                    {{ _fa_cyber.text('reason', {
+                        id: 'bulk-reason',
+                        label: 'control.bulk.reason'|trans({}, 'control'),
+                        placeholder: 'control.bulk.reason_placeholder'|trans({}, 'control')
+                    }) }}
                 </div>
                 <div class="col-md-2">
                     <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary fa-cyber-btn--sm w-100"
@@ -214,17 +242,20 @@
         {% endif %}
         <div class="col-md-4">
             <label for="category-filter" class="form-label">{{ 'soa.filter.category'|trans({}, 'soa') }}</label>
-            <select id="category-filter" name="category" class="form-select">
+            <select id="category-filter" name="category" class="form-select fa-cyber-input__field">
                 <option value="">{{ 'soa.filter.all_categories'|trans({}, 'soa') }}</option>
-                <option value="Organizational" {{ app.request.query.get('category') == 'Organizational' ? 'selected' : '' }}>{{ 'soa.category.Organizational'|trans({}, 'soa') }}</option>
-                <option value="People" {{ app.request.query.get('category') == 'People' ? 'selected' : '' }}>{{ 'soa.category.People'|trans({}, 'soa') }}</option>
-                <option value="Physical" {{ app.request.query.get('category') == 'Physical' ? 'selected' : '' }}>{{ 'soa.category.Physical'|trans({}, 'soa') }}</option>
-                <option value="Technological" {{ app.request.query.get('category') == 'Technological' ? 'selected' : '' }}>{{ 'soa.category.Technological'|trans({}, 'soa') }}</option>
+                {# T7.7 (UX-P1): values lowercased to match the FormType-persisted
+                   Control.category values; capitalized label key kept for backward
+                   compat with existing soa.category.{Organizational,People,...} entries. #}
+                <option value="organizational" {{ (app.request.query.get('category')|lower) == 'organizational' ? 'selected' : '' }}>{{ 'soa.category.Organizational'|trans({}, 'soa') }}</option>
+                <option value="people" {{ (app.request.query.get('category')|lower) == 'people' ? 'selected' : '' }}>{{ 'soa.category.People'|trans({}, 'soa') }}</option>
+                <option value="physical" {{ (app.request.query.get('category')|lower) == 'physical' ? 'selected' : '' }}>{{ 'soa.category.Physical'|trans({}, 'soa') }}</option>
+                <option value="technological" {{ (app.request.query.get('category')|lower) == 'technological' ? 'selected' : '' }}>{{ 'soa.category.Technological'|trans({}, 'soa') }}</option>
             </select>
         </div>
         <div class="col-md-4">
             <label for="status-filter" class="form-label">{{ 'soa.filter.status'|trans({}, 'soa') }}</label>
-            <select id="status-filter" name="status" class="form-select">
+            <select id="status-filter" name="status" class="form-select fa-cyber-input__field">
                 <option value="">{{ 'soa.filter.all_status'|trans({}, 'soa') }}</option>
                 <option value="implemented" {{ app.request.query.get('status') == 'implemented' ? 'selected' : '' }}>{{ 'soa.status.implemented'|trans({}, 'soa') }}</option>
                 <option value="in_progress" {{ app.request.query.get('status') == 'in_progress' ? 'selected' : '' }}>{{ 'soa.status.in_progress'|trans({}, 'soa') }}</option>
@@ -232,11 +263,14 @@
                 <option value="not_applicable" {{ app.request.query.get('status') == 'not_applicable' ? 'selected' : '' }}>{{ 'soa.status.not_applicable'|trans({}, 'soa') }}</option>
             </select>
         </div>
+        {# Junior-ISB-Audit-2026-05-22 S14: MRIS-Filter gegated on tenant opt-in
+           (mris.kpis_enabled). MRIS is a tenant-scoped custom framework. #}
+        {% if mrisEnabled|default(true) %}
         <div class="col-md-4">
             <label for="mris-filter" class="form-label">{{ 'soa.filter.mris'|trans({}, 'soa') }}
-                <small class="text-muted" title="MRIS v1.5 nach Peddi (CC BY 4.0)">ⓘ</small>
+                <small class="text-muted" title="{{ 'soa.mris.source_attribution'|trans({}, 'soa') }}">ⓘ</small>
             </label>
-            <select id="mris-filter" name="mris" class="form-select">
+            <select id="mris-filter" name="mris" class="form-select fa-cyber-input__field">
                 <option value="">{{ 'soa.filter.mris_all'|trans({}, 'soa') }}</option>
                 <option value="standfest" {{ mrisFilter == 'standfest' ? 'selected' : '' }}>{{ 'soa.mris.standfest'|trans({}, 'soa') }} ({{ mrisStats.standfest|default(0) }})</option>
                 <option value="degradiert" {{ mrisFilter == 'degradiert' ? 'selected' : '' }}>{{ 'soa.mris.degradiert'|trans({}, 'soa') }} ({{ mrisStats.degradiert|default(0) }})</option>
@@ -244,6 +278,7 @@
                 <option value="nicht_betroffen" {{ mrisFilter == 'nicht_betroffen' ? 'selected' : '' }}>{{ 'soa.mris.nicht_betroffen'|trans({}, 'soa') }} ({{ mrisStats.nicht_betroffen|default(0) }})</option>
             </select>
         </div>
+        {% endif %}
         <div class="col-md-4">
             <div class="form-check form-switch mt-4">
                 <input class="form-check-input" type="checkbox" role="switch"
@@ -261,37 +296,66 @@
     {% endblock %}
 {% endembed %}
 
-{% embed '_components/_table.html.twig' with {
-    'stickyHeader': true,
-    'theadClass': 'table-light',
-    'wrapperClass': 'table-container'
+{# Canonical bulk-action wrapper (per design-system spec): provides row-level
+   selection state for the fa-table below + tag-bulk integration. #}
+<div data-controller="bulk-actions"
+     data-bulk-actions-endpoint-value="/{{ app.request.locale }}/soa"
+     data-bulk-actions-applicability-url-value="{{ path('app_soa_bulk_applicability') }}"
+     data-bulk-actions-applicability-csrf-token-value="{{ csrf_token('soa_bulk_applicability') }}">
+{% embed '_components/_fa_table.html.twig' with {
+    stickyHead: true,
+    bulkSelect: false,
+    sortable: false,
+    id: 'soa-controls-list',
+    class: 'table-bulk-selectable',
+    wrapStyle: 'max-height: 70vh'
 } %}
-    {% import '_macros/inheritance_badge.html.twig' as inheritance %}
     {% block table_head %}
+        {% trans_default_domain 'soa' %}
         <tr>
-            <th scope="col" style="min-width: 100px;">{{ 'soa.table.control_id'|trans({}, 'soa') }}</th>
-            <th scope="col" style="min-width: 250px;">{{ 'soa.table.name'|trans({}, 'soa') }}</th>
-            <th scope="col" style="min-width: 120px;">{{ 'soa.table.category'|trans({}, 'soa') }}</th>
-            <th scope="col" class="text-center" style="min-width: 130px;" title="{{ 'soa.table.mris_help'|trans({}, 'soa') }}" data-tour="mris-soa-column">{{ 'soa.table.mris'|trans({}, 'soa') }}</th>
-            <th scope="col" class="text-center" style="min-width: 100px;">{{ 'soa.table.applicable'|trans({}, 'soa') }}</th>
-            <th scope="col" style="min-width: 150px;">{{ 'soa.table.implementation_status'|trans({}, 'soa') }}</th>
-            <th scope="col" class="text-center" style="min-width: 120px;">{{ 'soa.table.progress'|trans({}, 'soa') }}</th>
-            <th scope="col" class="text-center" style="min-width: 180px;">{{ 'soa.table.actions'|trans({}, 'soa') }}</th>
+            <th scope="col" class="fa-table__th fa-table__th--checkbox">
+                <input type="checkbox"
+                       class="form-check-input"
+                       data-action="bulk-actions#selectAll"
+                       data-bulk-actions-target="selectAllCheckbox"
+                       aria-label="{{ 'bulk_actions.select_all'|trans({}, 'messages') }}">
+            </th>
+            <th scope="col" class="fa-table__th" style="min-width: 100px;">{{ 'soa.table.control_id'|trans({}, 'soa') }}</th>
+            <th scope="col" class="fa-table__th" style="min-width: 250px;">{{ 'soa.table.name'|trans({}, 'soa') }}</th>
+            <th scope="col" class="fa-table__th" style="min-width: 120px;">{{ 'soa.table.category'|trans({}, 'soa') }}</th>
+            {% if mrisEnabled|default(true) %}
+            <th scope="col" class="fa-table__th fa-table__th--center" style="min-width: 130px;" title="{{ 'soa.table.mris_help'|trans({}, 'soa') }}" data-tour="mris-soa-column">{{ 'soa.table.mris'|trans({}, 'soa') }}</th>
+            {% endif %}
+            <th scope="col" class="fa-table__th fa-table__th--center" style="min-width: 100px;">{{ 'soa.table.applicable'|trans({}, 'soa') }}</th>
+            <th scope="col" class="fa-table__th" style="min-width: 150px;">{{ 'soa.table.implementation_status'|trans({}, 'soa') }}</th>
+            <th scope="col" class="fa-table__th fa-table__th--center" style="min-width: 120px;">{{ 'soa.table.progress'|trans({}, 'soa') }}</th>
+            <th scope="col" class="fa-table__th fa-table__th--actions" style="min-width: 180px;"><span class="visually-hidden">{{ 'soa.table.actions'|trans({}, 'soa') }}</span></th>
         </tr>
     {% endblock %}
     {% block table_body %}
+        {% trans_default_domain 'soa' %}
         {% import '_macros/inheritance_badge.html.twig' as inheritance %}
+        {% import '_components/_fa_progress.html.twig' as _fa_progress %}
         {% for control in controls %}
-        <tr data-filter-target="filterableRow" data-category="{{ control.category }}" data-status="{{ control.implementationStatus }}">
-            <td>{% include '_components/_iso_reference_label.html.twig' with { control: control, show_name: false, code_class: 'fw-bold' } only %}</td>
-            <td>
+        <tr class="fa-table__row" data-filter-target="filterableRow" data-category="{{ control.category }}" data-status="{{ control.implementationStatus }}">
+            <td class="fa-table__cell fa-table__cell--checkbox">
+                <input type="checkbox"
+                       class="form-check-input"
+                       data-bulk-actions-target="item"
+                       data-action="bulk-actions#selectItem"
+                       value="{{ control.id }}"
+                       aria-label="{{ 'common.select'|trans({}, 'messages') }} {{ control.name }}">
+            </td>
+            <td class="fa-table__cell">{% include '_components/_iso_reference_label.html.twig' with { control: control, show_name: false, code_class: 'fw-bold' } only %}</td>
+            <td class="fa-table__cell">
                 {{ control.name }}
                 {{ inheritance.small_badge(control, currentTenant) }}
             </td>
-            <td>
+            <td class="fa-table__cell">
                 {% include '_components/_badge.html.twig' with { variant: 'info', content: ('soa.category.' ~ control.category)|trans({}, 'soa') } %}
             </td>
-            <td class="text-center">
+            {% if mrisEnabled|default(true) %}
+            <td class="fa-table__cell fa-table__cell--center">
                 {% set mrisLocale = app.request.locale|default('de') %}
                 {% if control.mythosResilience == 'standfest' %}
                     <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.standfest', 'tooltip', mrisLocale) }}">
@@ -316,21 +380,26 @@
                     <div class="small text-muted mt-1" data-bs-toggle="tooltip" title="{{ mris_help('mris.help.flanking_mhcs', 'tooltip', mrisLocale) }}">{{ control.mythosFlankingMhcs|join(', ') }}</div>
                 {% endif %}
             </td>
-            <td class="text-center">
+            {% endif %}
+            <td class="fa-table__cell fa-table__cell--center">
                 {% if control.applicable %}
                     {% include '_components/_badge.html.twig' with { variant: 'success', content: '✓ ' ~ 'soa.value.yes'|trans({}, 'soa') } %}
                 {% else %}
                     {% include '_components/_badge.html.twig' with { variant: 'secondary', class: 'badge-neutral', content: '✗ ' ~ 'soa.value.no'|trans({}, 'soa') } %}
                 {% endif %}
             </td>
-            <td>
+            <td class="fa-table__cell">
                 {% if control.applicable %}
-                    {% if control.implementationStatus == 'implemented' %}
-                        {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle', content: 'soa.status.implemented'|trans({}, 'soa') } %}
+                    {% if control.implementationStatus == 'verified' %}
+                        {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'nav-patch-check', content: 'soa.status.verified'|trans({}, 'soa') } %}
+                    {% elseif control.implementationStatus == 'implemented' %}
+                        {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'status-ok', content: 'soa.status.implemented'|trans({}, 'soa') } %}
                     {% elseif control.implementationStatus == 'in_progress' %}
-                        {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'bi-arrow-clockwise', content: 'soa.status.in_progress'|trans({}, 'soa') } %}
+                        {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'util-refresh', content: 'soa.status.in_progress'|trans({}, 'soa') } %}
+                    {% elseif control.implementationStatus == 'planned' %}
+                        {% include '_components/_badge.html.twig' with { variant: 'info', icon: 'ui-calendar-event', content: 'soa.status.planned'|trans({}, 'soa') } %}
                     {% elseif control.implementationStatus == 'not_started' %}
-                        {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'bi-pause-circle', content: 'soa.status.not_started'|trans({}, 'soa') } %}
+                        {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'pause', content: 'soa.status.not_started'|trans({}, 'soa') } %}
                     {% else %}
                         {% include '_components/_badge.html.twig' with { variant: 'secondary', class: 'badge-neutral', content: 'soa.value.na'|trans({}, 'soa') } %}
                     {% endif %}
@@ -338,18 +407,14 @@
                     {% include '_components/_badge.html.twig' with { variant: 'secondary', class: 'badge-neutral', content: 'soa.status.not_applicable'|trans({}, 'soa') } %}
                 {% endif %}
             </td>
-            <td>
+            <td class="fa-table__cell">
                 {% if control.applicable %}
-                    <div class="progress progress-compact">
-                        <div class="progress-bar" style="width: {{ control.implementationPercentage }}%; font-size: 0.75rem;">
-                            {{ control.implementationPercentage }}%
-                        </div>
-                    </div>
+                    {{ _fa_progress.render({ value: control.implementationPercentage, showText: true, size: 'sm' }) }}
                 {% else %}
                     <span class="text-center-block-light">-</span>
                 {% endif %}
             </td>
-            <td class="text-center">
+            <td class="fa-table__cell fa-table__cell--actions">
                 <div class="btn-group btn-group-sm" role="group" aria-label="{{ 'common.actions'|trans({}, 'messages') }}">
                     <a href="{{ path('app_soa_show', {id: control.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" title="{{ 'common.view'|trans({}, 'messages') }}" aria-label="{{ 'common.view'|trans({}, 'messages') }}">👁 {{ 'common.view'|trans({}, 'messages') }}</a>
                     <a href="{{ path('app_soa_edit', {id: control.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" title="{{ 'common.edit'|trans({}, 'messages') }}" aria-label="{{ 'common.edit'|trans({}, 'messages') }}"><i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'common.edit'|trans({}, 'messages') }}</a>
@@ -360,12 +425,25 @@
     {% endblock %}
 {% endembed %}
 
+    {# Canonical bulk-action-bar (export + delete). Tag-bulk lives in the
+       polymorphic tag-bar above (entity_class: Control). #}
+    {% if controls|length > 0 %}
+        {% include '_components/_bulk_action_bar.html.twig' with {
+            actions: ['applicable_change', 'export']
+        } %}
+    {% endif %}
+</div>
+
 {% if controls|length == 0 %}
 {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
 {{ _fa_empty_state.render({
-    mood: 'curious',
-    title: 'soa.message.no_controls_filtered'|trans({}, 'soa'),
-    norm_ref: 'ISO 27001 Clause 6.1.3 / Annex A',
+    mood: 'thinking',
+    title: 'soa.empty.title'|trans({}, 'soa'),
+    text: 'soa.empty.body'|trans({}, 'soa'),
+    norm_ref: 'ISO 27001 Klausel 6.1.3 d · A.5.1ff',
+    actions: [
+        { label: 'soa.empty.create_first'|trans({}, 'soa'), variant: 'primary', icon: 'plus', href: path('app_soa_index') }
+    ],
     help_link: path('app_help_glossary') ~ '#glossary-soa'
 }) }}
 {% endif %}

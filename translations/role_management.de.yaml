@@ -8,6 +8,7 @@ role_management:
         overview: 'Verwalten Sie Benutzerrollen und deren Berechtigungen für die Zugriffskontrolle'
     action:
         create: 'Neue Rolle erstellen'
+        compare: 'Rollen vergleichen'
     section:
         basic_info: Grundinformationen
         permissions: Berechtigungen
@@ -27,6 +28,7 @@ role_management:
         active: 'Aktive Rollen können Benutzern zugewiesen werden'
         permissions: 'Wählen Sie die Berechtigungen aus, die diese Rolle haben soll'
         system_role: 'Systemrollen können nicht gelöscht werden und haben eingeschränkte Änderungsoptionen'
+        compare_before_create: 'Bestehende Rollen vergleichen, bevor eine neue erstellt wird — verhindert Duplikate.'
     permission:
         name: Berechtigung
         resource: Ressource
@@ -57,6 +59,54 @@ role_management:
         delete: 'Sind Sie sicher, dass Sie diese Rolle löschen möchten? Alle Benutzerzuweisungen werden entfernt.'
     aria:
         actions_for_role: 'Aktionen für Rolle %name%'
+    permissions:
+        col:
+            name: 'Berechtigung'
+            module: 'Modul'
+            framework: 'Framework / Norm'
+            action: 'Aktion'
+            description: 'Beschreibung'
+        select_all: 'Alle Berechtigungen auswählen'
+        search_placeholder: 'Berechtigungen suchen…'
+        selected_count_label: 'ausgewählt'
+        table_aria: 'Berechtigungstabelle'
+        no_results: 'Keine Berechtigungen gefunden.'
+        category:
+            user: 'Benutzerverwaltung'
+            role: 'Rollenverwaltung'
+            risk: 'Risikomanagement'
+            asset: 'Asset-Management'
+            incident: 'Incident-Management'
+            control: 'Control-Management (SoA)'
+            audit: 'Audit-Management'
+            compliance: 'Compliance'
+            report: 'Berichte'
+            privacy: 'Datenschutz (DSGVO)'
+            security: 'Sicherheit & KPIs'
+            policy: 'Richtlinien'
+        module:
+            authentication: 'Benutzer & Rollen'
+            assets: 'Asset-Management'
+            risks: 'Risikomanagement'
+            controls: 'Control-Management'
+            incidents: 'Incident-Management'
+            audits: 'Audit-Management'
+            compliance: 'Multi-Framework Compliance'
+            report_builder: 'Report Builder'
+            privacy: 'Datenschutz (DSGVO)'
+            risk_treatment_plans: 'Risikobehandlungspläne'
+            analytics: 'Analytics & KPI'
+            documents: 'Dokumente & Policies'
+            core: 'Core ISMS'
+        action:
+            view: 'Ansehen'
+            create: 'Erstellen'
+            edit: 'Bearbeiten'
+            delete: 'Löschen'
+            approve: 'Genehmigen'
+            export: 'Exportieren'
+            respond: 'Antworten'
+            revoke: 'Widerrufen'
 role:
     user: Benutzer
     manager: Manager
@@ -69,10 +119,10 @@ role:
     holding:
         group_ciso:
             label: 'Konzern-CISO'
-            description: 'Mandantenübergreifender Lesezugriff für Konzern-ISBs. Kann alle Tochter-Dashboards, Risk-Register und SOA-Übersichten einsehen. Darf Einzel-Tenant-Konfigurationen nicht ändern.'
+            description: 'Organisationsübergreifender Lesezugriff für Konzern-ISBs. Kann alle Tochter-Dashboards, Risk-Register und SOA-Übersichten einsehen. Darf Einzel-Organisations-Konfigurationen nicht ändern.'
         konzern_auditor:
             label: 'Konzern-Auditor'
-            description: 'Nur-Lese-Zugriff auf alle Tochter-Tenants. Für interne oder externe Konzern-Auditoren, die alle Tochtergesellschaften prüfen müssen, ohne Schreibrechte zu besitzen.'
+            description: 'Nur-Lese-Zugriff auf alle Tochter-Organisationen. Für interne oder externe Konzern-Auditoren, die alle Tochtergesellschaften prüfen müssen, ohne Schreibrechte zu besitzen.'
     compare:
         title: 'Rollen vergleichen'
         select_roles: 'Rollen zum Vergleich auswählen'
@@ -89,6 +139,7 @@ role:
     templates:
         title: Rollenvorlagen
         description: 'Vordefinierte Rollenvorlagen für typische ISMS-Funktionen'
+        intro: 'Wählen Sie eine vordefinierte Rollenvorlage aus und passen Sie optional den Namen an. Die Vorlage enthält bereits eine sinnvolle Kombination von Berechtigungen für den jeweiligen Anwendungsfall.'
         custom_name: 'Benutzerdefinierter Name'
     field:
         system_role: Systemrolle

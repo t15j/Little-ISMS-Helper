@@ -24,6 +24,8 @@ setup:
             db_test: 'Alva is testing the database connection — one moment please.'
             admin: 'Alva is creating the admin user — one moment please.'
             frameworks: 'Alva is setting up compliance frameworks — this may take a few seconds.'
+        success:
+            base_data: 'Master data imported successfully.'
 
     # Index/Landing Page
     already_complete:
@@ -195,9 +197,9 @@ setup:
             incidents: 'Incidents'
             repair:
                 title: 'Repair Orphaned Entities'
-                description: 'Select a tenant to assign the orphaned entities to:'
-                target_tenant: 'Target Tenant'
-                select_tenant: 'Please select tenant...'
+                description: 'Select an organization to assign the orphaned entities to:'
+                target_tenant: 'Target Organization'
+                select_tenant: 'Please select organization...'
                 submit: 'Repair Now'
         asset_links:
             title: 'Repair Asset Assignments'
@@ -370,6 +372,8 @@ setup:
         apply_baseline_hint: 'Creates pre-configured risks, assets and marks relevant Annex A controls as applicable. Ideal for small organisations that want to get started quickly.'
         command: 'Command'
         modules: 'Modules'
+        success:
+            master_data_imported: 'Master data imported successfully.'
     can_delete_later: 'Data can be deleted later.'
 
     # Step 10: Sample Data
@@ -390,6 +394,34 @@ setup:
     sample_data:
         import_selected: 'Import Selected Data'
         no_data_available: 'No sample data available.'
+
+    # V4-EF-1: Industry-Preset Express-Path (between organisation-info and modules).
+    preset:
+        title: 'Pick Industry Preset — Setup Wizard'
+        header: 'Express Setup: Industry Preset'
+        intro: 'Skip the manual clicks. I''ll activate the right modules + frameworks in one go.'
+        info:
+            title: 'What happens here?'
+            message: 'A preset bundles typical modules and compliance frameworks for your industry profile. You can adjust everything later — but this gets you to the finish line in 1 step instead of 5.'
+        section:
+            curated: 'Curated Industry Profiles'
+        stats:
+            modules: '%count% modules'
+            frameworks: '%count% frameworks'
+            controls: '%count% initial controls'
+            documents: '%count% templates'
+        includes: 'Includes'
+        skip:
+            title: 'Configure manually instead'
+            description: 'Walk through modules + frameworks step by step. Full control, slightly more time.'
+        actions:
+            apply: 'Apply preset & continue'
+        applied: 'Preset applied: %modules% modules and %frameworks% frameworks pre-selected.'
+        busy: 'Applying preset…'
+        aria:
+            group: 'Select industry preset'
+        error:
+            unknown: 'Unknown preset. Please choose again.'
 
     # Step 11: Complete
     complete:
@@ -476,3 +508,6 @@ setup:
             soc2: 'US/SaaS market standard — often contractually required by US customers.'
             nist_csf: 'US framework — primarily relevant for US federal contract suppliers or international reports.'
             cis_controls: 'Implementation-Group-based operationalization aid — good tooling, no formal requirement.'
+
+setup.alva.success.restore: 'Restore completed successfully.'
+setup.alva.success.sample_data: 'Sample data created successfully.'

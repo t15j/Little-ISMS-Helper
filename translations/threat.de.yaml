@@ -1,5 +1,45 @@
 threat:
-    title: Bedrohungsinformationen
+    title:
+        index: Bedrohungsinformationen
+        new: Bedrohung erfassen
+        edit: Bedrohung bearbeiten
+        show: Details
+    subtitle:
+        index: 'Übersicht aller erkannten Bedrohungen und CVEs'
+    kpi:
+        total: Gesamt
+        critical: Kritisch
+        high: Hoch
+        open: Offen
+    label:
+        assignee: 'Verantwortlich'
+    action:
+        create: 'Bedrohung erfassen'
+        update: 'Änderungen speichern'
+        list: 'Zur Liste'
+        created_flash: 'Bedrohung wurde erfolgreich erfasst.'
+        updated_flash: 'Bedrohung wurde erfolgreich aktualisiert.'
+        deleted_flash: 'Bedrohung wurde gelöscht.'
+    section:
+        basic: 'Grunddaten'
+        details: 'Details & CVE'
+        impact: 'Auswirkungen & Maßnahmen'
+        assignment: 'Zuweisung'
+        resulting_incidents: 'Resultierenden Vorfälle'
+        overview: 'Überblick'
+        intelligence_source: 'Quelle & CVE-Details'
+        classification: 'Klassifizierung & Quelle'
+        threat_classification: 'Klassifizierung & MITRE'
+        affected_assets: 'Betroffene Assets'
+        mitigations: 'Maßnahmen & Empfehlungen'
+        audit_metadata: 'Verantwortliche Zuweisung'
+    empty:
+        title: 'Keine Bedrohungen gefunden'
+        description: 'Noch keine Bedrohungsinformationen erfasst. Erfassen Sie eine neue Bedrohung, um zu beginnen.'
+    confirm:
+        delete: 'Möchten Sie diese Bedrohung wirklich unwiderruflich löschen?'
+    warning:
+        delete_irreversible: 'Das Löschen dieser Bedrohung kann nicht rückgängig gemacht werden. Alle verknüpften Daten gehen verloren.'
     name: Bedrohung
     threat_type: Bedrohungstyp
     severity: Schweregrad
@@ -150,3 +190,58 @@ status_type:
     mitigated: Behoben
     monitoring: Überwacht
     closed: Geschlossen
+
+# ── vulnerability_intel-Modul-Felder (gegatete Felder) ────────────────────
+threat_intelligence:
+    field:
+        tlp_classification: 'TLP-Klassifizierung'
+        threat_actor_attribution: 'Bedrohungsakteur-Attribution'
+        mitre_attack_tactics: 'MITRE ATT&CK-Taktiken'
+        mitre_attack_techniques: 'MITRE ATT&CK-Techniken'
+        iocs_list: 'Indikatoren für Kompromittierung (IOCs)'
+        confidence_level: 'Verlässlichkeitsgrad'
+        shared_externally: 'Extern geteilt (NIS2 Art. 30)'
+    placeholder:
+        tlp_classification: '-- TLP-Stufe wählen --'
+        threat_actor_attribution: 'z.B. APT28, Lazarus Group'
+        mitre_attack_tactics: 'z.B. TA0001, TA0002 (je Zeile oder kommagetrennt)'
+        mitre_attack_techniques: 'z.B. T1059, T1566 (je Zeile oder kommagetrennt)'
+        confidence_level: '-- Verlässlichkeitsgrad wählen --'
+    tlp:
+        red: 'RED — Keine Weitergabe'
+        amber: 'AMBER — Eingeschränkte Weitergabe'
+        green: 'GREEN — Community-Weitergabe'
+        white: 'WHITE — Unbeschränkte Weitergabe'
+    confidence:
+        low: 'Niedrig'
+        medium: 'Mittel'
+        high: 'Hoch'
+    help:
+        tlp_classification: 'FIRST.org Traffic Light Protocol — steuert Informationsweitergabe (NIS2 Art. 30).'
+        threat_actor_attribution: 'APT-Gruppe oder Verbrechergruppe (MITRE ATT&CK Threat Actors).'
+        mitre_attack_tactics: 'MITRE ATT&CK Taktik-IDs (TA0001–TA0043). JSON-Array oder kommagetrennt.'
+        mitre_attack_techniques: 'MITRE ATT&CK Technik-IDs (T1xxx). JSON-Array oder kommagetrennt.'
+        iocs_list_json: 'STIX 2.1-Format: [{type: ip|domain|hash|url|email, value: "...", context: "..."}]'
+        iocs_list: 'STIX 2.1-Indikatoren — eine Zeile pro IoC (Typ, Wert, Vertrauensgrad 1-5).'
+        shared_externally: 'Gesetzt wenn diese Information an ein CERT/CSIRT weitergegeben wurde (NIS2 Art. 30).'
+    ioc:
+        field:
+            type: 'Typ'
+            value: 'Wert'
+            confidence: 'Vertrauensgrad'
+        placeholder:
+            type: '-- IoC-Typ wählen --'
+            value: 'z.B. 192.0.2.1, evil.example.com, sha256:…'
+            confidence: '-- Vertrauensgrad (1-5) --'
+        type:
+            ip: 'IP-Adresse'
+            domain: 'Domain'
+            hash: 'Datei-Hash'
+            url: 'URL'
+            email: 'E-Mail-Adresse'
+        confidence:
+            1: '1 — Sehr gering'
+            2: '2 — Gering'
+            3: '3 — Mittel'
+            4: '4 — Hoch'
+            5: '5 — Sehr hoch'

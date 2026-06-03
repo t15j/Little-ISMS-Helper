@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\InterestedParty;
+use App\Form\SectionMapInterface;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
@@ -15,8 +16,19 @@ use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
-class InterestedPartyType extends AbstractType
+final class InterestedPartyType extends AbstractType implements SectionMapInterface
 {
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview'      => ['name', 'partyType', 'importance', 'description'],
+            'contact'       => ['contactPerson', 'email', 'phone'],
+            'requirements'  => ['requirements', 'howAddressed'],
+            'communication' => ['communicationFrequency', 'communicationMethod', 'lastCommunication', 'nextCommunication'],
+            'monitoring'    => ['feedback', 'satisfactionLevel', 'issues'],
+        ];
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
@@ -31,6 +43,12 @@ class InterestedPartyType extends AbstractType
                     'interested_party.party_type.customer' => 'customer',
                     'interested_party.party_type.shareholder' => 'shareholder',
                     'interested_party.party_type.employee' => 'employee',
+                    // T3.4 (UX-P2): German co-determination roles (BetrVG / DrittelbG /
+                    // MitbestG) — interested parties that don't fit the generic
+                    // 'employee' bucket and weren't picked up under 'other'.
+                    'interested_party.party_type.works_council' => 'works_council',
+                    'interested_party.party_type.supervisory_board' => 'supervisory_board',
+                    'interested_party.party_type.union' => 'union',
                     'interested_party.party_type.regulator' => 'regulator',
                     'interested_party.party_type.supplier' => 'supplier',
                     'interested_party.party_type.partner' => 'partner',
@@ -105,16 +123,19 @@ class InterestedPartyType extends AbstractType
                 'label' => 'interested_party.field.last_communication',
                 'widget' => 'single_text',
                 'required' => false,
+                'help' => 'interested_party.help.last_communication',
             ])
             ->add('nextCommunication', DateType::class, [
                 'label' => 'interested_party.field.next_communication',
                 'widget' => 'single_text',
                 'required' => false,
+                'help' => 'interested_party.help.next_communication',
             ])
             ->add('feedback', TextareaType::class, [
                 'label' => 'interested_party.field.feedback',
                 'required' => false,
                 'attr' => ['rows' => 3],
+                'help' => 'interested_party.help.feedback',
             ])
             ->add('satisfactionLevel', IntegerType::class, [
                 'label' => 'interested_party.field.satisfaction_level',

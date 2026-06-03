@@ -11,6 +11,7 @@ soa:
         back_to_category: 'Back to %category%'
         print: 'Print / Save as PDF'
         back_to_overview: 'Back to overview'
+        open_monitor: 'Open Effectiveness Monitor'
     filter:
         view: View
         search: Search
@@ -49,6 +50,7 @@ soa:
         metadata: Metadata
         training_coverage: 'Training coverage'
         control_effectiveness: 'Control effectiveness'
+        effectiveness_check: 'Effectiveness Check (ISO 27001 §9.1)'
     category:
         Organizational: Organizational
         People: People
@@ -79,6 +81,7 @@ soa:
         reibung_warning_body: 'MRIS recommends redesigning the control or supplementing it with flanking Mythos hardening controls (MHC). Standalone use as mitigation is an audit risk under Gen-AI-accelerated offence.'
         degradiert_hint_title: 'Partially degraded — effectiveness reduced under Mythos.'
         degradiert_hint_body: 'The control remains usable but should be supplemented with flanking MHCs:'
+        source_attribution: 'MRIS v1.5 by Peddi (CC BY 4.0)'
     status:
         implemented: Implemented
         in_progress: 'In progress'
@@ -87,6 +90,7 @@ soa:
         not_started: 'Not started'
         not_applicable: 'Not applicable'
         approved: Approved
+        verified: Verified
     value:
         'yes': 'Yes'
         'no': 'No'
@@ -104,6 +108,10 @@ soa:
         status: Status
         completed_on: 'Completed on'
         effectiveness_score: 'Effectiveness score'
+        last_effectiveness_test: 'Last effectiveness check'
+        never_tested: 'Never checked'
+        overdue: 'Overdue'
+        check_current: 'Current'
     message:
         no_controls_filtered: 'No controls found matching the filter criteria.'
         auto_seeded: '%count% ISO 27001 Annex A controls were auto-loaded for this tenant.'
@@ -115,14 +123,19 @@ soa:
         related_incidents_count: 'incidents affected this control.'
         review_required: 'Due to incidents, the effectiveness of this control should be reviewed.'
     empty:
+        title: 'No controls match the current filter'
+        body: 'Loosen the active filters or load the ISO 27001 Annex A controls to maintain your SoA. For each control, decide on applicability, justification, and implementation status.'
+        help_link: '/en/help/glossary#glossary-soa'
+        create_first: 'Add first control'
+        reset_filter: 'Reset filters'
         no_controls_for_tenant:
-            title: 'No ISO 27001 Annex A controls loaded for this tenant yet'
-            iso_active: 'The controls module is active but none of the 93 Annex A controls have been loaded for this tenant yet. The Statement of Applicability cannot be maintained without them.'
-            iso_inactive: 'The controls module is not active for this tenant. Either activate it in module management or load the Annex A controls manually.'
-        no_controls_in_category: 'No controls in category "%category%". The tenant has %total% controls loaded in total, but none match this category.'
+            title: 'No ISO 27001 Annex A controls loaded for this organization yet'
+            iso_active: 'The controls module is active but none of the 93 Annex A controls have been loaded for this organization yet. The Statement of Applicability cannot be maintained without them.'
+            iso_inactive: 'The controls module is not active for this organization. Either activate it in module management or load the Annex A controls manually.'
+        no_controls_in_category: 'No controls in category "%category%". The organization has %total% controls loaded in total, but none match this category.'
         load_button: 'Load ISO 27001 Annex A controls'
         contact_admin: 'Contact an administrator to load the Annex A controls.'
-        no_tenant: 'No active tenant — controls cannot be loaded.'
+        no_tenant: 'No active organization — controls cannot be loaded.'
         loaded_flash: '%count% ISO 27001 Annex A controls successfully loaded.'
         already_loaded_flash: 'Annex A controls were already loaded for this tenant — no change.'
         no_justification: 'No justification provided.'
@@ -157,6 +170,7 @@ soa:
         implementation_notes: 'Implementation notes'
         responsible_person: 'Responsible person'
         unassigned: Unassigned
+        deputies: 'Deputies'
         target_date: 'Target date'
         not_set: 'Not set'
         cia: CIA
@@ -170,3 +184,77 @@ soa:
     iso27001_full_title: 'Iso27001 Full Title'
     in_progress_badge: 'In Progress'
     in_progress_badge_emoji: '🔄 In Progress'
+    snapshot:
+        badge: 'SoA freeze'
+        page:
+            title: 'SoA point-in-time snapshots'
+            subtitle: 'Freeze the Statement of Applicability to the audit cut-off so exports stay reproducible.'
+        new:
+            title: 'Create new SoA snapshot'
+            subtitle: 'Pick the as-of-date for the audit-relevant SoA view.'
+            help_title: 'What does the snapshot capture?'
+            help_text: 'For every applicable control we freeze the implementation status, the evidence document version current at the cut-off (with version-supersedes chain) and the approver identity. The snapshot is immutable (no UPDATE) and tamper-evident via SHA-256.'
+        show:
+            title: 'SoA snapshot %date%'
+        empty:
+            title: 'No SoA snapshots yet'
+            text: 'As soon as you create a snapshot, the Statement of Applicability is frozen to the chosen as-of-date and can be re-exported into the certification bundle in exactly that state.'
+        section:
+            integrity: 'Integrity'
+            controls: 'Frozen control state'
+        action:
+            new: 'Create new snapshot'
+            create: 'Freeze snapshot'
+            export_csv: 'Export CSV'
+        field:
+            as_of_date: 'As-of-date'
+            as_of_date_help: 'Inclusive date: documents and approvals up to and including this day are considered.'
+            purpose: 'Purpose'
+            purpose_placeholder: 'e.g. External audit 2026-06-15 (TÜV)'
+            purpose_help: 'Surfaces in the audit trail and the cert-bundle metadata.'
+            notes: 'Notes'
+            checksum: 'SHA-256 checksum'
+        kpi:
+            controls: 'Controls in snapshot'
+            as_of: 'As of'
+            frozen_at: 'Frozen at'
+            created_by: 'Created by'
+        col:
+            as_of_date: 'As-of-date'
+            purpose: 'Purpose'
+            created_at: 'Created at'
+            created_by: 'Created by'
+            controls: 'Controls'
+            checksum: 'SHA-256'
+            control_id: 'Control ID'
+            name: 'Name'
+            applicable: 'Applicable'
+            status: 'Status'
+            evidence: 'Evidence'
+            approved_by: 'Approved by'
+            approved_at: 'Approved at'
+        flash:
+            created: 'SoA snapshot for as-of-date %date% created (%count% controls frozen).'
+        error:
+            invalid_date: 'Please supply a valid date in YYYY-MM-DD format.'
+            future_date: 'As-of-date must not be in the future.'
+
+    no_tenant:
+        title: 'Your account is not yet assigned to a tenant'
+        subtitle: 'Without a tenant link, no controls can be loaded — here is what to do:'
+        body_admin: |
+            As administrator you can resolve this yourself:
+            1. Open User Management and assign this account to a tenant.
+            2. Alternatively, Data Repair lets you fix tenant assignments across many users at once (bulk mode).
+
+            If no suitable tenant exists yet, create one first under Administration → Tenant Management.
+        body_user: |
+            Please ask an administrator to assign your account to a tenant under
+            "Administration → User Management". Only then will ISMS data
+            (controls, risks, incidents, processing activities) become visible.
+
+            If you do not know who the administrator is: your IT or QM department
+            is typically responsible.
+        cta_user_management: 'Open User Management'
+        cta_data_repair: 'Open Data Repair'
+        cta_logout: 'Sign out and sign in again'

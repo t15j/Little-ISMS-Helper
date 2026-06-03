@@ -4,29 +4,61 @@ declare(strict_types=1);
 
 namespace App\Controller\Admin;
 
-use App\Entity\Control;
+use App\Entity\User;
+use App\Job\AssignOrphansJob;
+use App\Job\ExecutePendingMigrationsJob;
+use App\Job\FixAllOrphansJob;
+use App\Job\FixTenantMismatchesJob;
+use App\Job\MergeDuplicatesJob;
+use App\Job\ReassignEntityJob;
+use App\Job\ReconcileSchemaJob;
+use App\Job\RunFullIntegrityCheckJob;
+use App\Job\ScanBrokenReferencesJob;
+use App\Job\ScanDuplicatesJob;
+use App\Job\ScanHealthIssuesJob;
+use App\Job\ScanOrphansJob;
 use App\Repository\AssetRepository;
 use App\Repository\RiskRepository;
 use App\Repository\IncidentRepository;
 use App\Repository\TenantRepository;
 use App\Repository\ControlRepository;
 use App\Repository\ComplianceRequirementRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\AuditLogger;
+use App\Service\DataIntegrityResultCache;
 use App\Service\DataIntegrityService;
+use App\Service\Job\AsyncJobDispatcher;
+use App\Service\Job\JobDispatcher;
+use App\Service\Job\JobStatusService;
 use App\Service\SchemaMaintenanceService;
+use App\Service\SectionScanResultCache;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
-#[IsGranted('ROLE_ADMIN')]
+/**
+ * Admin UI for data repair / integrity / schema operations.
+ *
+ * Role-Scope (Phase 4e — system-settings cluster):
+ *  - Class-level {@see TenantScopedAdminVoter::ADMIN_OWN_TENANT} — tenant
+ *    admins repair orphans / duplicates / tenant-mismatches inside their
+ *    own tenant tree (`W own orphans/dupes` per spec §3.1).
+ *  - Schema-level routes (`/schema/migrations`, `/schema/reconcile`) AND
+ *    cross-tenant duplicate merging are upgraded to
+ *    {@see TenantScopedAdminVoter::ADMIN_GLOBAL_OP} / ROLE_SUPER_ADMIN
+ *    — these touch global DDL or merge records across tenants and must
+ *    not be reachable by a tenant-scoped admin.
+ */
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
 class DataRepairController extends AbstractController
 {
     public function __construct(
-        private readonly EntityManagerInterface $entityManager,
+        private EntityManagerInterface $entityManager,
         private readonly AssetRepository $assetRepository,
         private readonly RiskRepository $riskRepository,
         private readonly IncidentRepository $incidentRepository,
@@ -37,7 +69,28 @@ class DataRepairController extends AbstractController
         private readonly TranslatorInterface $translator,
         private readonly AuditLogger $auditLogger,
         private readonly SchemaMaintenanceService $schemaMaintenanceService,
+        private readonly \Doctrine\Persistence\ManagerRegistry $managerRegistry,
+        private readonly JobDispatcher $jobDispatcher,
+        private readonly JobStatusService $jobStatusService,
+        private readonly DataIntegrityResultCache $integrityResultCache,
+        private readonly SectionScanResultCache $sectionScanCache,
+        private readonly AsyncJobDispatcher $asyncJobDispatcher,
     ) {
+    }
+
+    /**
+     * Reset the EM if a prior flush closed it. Used between bulk-repair
+     * iterations so a single constraint violation doesn't kill the whole loop.
+     */
+    private function resetEntityManagerIfClosed(): void
+    {
+        if (!$this->entityManager->isOpen()) {
+            $this->managerRegistry->resetManager();
+            $em = $this->managerRegistry->getManager();
+            if ($em instanceof EntityManagerInterface) {
+                $this->entityManager = $em;
+            }
+        }
     }
 
     /**
@@ -83,246 +136,433 @@ class DataRepairController extends AbstractController
         }
     }
 
-    #[Route('/admin/data-repair/', name: 'admin_data_repair_index')]
+    /**
+     * Cache-only index page.
+     *
+     * Previously the controller ran a full integrity scan + several findAll()
+     * sweeps + 4 health-check methods synchronously on every GET, which on
+     * tenants with > ~50k entities pushed past PHP-FPM's 30 s timeout. The
+     * page now renders <500 ms regardless of data size by reading scalar
+     * counts from per-section JSON caches written by background jobs:
+     *
+     *   - var/data_integrity/last.json         (full integrity summary)
+     *   - var/data_integrity/orphans.json
+     *   - var/data_integrity/duplicates.json
+     *   - var/data_integrity/broken_references.json
+     *   - var/data_integrity/health.json
+     *
+     * Live data only stays on this page for the schema-maintenance card
+     * (Doctrine migration backlog + drift), which is cheap, and for a
+     * tenant-status card that uses scalar COUNT queries. Every section
+     * that previously rendered entity lists has moved to its own
+     * `/admin/data-repair/<section>` sub-page that loads scoped data and
+     * exposes a "Refresh now" CTA dispatching a section-specific scan
+     * job.
+     */
+    #[Route('/admin/data-repair', name: 'admin_data_repair_index', methods: ['GET'])]
     public function index(): Response
     {
-        // Integrity-Check + Übersicht brauchen TenantFilter-off, sonst
-        // fehlen Cross-Tenant-Mismatches und Orphans in den Counts.
-        [$integrityCheck, $summary] = $this->withoutTenantFilter(fn() => [
-            $this->dataIntegrityService->runFullIntegrityCheck(),
-            $this->dataIntegrityService->getSummaryStatistics(),
-        ]);
-
-        // Get all tenants
-        $tenants = $this->tenantRepository->findAll();
-
-        // Get all risks, incidents and assets for dropdown assignment.
-        // TenantFilter wird bewusst umgangen — Admin-Repair-Page muss
-        // tenant-lose Orphans + Cross-Tenant-Entities in den Dropdowns
-        // anbieten, sonst kann der Admin Orphans nicht reassignen.
-        [$allRisks, $allIncidents, $allAssets, $allControls, $allComplianceRequirements] = $this->withoutTenantFilter(fn() => [
-            $this->riskRepository->findAll(),
-            $this->incidentRepository->findAll(),
-            $this->assetRepository->findAll(),
-            $this->controlRepository->findAll(),
-            $this->complianceRequirementRepository->findAll(),
-        ]);
-
-        // Build a set of control IDs that are mapped to compliance requirements
-        $controlsWithFrameworks = [];
-        foreach ($allComplianceRequirements as $allComplianceRequirement) {
-            foreach ($allComplianceRequirement->getMappedControls() as $control) {
-                $controlsWithFrameworks[$control->getId()] = true;
-            }
-        }
-
-        $controlsWithoutRisks = array_filter($allControls, fn(Control $control): bool =>
-            // Only show controls that are applicable AND have no risks AND no framework assignments
-            $control->isApplicable()
-            && $control->getRisks()->isEmpty()
-            && !isset($controlsWithFrameworks[$control->getId()]));
-
-        // Find controls without assets
-        $controlsWithoutAssets = array_filter($allControls, fn(Control $control): bool =>
-            $control->isApplicable() && $control->getProtectedAssets()->isEmpty());
-
         // Schema maintenance: Doctrine migration backlog + entity-vs-DB drift.
-        // Both are read-only here; the corresponding apply-routes are POST.
+        // Both are read-only here; cheap on every render (a single SQL probe).
         $maintenance = $this->schemaMaintenanceService->getMaintenanceStatus();
 
-        $riskHealthIssues = $this->withoutTenantFilter(
-            fn() => $this->dataIntegrityService->findRiskHealthIssues()
-        );
-
-        $complianceHealthIssues = $this->withoutTenantFilter(
-            fn() => $this->dataIntegrityService->findComplianceHealthIssues()
-        );
-
-        $operationalHealthIssues = $this->withoutTenantFilter(
-            fn() => $this->dataIntegrityService->findOperationalHealthIssues()
-        );
-
-        $dataQualityIssues = $this->withoutTenantFilter(
-            fn() => $this->dataIntegrityService->findDataQualityIssues()
-        );
+        // Cheap COUNT(t.id) — sub-millisecond on any realistic deployment.
+        $tenantCount = (int) $this->tenantRepository->createQueryBuilder('t')
+            ->select('COUNT(t.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
 
         return $this->render('admin/data_repair/index.html.twig', [
-            // Tenants & Summary
-            'tenants' => $tenants,
-            'summary' => $summary,
-
             // Schema maintenance status (3-card grid in template)
             'migration_status' => $maintenance['migration_status'],
             'schema_drift' => $maintenance['schema_drift'],
 
-            // Comprehensive integrity check results
-            'orphanedEntities' => $integrityCheck['orphaned_entities'],
-            'duplicates' => $integrityCheck['duplicates'],
-            'brokenReferences' => $integrityCheck['broken_references'],
-            'missingRelationships' => $integrityCheck['missing_relationships'],
-            'inconsistentData' => $integrityCheck['inconsistent_data'],
-            'tenantStats' => $integrityCheck['entity_counts'],
+            // Async-integrity-check (Phase 2.5): scalar summary written by
+            // RunFullIntegrityCheckJob to var/data_integrity/last.json.
+            'integrityResultCache' => $this->integrityResultCache->read(),
 
-            // Legacy data for existing template sections
-            'orphanedAssets' => $integrityCheck['orphaned_entities']['assets'] ?? [],
-            'orphanedRisks' => $integrityCheck['orphaned_entities']['risks'] ?? [],
-            'orphanedIncidents' => $integrityCheck['orphaned_entities']['incidents'] ?? [],
-            'allRisks' => $allRisks,
-            'allIncidents' => $allIncidents,
-            'allAssets' => $allAssets,
-            'controlsWithoutRisks' => $controlsWithoutRisks,
-            'controlsWithoutAssets' => $controlsWithoutAssets,
+            // Per-section caches written by ScanOrphansJob /
+            // ScanDuplicatesJob / ScanBrokenReferencesJob /
+            // ScanHealthIssuesJob. Keys: 'orphans', 'duplicates',
+            // 'broken_references', 'health'. Each value is either null
+            // (never scanned) or an envelope with `completed_at`,
+            // `duration_ms` and a section-specific `payload`.
+            'sectionCaches' => $this->sectionScanCache->readAll(),
 
-            // Risk health checks (ISO 27005)
-            'riskHealthIssues' => $riskHealthIssues,
-
-            // Compliance health checks (GDPR / Art. 30 VVT)
-            'complianceHealthIssues' => $complianceHealthIssues,
-
-            // Operational health checks (Tier 2 ISO 27001 operational gaps)
-            'operationalHealthIssues' => $operationalHealthIssues,
-
-            // Tier 3 data quality checks (operational gaps)
-            'dataQualityIssues' => $dataQualityIssues,
+            // Tenant-status card — cheap COUNT(*) result so the index
+            // page can show "N tenants in this deployment" without
+            // loading every tenant entity.
+            'tenantCount' => $tenantCount,
         ]);
     }
 
-    #[Route('/admin/data-repair/assign-orphans', name: 'admin_data_repair_assign_orphans', methods: ['POST'])]
-    public function assignOrphans(Request $request): Response
+    // ====================================================================
+    // Section sub-pages — each renders from its own per-section cache and
+    // exposes a "Refresh now" CTA that dispatches a scoped scan job.
+    // ====================================================================
+
+    /**
+     * Orphan-entity sub-page. Reads only the orphan cache + the dropdown
+     * sources needed for the per-entity reassign forms. The live
+     * findAll() sweeps are scoped to this sub-page so they no longer
+     * block the index render.
+     */
+    #[Route('/admin/data-repair/orphans', name: 'admin_data_repair_orphans', methods: ['GET'])]
+    public function orphans(): Response
     {
-        $tenantId = $request->request->get('tenant_id');
-        $entityType = $request->request->get('entity_type');
+        $tenants = $this->tenantRepository->findAll();
 
-        if (!$this->isCsrfTokenValid('assign_orphans', $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
-            return $this->redirectToRoute('admin_data_repair_index');
-        }
+        // Live data for the repair-action dropdowns — without this the
+        // reassign forms can't render. Scoped to this sub-page only;
+        // never visited from the main index after the refactor.
+        $orphaned = $this->withoutTenantFilter(
+            fn() => $this->dataIntegrityService->findAllOrphanedEntities()
+        );
 
-        $tenant = $this->tenantRepository->find($tenantId);
-        if (!$tenant) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.tenant_not_found'));
-            return $this->redirectToRoute('admin_data_repair_index');
-        }
-
-        $count = 0;
-
-        // Audit-log each reassignment per entity (ISB MAJOR-1). The per-entity
-        // granularity lets an auditor answer "who moved entity X into tenant Y"
-        // without reverse-engineering a diff.
-        $assignFn = function (object $entity, string $className) use ($tenant, &$count): void {
-            if (!method_exists($entity, 'setTenant') || !method_exists($entity, 'getId')) {
-                return;
-            }
-            $entity->setTenant($tenant);
-            $this->auditLogger->logCustom(
-                'admin.data_repair.orphan_reassigned',
-                $className,
-                (int) $entity->getId(),
-                ['tenant_id' => null],
-                ['tenant_id' => $tenant->getId(), 'tenant_name' => $tenant->getName()],
-                sprintf('Orphan %s#%d reassigned to tenant %s', $className, (int) $entity->getId(), $tenant->getName()),
-            );
-            $count++;
-        };
-
-        // Generisch: Service liefert bereits alle Orphans keyed by entity-type.
-        // 'all' iteriert komplett, sonst nur die gewählte Kategorie.
-        $errorFlashKey = null;
-        $this->withoutTenantFilter(function () use ($entityType, &$assignFn, &$errorFlashKey): void {
-            $allOrphans = $this->dataIntegrityService->findAllOrphanedEntities();
-            if ($entityType === 'all') {
-                foreach ($allOrphans as $entities) {
-                    foreach ($entities as $entity) {
-                        $assignFn($entity, (new \ReflectionClass($entity))->getShortName());
-                    }
-                }
-            } elseif (isset($allOrphans[$entityType])) {
-                foreach ($allOrphans[$entityType] as $entity) {
-                    $assignFn($entity, (new \ReflectionClass($entity))->getShortName());
-                }
-            } else {
-                $errorFlashKey = 'admin.data_repair.invalid_entity_type';
-            }
-        });
-
-        if ($errorFlashKey !== null) {
-            $this->addFlash('error', $this->translator->trans($errorFlashKey));
-            return $this->redirectToRoute('admin_data_repair_index');
-        }
-
-        $this->entityManager->flush();
-
-        $this->addFlash('success', $this->translator->trans('admin.data_repair.assigned_count', [
-            '%count%' => $count,
-            '%tenant%' => $tenant->getName(),
-        ]));
-
-        return $this->redirectToRoute('admin_data_repair_index');
+        return $this->render('admin/data_repair/orphans.html.twig', [
+            'cache' => $this->sectionScanCache->read(SectionScanResultCache::SECTION_ORPHANS),
+            'tenants' => $tenants,
+            'orphanedEntities' => $orphaned,
+            'orphanedAssets' => $orphaned['assets'] ?? [],
+            'orphanedRisks' => $orphaned['risks'] ?? [],
+            'orphanedIncidents' => $orphaned['incidents'] ?? [],
+        ]);
     }
 
-    #[Route('/admin/data-repair/reassign-entity/{type}/{id}', name: 'admin_data_repair_reassign_entity', methods: ['POST'])]
-    public function reassignEntity(Request $request, string $type, int $id): Response
+    /**
+     * Duplicate-detection sub-page.
+     */
+    #[Route('/admin/data-repair/duplicates', name: 'admin_data_repair_duplicates_index', methods: ['GET'])]
+    public function duplicates(): Response
     {
-        $tenantId = $request->request->get('tenant_id');
+        $duplicates = $this->withoutTenantFilter(
+            fn() => $this->dataIntegrityService->findDuplicateEntities()
+        );
 
-        if (!$this->isCsrfTokenValid('reassign_entity_' . $id, $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+        return $this->render('admin/data_repair/duplicates.html.twig', [
+            'cache' => $this->sectionScanCache->read(SectionScanResultCache::SECTION_DUPLICATES),
+            'duplicates' => $duplicates,
+        ]);
+    }
+
+    /**
+     * Broken-references sub-page (broken FKs + cascade orphans + orphaned uploads).
+     */
+    #[Route('/admin/data-repair/broken-references', name: 'admin_data_repair_broken_refs_index', methods: ['GET'])]
+    public function brokenReferences(): Response
+    {
+        $broken = $this->withoutTenantFilter(
+            fn() => $this->dataIntegrityService->findBrokenReferences()
+        );
+        $cascade = $this->withoutTenantFilter(
+            fn() => $this->dataIntegrityService->findCascadeOrphans()
+        );
+        $uploads = $this->withoutTenantFilter(
+            fn() => $this->dataIntegrityService->findOrphanedUploads()
+        );
+
+        return $this->render('admin/data_repair/broken_references.html.twig', [
+            'cache' => $this->sectionScanCache->read(SectionScanResultCache::SECTION_BROKEN_REFERENCES),
+            'brokenReferences' => $broken,
+            'cascadeOrphans' => $cascade,
+            'orphanedUploads' => $uploads,
+        ]);
+    }
+
+    /**
+     * Health-issues sub-page (4 buckets: risk / compliance / operational / data-quality).
+     */
+    #[Route('/admin/data-repair/health', name: 'admin_data_repair_health_index', methods: ['GET'])]
+    public function health(): Response
+    {
+        return $this->render('admin/data_repair/health.html.twig', [
+            'cache' => $this->sectionScanCache->read(SectionScanResultCache::SECTION_HEALTH),
+        ]);
+    }
+
+    /**
+     * Refresh-now CTA for the orphan sub-page. Dispatches {@see ScanOrphansJob}
+     * via the same in-request runner used by the other admin jobs.
+     */
+    #[Route('/admin/data-repair/orphans/refresh', name: 'admin_data_repair_orphans_refresh', methods: ['POST'])]
+    public function refreshOrphans(Request $request): Response
+    {
+        if (!$this->isCsrfTokenValid('refresh_section_orphans', $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_orphans');
+        }
+
+        return $this->dispatchSectionScan(
+            $request,
+            ScanOrphansJob::class,
+            'admin.data_repair.scan_orphans',
+            'admin.data_repair.job.scan_orphans_label',
+            'admin.data_repair.job.scan_orphans_subtitle',
+            $this->generateUrl('admin_data_repair_orphans'),
+        );
+    }
+
+    #[Route('/admin/data-repair/duplicates/refresh', name: 'admin_data_repair_duplicates_refresh', methods: ['POST'])]
+    public function refreshDuplicates(Request $request): Response
+    {
+        if (!$this->isCsrfTokenValid('refresh_section_duplicates', $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_duplicates_index');
+        }
+
+        return $this->dispatchSectionScan(
+            $request,
+            ScanDuplicatesJob::class,
+            'admin.data_repair.scan_duplicates',
+            'admin.data_repair.job.scan_duplicates_label',
+            'admin.data_repair.job.scan_duplicates_subtitle',
+            $this->generateUrl('admin_data_repair_duplicates_index'),
+        );
+    }
+
+    #[Route('/admin/data-repair/broken-references/refresh', name: 'admin_data_repair_broken_refs_refresh', methods: ['POST'])]
+    public function refreshBrokenReferences(Request $request): Response
+    {
+        if (!$this->isCsrfTokenValid('refresh_section_broken_refs', $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_broken_refs_index');
+        }
+
+        return $this->dispatchSectionScan(
+            $request,
+            ScanBrokenReferencesJob::class,
+            'admin.data_repair.scan_broken_refs',
+            'admin.data_repair.job.scan_broken_refs_label',
+            'admin.data_repair.job.scan_broken_refs_subtitle',
+            $this->generateUrl('admin_data_repair_broken_refs_index'),
+        );
+    }
+
+    #[Route('/admin/data-repair/health/refresh', name: 'admin_data_repair_health_refresh', methods: ['POST'])]
+    public function refreshHealth(Request $request): Response
+    {
+        if (!$this->isCsrfTokenValid('refresh_section_health', $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_health_index');
+        }
+
+        return $this->dispatchSectionScan(
+            $request,
+            ScanHealthIssuesJob::class,
+            'admin.data_repair.scan_health',
+            'admin.data_repair.job.scan_health_label',
+            'admin.data_repair.job.scan_health_subtitle',
+            $this->generateUrl('admin_data_repair_health_index'),
+        );
+    }
+
+    /**
+     * Shared dispatch shim for the four section-scan refresh routes.
+     * Creates a JobStatusService row with payload-embedded UI metadata
+     * (label/subtitle) and redirects (303) to the shared progress page —
+     * the PRG pattern required by Hotwire Turbo. JobDispatcher flushes
+     * the redirect before running the job in-request.
+     *
+     * @param class-string<\App\Job\AsyncJobInterface> $jobClass
+     */
+    private function dispatchSectionScan(
+        Request $request,
+        string $jobClass,
+        string $jobName,
+        string $jobLabelKey,
+        string $jobSubtitleKey,
+        string $cancelUrl,
+    ): Response {
+        $jobId = $this->jobStatusService->create($jobName, [
+            '_label' => $this->translator->trans($jobLabelKey, [], 'admin'),
+            '_subtitle' => $this->translator->trans($jobSubtitleKey, [], 'admin'),
+        ]);
+
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $cancelUrl,
+        ], Response::HTTP_SEE_OTHER);
+
+        return $this->jobDispatcher->dispatch(
+            $jobClass,
+            [],
+            $jobId,
+            $response,
+            $request->getSession(),
+        );
+    }
+
+    /**
+     * Dispatches the full integrity check as an async job.
+     *
+     * Originally part of {@see self::index()} — running synchronously on every
+     * GET could push past PHP-FPM's 30 s limit on large tenant trees because
+     * `runFullIntegrityCheck()` loads every Doctrine-mapped entity that owns
+     * a tenant_id column plus all duplicate / broken-ref / file-orphan /
+     * JSON-schema / audit-integrity / status-enum-drift checks.
+     *
+     * The worker persists a scalar summary via {@see DataIntegrityResultCache};
+     * the index page reads it on subsequent visits.
+     */
+    #[Route('/admin/data-repair/run-integrity-check', name: 'admin_data_repair_run_integrity_check', methods: ['POST'])]
+    public function runIntegrityCheck(Request $request): Response
+    {
+        if (!$this->isCsrfTokenValid('run_integrity_check', $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
+
+        // P-16 facade: one call replaces create-status + redirect-to-progress
+        // + dispatch. The facade handles the 303 PRG dance internally so the
+        // pattern is uniform across all dispatching controllers.
+        return $this->asyncJobDispatcher->dispatchWithProgress(
+            request: $request,
+            jobClass: RunFullIntegrityCheckJob::class,
+            jobArgs: [],
+            jobName: 'admin.data_repair.run_integrity_check',
+            payload: [
+                '_label' => $this->translator->trans('admin.data_repair.job.run_integrity_check_label', [], 'admin'),
+                '_subtitle' => $this->translator->trans('admin.data_repair.job.run_integrity_check_subtitle', [], 'admin'),
+            ],
+            returnUrl: $this->generateUrl('admin_data_repair_index'),
+        );
+    }
+
+    /**
+     * Bulk-assigns orphaned entities (tenant_id IS NULL) to a target tenant.
+     *
+     * Was synchronous and looped {@see AuditLogger::logCustom()} per entity
+     * (each call flushes the EM). On tenants with thousands of orphans this
+     * exceeded the PHP-FPM 30 s timeout and the operator saw a blank page.
+     *
+     * Now dispatches {@see AssignOrphansJob} via {@see JobDispatcher} — the
+     * worker batches flushes (50 entities per commit) and the polling page
+     * surfaces live progress without blocking PHP-FPM.
+     */
+    #[Route('/admin/data-repair/assign-orphans', name: 'admin_data_repair_assign_orphans', methods: ['POST'])]
+    public function assignOrphans(
+        Request $request,
+        #[CurrentUser] User $user,
+    ): Response {
+        if (!$this->isCsrfTokenValid('assign_orphans', $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_orphans');
+        }
+
+        $tenantId = (int) ($request->request->get('tenant_id') ?? 0);
+        $entityType = (string) ($request->request->get('entity_type') ?? 'all');
 
         $tenant = $this->tenantRepository->find($tenantId);
-        if (!$tenant) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.tenant_not_found'));
-            return $this->redirectToRoute('admin_data_repair_index');
+        if ($tenant === null) {
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.tenant_not_found', [], 'admin'));
+            return $this->redirectToRoute('admin_data_repair_orphans');
         }
 
-        // Generischer Reassign — findet Entity per Doctrine-Metadata statt
-        // fixer Repository-Auswahl. Damit funktionieren auch Controls,
-        // Workflows, Suppliers usw.
-        [$entity, $entityName, $className] = $this->withoutTenantFilter(function () use ($type, $id): array {
-            $fqcn = $this->resolveEntityClassForType($type);
-            if ($fqcn === null) {
-                return [null, '', ''];
-            }
-            $found = $this->entityManager->find($fqcn, $id);
-            $name = '';
-            if ($found !== null) {
-                if (method_exists($found, 'getName')) {
-                    $name = (string) $found->getName();
-                } elseif (method_exists($found, 'getTitle')) {
-                    $name = (string) $found->getTitle();
-                } else {
-                    $name = '#' . $id;
-                }
-            }
-            return [$found, $name, $found ? (new \ReflectionClass($found))->getShortName() : ''];
-        });
-
-        if (!$entity) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found'));
-            return $this->redirectToRoute('admin_data_repair_index');
-        }
-
-        // ISB MAJOR-1: capture previous tenant before mutation for audit diff.
-        $previousTenant = method_exists($entity, 'getTenant') ? $entity->getTenant() : null;
-        $previousTenantId = $previousTenant instanceof \App\Entity\Tenant ? $previousTenant->getId() : null;
-        $entity->setTenant($tenant);
-        $this->auditLogger->logCustom(
-            'admin.data_repair.entity_reassigned',
-            $className,
-            $id,
-            ['tenant_id' => $previousTenantId],
-            ['tenant_id' => $tenant->getId(), 'tenant_name' => $tenant->getName()],
-            sprintf('%s#%d "%s" reassigned to tenant %s', $className, $id, $entityName, $tenant->getName()),
+        $jobId = $this->jobStatusService->create(
+            'admin.data_repair.assign_orphans',
+            [
+                'tenantId' => $tenantId,
+                'tenantName' => $tenant->getName(),
+                'entityType' => $entityType,
+                '_label' => $this->translator->trans('admin.data_repair.job.assign_orphans_label', [
+                    '%tenant%' => $tenant->getName(),
+                ], 'admin'),
+                '_subtitle' => $this->translator->trans('admin.data_repair.job.assign_orphans_subtitle', [], 'admin'),
+            ],
         );
-        $this->entityManager->flush();
 
-        $this->addFlash('success', $this->translator->trans('admin.data_repair.entity_reassigned', [
-            '%entity%' => $entityName,
-            '%tenant%' => $tenant->getName(),
-        ]));
+        // PRG: 303 redirect to the shared progress page — see runIntegrityCheck() rationale.
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('admin_data_repair_orphans'),
+        ], Response::HTTP_SEE_OTHER);
 
-        return $this->redirectToRoute('admin_data_repair_index');
+        return $this->jobDispatcher->dispatch(
+            AssignOrphansJob::class,
+            [
+                'tenantId' => $tenantId,
+                'entityType' => $entityType,
+                'userId' => $user->getId(),
+            ],
+            $jobId,
+            $response,
+            $request->getSession(),
+        );
+    }
+
+    /**
+     * Reassign a single orphan entity to a tenant.
+     *
+     * Was synchronous: one flush + one audit-log flush per request. On slow
+     * shared-hosting MySQL (fsync-heavy disk) the operator could still wait
+     * 10–30 s, which felt indistinguishable from the bulk-assign timeout.
+     *
+     * Now dispatches {@see ReassignEntityJob} — the polling page renders
+     * immediately and the job refreshes the orphan-cache so the index page
+     * reflects the new state when the operator returns.
+     */
+    #[Route('/admin/data-repair/reassign-entity/{type}/{id}', name: 'admin_data_repair_reassign_entity', methods: ['POST'])]
+    public function reassignEntity(
+        Request $request,
+        string $type,
+        int $id,
+        #[CurrentUser] User $user,
+    ): Response {
+        if (!$this->isCsrfTokenValid('reassign_entity_' . $id, $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_orphans');
+        }
+
+        $tenantId = (int) ($request->request->get('tenant_id') ?? 0);
+        $tenant = $this->tenantRepository->find($tenantId);
+        if ($tenant === null) {
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.tenant_not_found', [], 'admin'));
+            return $this->redirectToRoute('admin_data_repair_orphans');
+        }
+
+        // Verify the entity type slug maps to a real Doctrine entity before
+        // dispatching — saves the operator a round-trip to the job-progress
+        // page if they submitted a garbage URL.
+        if ($this->resolveEntityClassForType($type) === null) {
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.invalid_entity_type', [], 'admin'));
+            return $this->redirectToRoute('admin_data_repair_orphans');
+        }
+
+        $jobId = $this->jobStatusService->create(
+            'admin.data_repair.reassign_entity',
+            [
+                'type' => $type,
+                'id' => $id,
+                'tenantId' => $tenantId,
+                'tenantName' => $tenant->getName(),
+                '_label' => $this->translator->trans('admin.data_repair.job.reassign_entity_label', [
+                    '%type%' => $type,
+                    '%id%' => $id,
+                ], 'admin'),
+                '_subtitle' => $this->translator->trans('admin.data_repair.job.reassign_entity_subtitle', [
+                    '%tenant%' => $tenant->getName(),
+                ], 'admin'),
+            ],
+        );
+
+        // PRG: 303 redirect to the shared progress page — see runIntegrityCheck() rationale.
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('admin_data_repair_orphans'),
+        ], Response::HTTP_SEE_OTHER);
+
+        return $this->jobDispatcher->dispatch(
+            ReassignEntityJob::class,
+            [
+                'entityType' => $type,
+                'entityId' => $id,
+                'tenantId' => $tenantId,
+                'userId' => $user->getId(),
+            ],
+            $jobId,
+            $response,
+            $request->getSession(),
+        );
     }
 
     #[Route('/admin/data-repair/assign-asset/{type}/{id}', name: 'admin_data_repair_assign_asset', methods: ['POST'])]
@@ -331,7 +571,7 @@ class DataRepairController extends AbstractController
         $assetId = $request->request->get('asset_id');
 
         if (!$this->isCsrfTokenValid('assign_asset_' . $id, $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
@@ -352,7 +592,7 @@ class DataRepairController extends AbstractController
             case 'risk':
                 $entity = $this->riskRepository->find($id);
                 if (!$entity) {
-                    $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found'));
+                    $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found', [], 'admin'));
                     return $this->redirectToRoute('admin_data_repair_index');
                 }
                 $previousAsset = $entity->getAsset();
@@ -372,7 +612,7 @@ class DataRepairController extends AbstractController
             case 'incident':
                 $entity = $this->incidentRepository->find($id);
                 if (!$entity) {
-                    $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found'));
+                    $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found', [], 'admin'));
                     return $this->redirectToRoute('admin_data_repair_index');
                 }
                 // Incidents have ManyToMany relationship with assets
@@ -392,7 +632,7 @@ class DataRepairController extends AbstractController
                 break;
 
             default:
-                $this->addFlash('error', $this->translator->trans('admin.data_repair.invalid_entity_type'));
+                $this->addFlash('error', $this->translator->trans('admin.data_repair.invalid_entity_type', [], 'admin'));
                 return $this->redirectToRoute('admin_data_repair_index');
         }
 
@@ -413,24 +653,24 @@ class DataRepairController extends AbstractController
         $riskId = $request->request->get('risk_id');
 
         if (!$this->isCsrfTokenValid('assign_risk_' . $id, $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
         if (!$riskId) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.select_risk'));
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.select_risk', [], 'admin'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
         $control = $this->controlRepository->find($id);
         if (!$control) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found'));
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found', [], 'admin'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
         $risk = $this->riskRepository->find($riskId);
         if (!$risk) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found'));
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found', [], 'admin'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
@@ -462,24 +702,24 @@ class DataRepairController extends AbstractController
         $assetId = $request->request->get('asset_id');
 
         if (!$this->isCsrfTokenValid('assign_asset_to_control_' . $id, $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
         if (!$assetId) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.select_asset'));
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.select_asset', [], 'admin'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
         $control = $this->controlRepository->find($id);
         if (!$control) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found'));
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.entity_not_found', [], 'admin'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
         $asset = $this->assetRepository->find($assetId);
         if (!$asset) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.asset_not_found'));
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.asset_not_found', [], 'admin'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
@@ -506,6 +746,61 @@ class DataRepairController extends AbstractController
     }
 
     /**
+     * Dispatches the fix-all-orphans job asynchronously via Symfony Messenger.
+     *
+     * Returns immediately with a progress-polling page. The actual work runs in
+     * the worker process (messenger:consume async), avoiding PHP-FPM timeout.
+     * CSRF-protected identically to the sync route.
+     */
+    #[Route('/admin/data-repair/fix-all-orphans-async/{tenantId}', name: 'admin_data_repair_fix_all_orphans_async', methods: ['POST'])]
+    public function fixAllOrphansAsync(Request $request, int $tenantId): Response
+    {
+        if (!$this->isCsrfTokenValid('fix_all_orphans', $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_index');
+        }
+
+        $tenant = $this->tenantRepository->find($tenantId);
+        if (!$tenant) {
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.tenant_not_found', [], 'admin'));
+            return $this->redirectToRoute('admin_data_repair_index');
+        }
+
+        // Create job status record and dispatch
+        $jobId = $this->jobStatusService->create(
+            'admin.data_repair.fix_all_orphans',
+            [
+                'tenantId' => $tenantId,
+                'tenantName' => $tenant->getName(),
+                '_label' => sprintf(
+                    '%s — %s',
+                    $this->translator->trans('admin.data_repair.job.fix_all_orphans_label', [], 'admin'),
+                    $tenant->getName(),
+                ),
+                '_subtitle' => $this->translator->trans(
+                    'admin.data_repair.job.fix_all_orphans_subtitle',
+                    ['%tenant%' => $tenant->getName()],
+                    'admin',
+                ),
+            ],
+        );
+
+        // PRG: 303 redirect to the shared progress page — see runIntegrityCheck() rationale.
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('admin_data_repair_index'),
+        ], Response::HTTP_SEE_OTHER);
+
+        return $this->jobDispatcher->dispatch(
+            FixAllOrphansJob::class,
+            ['tenantId' => $tenantId],
+            $jobId,
+            $response,
+            $request->getSession(),
+        );
+    }
+
+    /**
      * Bulk-assigns every orphaned entity (across all types) to the selected tenant.
      *
      * Consultant-Review A2 (docs/DB_REPAIR_REVIEW_CONSULTANT.md): this is a
@@ -526,7 +821,7 @@ class DataRepairController extends AbstractController
     public function fixAllOrphans(Request $request, int $tenantId): Response
     {
         if (!$this->isCsrfTokenValid('fix_all_orphans', $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
@@ -546,7 +841,7 @@ class DataRepairController extends AbstractController
 
         $tenant = $this->tenantRepository->find($tenantId);
         if (!$tenant) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.tenant_not_found'));
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.tenant_not_found', [], 'admin'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
@@ -555,7 +850,8 @@ class DataRepairController extends AbstractController
         // Render und Submit ändern können (z.B. neue Imports) und der Nutzer
         // dann aus einer gültigen Aktion ausgeschlossen wird.
         $totalFixed = 0;
-        $this->withoutTenantFilter(function () use ($tenant, &$totalFixed): void {
+        $totalSkipped = 0;
+        $this->withoutTenantFilter(function () use ($tenant, &$totalFixed, &$totalSkipped): void {
             $orphaned = $this->dataIntegrityService->findAllOrphanedEntities();
 
             foreach ($orphaned as $className => $entities) {
@@ -563,26 +859,48 @@ class DataRepairController extends AbstractController
                     if (!method_exists($entity, 'setTenant') || !method_exists($entity, 'getId')) {
                         continue;
                     }
-                    $entity->setTenant($tenant);
-                    $this->auditLogger->logCustom(
-                        'admin.data_repair.orphan_reassigned',
-                        $className,
-                        (int) $entity->getId(),
-                        ['tenant_id' => null],
-                        ['tenant_id' => $tenant->getId(), 'tenant_name' => $tenant->getName()],
-                        sprintf('Orphan %s#%d reassigned to tenant %s', $className, (int) $entity->getId(), $tenant->getName()),
-                    );
-                    $totalFixed++;
+                    // Guard: if a previous iteration's flush closed the EM
+                    // (e.g. constraint violation), reset before continuing so
+                    // remaining orphans can still be processed.
+                    $this->resetEntityManagerIfClosed();
+                    // Re-fetch tenant via repository so the entity attaches to
+                    // the (possibly reset) EM. tenantRepository is autowired
+                    // and resolves via the active EM.
+                    $tenant = $this->tenantRepository->find($tenant->getId());
+                    if (!$tenant) {
+                        return;
+                    }
+                    try {
+                        $entity->setTenant($tenant);
+                        $this->auditLogger->logCustom(
+                            'admin.data_repair.orphan_reassigned',
+                            $className,
+                            (int) $entity->getId(),
+                            ['tenant_id' => null],
+                            ['tenant_id' => $tenant->getId(), 'tenant_name' => $tenant->getName()],
+                            sprintf('Orphan %s#%d reassigned to tenant %s', $className, (int) $entity->getId(), $tenant->getName()),
+                        );
+                        $this->entityManager->flush();
+                        $totalFixed++;
+                    } catch (\Throwable $e) {
+                        $totalSkipped++;
+                        // EM may be closed after constraint violation; next
+                        // iteration's guard above will reset it.
+                    }
                 }
             }
-
-            $this->entityManager->flush();
         });
 
-        $this->addFlash('success', $this->translator->trans('admin.data_repair.fixed_all_orphans', [
+        $message = $this->translator->trans('admin.data_repair.fixed_all_orphans', [
             '%count%' => $totalFixed,
             '%tenant%' => $tenant->getName(),
-        ], 'admin'));
+        ], 'admin');
+        if ($totalSkipped > 0) {
+            $message .= ' · ' . $this->translator->trans('admin.data_repair.orphans_skipped', [
+                '%count%' => $totalSkipped,
+            ], 'admin');
+        }
+        $this->addFlash($totalSkipped > 0 ? 'warning' : 'success', $message);
 
         return $this->redirectToRoute('admin_data_repair_index');
     }
@@ -593,12 +911,16 @@ class DataRepairController extends AbstractController
      * call (could be a data leak OR a reparation) — therefore:
      *   - a reason ≥ 20 chars is mandatory,
      *   - every reassignment is audit-logged with the before/after tenant.
+     *
+     * Dispatches {@see FixTenantMismatchesJob} via Symfony Messenger so the
+     * polling progress page replaces a blocking request that previously
+     * risked the PHP-FPM 30 s timeout on large broken-reference lists.
      */
     #[Route('/admin/data-repair/fix-tenant-mismatches', name: 'admin_data_repair_fix_tenant_mismatches', methods: ['POST'])]
     public function fixTenantMismatches(Request $request): Response
     {
         if (!$this->isCsrfTokenValid('fix_tenant_mismatches', $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
@@ -612,86 +934,28 @@ class DataRepairController extends AbstractController
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
-        $fixedCount = 0;
-        $this->withoutTenantFilter(function () use ($reason, &$fixedCount): void {
-            $brokenReferences = $this->dataIntegrityService->findBrokenReferences();
+        $jobId = $this->jobStatusService->create(
+            'admin.data_repair.fix_tenant_mismatches',
+            [
+                'reason_length' => mb_strlen($reason),
+                '_label' => $this->translator->trans('admin.data_repair.job.fix_tenant_mismatches_label', [], 'admin'),
+                '_subtitle' => $this->translator->trans('admin.data_repair.job.fix_tenant_mismatches_subtitle', [], 'admin'),
+            ],
+        );
 
-            foreach ($brokenReferences as $ref) {
-            // Fix risk-asset tenant mismatches by setting risk tenant to match asset
-            if ($ref['type'] === 'risk_asset_tenant_mismatch') {
-                $risk = $this->riskRepository->find($ref['entity_id']);
-                $asset = $risk?->getAsset();
-                if ($risk && $asset && $asset->getTenant()) {
-                    $previousTenant = $risk->getTenant();
-                    $newTenant = $asset->getTenant();
-                    $risk->setTenant($newTenant);
-                    $this->auditLogger->logCustom(
-                        'admin.data_repair.tenant_mismatch_fixed',
-                        'Risk',
-                        (int) $risk->getId(),
-                        ['tenant_id' => $previousTenant?->getId()],
-                        [
-                            'tenant_id' => $newTenant->getId(),
-                            'tenant_name' => $newTenant->getName(),
-                            'aligned_to' => 'Asset#' . (int) $asset->getId(),
-                            'reason' => $reason,
-                        ],
-                        sprintf(
-                            'Risk#%d tenant aligned to Asset#%d owner (tenant %d -> %d): %s',
-                            (int) $risk->getId(),
-                            (int) $asset->getId(),
-                            (int) ($previousTenant?->getId() ?? 0),
-                            (int) $newTenant->getId(),
-                            $reason,
-                        ),
-                    );
-                    $fixedCount++;
-                }
-            }
+        // PRG: 303 redirect to the shared progress page — see runIntegrityCheck() rationale.
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('admin_data_repair_index'),
+        ], Response::HTTP_SEE_OTHER);
 
-            // Fix incident-asset tenant mismatches
-            if ($ref['type'] === 'incident_asset_tenant_mismatch') {
-                $incident = $this->incidentRepository->find($ref['entity_id']);
-                if ($incident && $incident->getAffectedAssets()->count() > 0) {
-                    // Set incident tenant to first asset's tenant
-                    $firstAsset = $incident->getAffectedAssets()->first();
-                    if ($firstAsset && $firstAsset->getTenant()) {
-                        $previousTenant = $incident->getTenant();
-                        $newTenant = $firstAsset->getTenant();
-                        $incident->setTenant($newTenant);
-                        $this->auditLogger->logCustom(
-                            'admin.data_repair.tenant_mismatch_fixed',
-                            'Incident',
-                            (int) $incident->getId(),
-                            ['tenant_id' => $previousTenant?->getId()],
-                            [
-                                'tenant_id' => $newTenant->getId(),
-                                'tenant_name' => $newTenant->getName(),
-                                'aligned_to' => 'Asset#' . (int) $firstAsset->getId(),
-                                'reason' => $reason,
-                            ],
-                            sprintf(
-                                'Incident#%d tenant aligned to first affected Asset#%d owner (tenant %d -> %d): %s',
-                                (int) $incident->getId(),
-                                (int) $firstAsset->getId(),
-                                (int) ($previousTenant?->getId() ?? 0),
-                                (int) $newTenant->getId(),
-                                $reason,
-                            ),
-                        );
-                        $fixedCount++;
-                    }
-                }
-            }
-            }
-            $this->entityManager->flush();
-        });
-
-        $this->addFlash('success', $this->translator->trans('admin.data_repair.fixed_mismatches', [
-            '%count%' => $fixedCount,
-        ], 'admin'));
-
-        return $this->redirectToRoute('admin_data_repair_index');
+        return $this->jobDispatcher->dispatch(
+            FixTenantMismatchesJob::class,
+            ['reason' => $reason],
+            $jobId,
+            $response,
+            $request->getSession(),
+        );
     }
 
     /**
@@ -699,45 +963,55 @@ class DataRepairController extends AbstractController
      * Keeps the entity with the lowest ID (oldest) and removes newer duplicates.
      *
      * Supported entity types: audits, assets, risks, incidents, documents
+     *
+     * Dispatches {@see MergeDuplicatesJob} via Symfony Messenger so very large
+     * duplicate groups (>10 k rows on legacy imports) don't hit the PHP-FPM
+     * 30 s timeout. Audit-log is written from the job.
      */
     #[Route('/admin/data-repair/fix-duplicates/{entityType}', name: 'admin_data_repair_fix_duplicates', methods: ['POST'])]
     #[IsGranted('ROLE_SUPER_ADMIN')]
-    public function fixDuplicates(Request $request, string $entityType): Response
-    {
+    public function fixDuplicates(
+        Request $request,
+        string $entityType,
+        #[CurrentUser] User $user,
+    ): Response {
         $allowedTypes = ['audits', 'assets', 'risks', 'incidents', 'documents'];
 
         if (!$this->isCsrfTokenValid('fix_duplicates_' . $entityType, $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
         if (!in_array($entityType, $allowedTypes, true)) {
-            $this->addFlash('error', $this->translator->trans('admin.data_repair.invalid_entity_type'));
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.invalid_entity_type', [], 'admin'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
-        $deleted = $this->withoutTenantFilter(
-            fn() => $this->dataIntegrityService->mergeDuplicates($entityType)
+        $actor = (string) ($user->getEmail() ?? 'admin');
+
+        $jobId = $this->jobStatusService->create(
+            'admin.data_repair.merge_duplicates',
+            [
+                'entityType' => $entityType,
+                'actor' => $actor,
+                '_label' => $this->translator->trans('admin.data_repair.job.merge_duplicates_label', ['%type%' => $entityType], 'admin'),
+                '_subtitle' => $this->translator->trans('admin.data_repair.job.merge_duplicates_subtitle', [], 'admin'),
+            ],
         );
 
-        $user = $this->getUser();
-        $actor = (is_object($user) && method_exists($user, 'getEmail')) ? (string) $user->getEmail() : 'admin';
-        $this->auditLogger->logCustom(
-            'admin.data_repair.duplicates_merged',
-            $entityType,
-            0,
-            [],
-            ['entity_type' => $entityType, 'deleted_count' => $deleted, 'actor' => $actor],
-            sprintf('Merged duplicates for entity type "%s": %d record(s) deleted (oldest kept).', $entityType, $deleted),
+        // PRG: 303 redirect to the shared progress page — see runIntegrityCheck() rationale.
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('admin_data_repair_index'),
+        ], Response::HTTP_SEE_OTHER);
+
+        return $this->jobDispatcher->dispatch(
+            MergeDuplicatesJob::class,
+            ['entityType' => $entityType, 'actor' => $actor],
+            $jobId,
+            $response,
+            $request->getSession(),
         );
-
-        $this->addFlash('success', $this->translator->trans(
-            'admin.data_repair.duplicates_merged',
-            ['%count%' => $deleted, '%type%' => $entityType],
-            'admin',
-        ));
-
-        return $this->redirectToRoute('admin_data_repair_index');
     }
 
     /**
@@ -749,30 +1023,206 @@ class DataRepairController extends AbstractController
      * {@see SchemaMaintenanceService::executePendingMigrations()}.
      */
     #[Route('/admin/data-repair/schema/migrations', name: 'admin_data_repair_migrations_execute', methods: ['POST'])]
-    public function executeMigrations(Request $request): Response
-    {
+    #[IsGranted(TenantScopedAdminVoter::ADMIN_GLOBAL_OP)]
+    public function executeMigrations(
+        Request $request,
+        #[CurrentUser] User $user,
+    ): Response {
         if (!$this->isCsrfTokenValid('migrations_execute', (string) $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
-        $user = $this->getUser();
-        $actor = (is_object($user) && method_exists($user, 'getEmail')) ? (string) $user->getEmail() : 'admin';
-        $result = $this->schemaMaintenanceService->executePendingMigrations($actor);
+        $actor = (string) ($user->getEmail() ?? 'admin');
 
-        if ($result['success']) {
-            $this->addFlash('success', $this->translator->trans(
-                'admin.data_repair.schema.migrations_applied',
-                ['%count%' => $result['executed']],
-                'admin',
-            ));
-        } else {
-            $this->addFlash('error', $this->translator->trans(
-                'admin.data_repair.schema.migrations_failed',
-                ['%error%' => (string) $result['error']],
-                'admin',
-            ));
+        $jobId = $this->jobStatusService->create(
+            'admin.data_repair.execute_migrations',
+            [
+                'actor' => $actor,
+                '_label' => $this->translator->trans('admin.data_repair.job.execute_migrations_label', [], 'admin'),
+                '_subtitle' => $this->translator->trans('admin.data_repair.job.execute_migrations_subtitle', [], 'admin'),
+            ],
+        );
+
+        // PRG: 303 redirect to the shared progress page — see runIntegrityCheck() rationale.
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('admin_data_repair_index'),
+        ], Response::HTTP_SEE_OTHER);
+
+        return $this->jobDispatcher->dispatch(
+            ExecutePendingMigrationsJob::class,
+            ['actor' => $actor],
+            $jobId,
+            $response,
+            $request->getSession(),
+        );
+    }
+
+    /**
+     * Moves orphaned upload files (files on disk with no DB owner) to
+     * `var/quarantine/<YYYY-MM-DD>/`. NEVER `unlink` — quarantine is
+     * reversible. Every move logged through AuditLogger::logBulk() under
+     * a single batch_id (ISO 27001 Clause 7.5.3).
+     */
+    #[Route('/admin/data-repair/quarantine-uploads', name: 'admin_data_repair_quarantine_uploads', methods: ['POST'])]
+    public function quarantineOrphanedUploads(Request $request): Response
+    {
+        if (!$this->isCsrfTokenValid('quarantine_uploads', (string) $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_index');
         }
+
+        $orphans = $this->withoutTenantFilter(
+            fn() => $this->dataIntegrityService->findOrphanedUploads()
+        );
+        $uploadsDir = $orphans['uploads_dir'] ?? null;
+        if (!is_string($uploadsDir) || $uploadsDir === '' || count($orphans['files']) === 0) {
+            $this->addFlash('info', $this->translator->trans('admin.data_repair.uploads.nothing_to_quarantine', [], 'admin'));
+            return $this->redirectToRoute('admin_data_repair_index');
+        }
+
+        // var/quarantine/<date>/ — created lazily; never auto-deleted.
+        $projectDir = dirname($uploadsDir, 2); // public/uploads → project root
+        $stamp = (new \DateTimeImmutable())->format('Y-m-d_His');
+        $quarantineDir = $projectDir . '/var/quarantine/' . $stamp;
+        if (!is_dir($quarantineDir) && !@mkdir($quarantineDir, 0775, true) && !is_dir($quarantineDir)) {
+            $this->addFlash('error', $this->translator->trans('admin.data_repair.uploads.quarantine_dir_failed', ['%dir%' => $quarantineDir], 'admin'));
+            return $this->redirectToRoute('admin_data_repair_index');
+        }
+
+        $perEntity = [];
+        $moved = 0;
+        foreach ($orphans['files'] as $orphan) {
+            $src = (string) ($orphan['path'] ?? '');
+            $relative = (string) ($orphan['relative'] ?? '');
+            if ($src === '' || !is_file($src)) {
+                continue;
+            }
+            // Path-traversal-safe: only files whose realpath is inside uploadsDir
+            // ever reach this list (the scanner filters them already).
+            $basename = basename($src);
+            $target = $quarantineDir . '/' . $basename;
+            // Tolerate collisions: append a counter when needed.
+            $counter = 0;
+            while (file_exists($target)) {
+                $counter++;
+                $target = $quarantineDir . '/' . $counter . '_' . $basename;
+            }
+            if (@rename($src, $target)) {
+                $moved++;
+                $perEntity[] = [
+                    'entity_id' => null,
+                    'action' => 'delete',
+                    'old_values' => ['path' => $relative, 'size' => (int) ($orphan['size'] ?? 0)],
+                    'new_values' => ['quarantine_path' => $target],
+                ];
+            }
+        }
+
+        if ($moved > 0) {
+            $this->auditLogger->logBulk(
+                'admin.data_repair.uploads_quarantined',
+                'UploadFile',
+                [
+                    'quarantine_dir' => $quarantineDir,
+                    'scanned' => (int) ($orphans['scanned'] ?? 0),
+                    'referenced' => (int) ($orphans['referenced'] ?? 0),
+                ],
+                $perEntity,
+                sprintf('Quarantined %d orphaned upload files to %s', $moved, $quarantineDir),
+            );
+        }
+
+        $this->addFlash('success', $this->translator->trans(
+            'admin.data_repair.uploads.quarantined',
+            ['%count%' => $moved, '%dir%' => $quarantineDir],
+            'admin',
+        ));
+
+        return $this->redirectToRoute('admin_data_repair_index');
+    }
+
+    /**
+     * Cleans up entities whose ManyToOne target row was deleted but the
+     * cascade never fired. Five categories (workflow_instances, mfa_tokens,
+     * sso_user_approvals, evidence_tasks, notification_deliveries) are
+     * processed under ONE AuditLogger::logBulk() batch so an auditor can
+     * answer "show me the cleanup of $batch_id" in one query.
+     */
+    #[Route('/admin/data-repair/cleanup-dangling-refs', name: 'admin_data_repair_cleanup_dangling_refs', methods: ['POST'])]
+    public function cleanupDanglingRefs(Request $request): Response
+    {
+        if (!$this->isCsrfTokenValid('cleanup_dangling_refs', (string) $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('admin_data_repair_index');
+        }
+
+        // Reason is mandatory for cascade-cleanup — a misclick could remove an
+        // SSO approval that an admin still needed for forensics.
+        $reason = trim((string) $request->request->get('reason', ''));
+        if (mb_strlen($reason) < 20) {
+            $this->addFlash('danger', $this->translator->trans(
+                'admin.data_repair.reason_required',
+                ['%min%' => 20, '%actual%' => mb_strlen($reason)],
+                'admin',
+            ));
+            return $this->redirectToRoute('admin_data_repair_index');
+        }
+
+        $categoryClassMap = [
+            'workflow_instances' => \App\Entity\WorkflowInstance::class,
+            'mfa_tokens' => \App\Entity\MfaToken::class,
+            'sso_user_approvals' => \App\Entity\SsoUserApproval::class,
+            'evidence_tasks' => \App\Entity\EvidenceReverificationTask::class,
+            'notification_deliveries' => \App\Entity\Notification\NotificationDelivery::class,
+        ];
+
+        $perEntity = [];
+        $deleted = 0;
+        $this->withoutTenantFilter(function () use ($categoryClassMap, &$perEntity, &$deleted): void {
+            $cascadeOrphans = $this->dataIntegrityService->findCascadeOrphans();
+            foreach ($categoryClassMap as $category => $fqcn) {
+                $items = $cascadeOrphans[$category] ?? [];
+                foreach ($items as $item) {
+                    $id = (int) ($item['id'] ?? 0);
+                    if ($id <= 0) {
+                        continue;
+                    }
+                    $entity = $this->entityManager->find($fqcn, $id);
+                    if ($entity === null) {
+                        continue;
+                    }
+                    $perEntity[] = [
+                        'entity_id' => $id,
+                        'action' => 'delete',
+                        'old_values' => ['class' => $fqcn, 'label' => (string) ($item['label'] ?? '')],
+                        'new_values' => null,
+                    ];
+                    $this->entityManager->remove($entity);
+                    $deleted++;
+                }
+            }
+            if ($deleted > 0) {
+                $this->entityManager->flush();
+            }
+        });
+
+        if ($deleted > 0) {
+            $this->auditLogger->logBulk(
+                'admin.data_repair.cascade_cleaned',
+                'CascadeOrphan',
+                ['reason' => $reason, 'category_count' => 5],
+                $perEntity,
+                sprintf('Cleaned %d cascade-orphan rows across 5 categories: %s', $deleted, $reason),
+            );
+        }
+
+        $this->addFlash('success', $this->translator->trans(
+            'admin.data_repair.cascade.cleaned',
+            ['%count%' => $deleted],
+            'admin',
+        ));
 
         return $this->redirectToRoute('admin_data_repair_index');
     }
@@ -784,42 +1234,45 @@ class DataRepairController extends AbstractController
      * but the service still audit-logs every executed statement bundle.
      */
     #[Route('/admin/data-repair/schema/reconcile', name: 'admin_data_repair_schema_reconcile', methods: ['POST'])]
-    public function reconcileSchema(Request $request): Response
-    {
+    #[IsGranted(TenantScopedAdminVoter::ADMIN_GLOBAL_OP)]
+    public function reconcileSchema(
+        Request $request,
+        #[CurrentUser] User $user,
+    ): Response {
         if (!$this->isCsrfTokenValid('schema_reconcile', (string) $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_data_repair_index');
         }
 
-        $user = $this->getUser();
-        $actor = (is_object($user) && method_exists($user, 'getEmail')) ? (string) $user->getEmail() : 'admin';
+        $actor = (string) ($user->getEmail() ?? 'admin');
+
         // Reconcile from the data-repair page intentionally bypasses the
         // pending-migration gate: an admin who's looking at a populated
         // drift card has already seen any pending migrations on the same
         // page — the UX here is "apply both buttons explicitly".
-        $result = $this->schemaMaintenanceService->reconcileSchema($actor, bypassMigrationGate: true);
+        $jobId = $this->jobStatusService->create(
+            'admin.data_repair.reconcile_schema',
+            [
+                'actor' => $actor,
+                'bypassMigrationGate' => true,
+                '_label' => $this->translator->trans('admin.data_repair.job.reconcile_schema_label', [], 'admin'),
+                '_subtitle' => $this->translator->trans('admin.data_repair.job.reconcile_schema_subtitle', [], 'admin'),
+            ],
+        );
 
-        if ($result['blocked'] !== null) {
-            $this->addFlash('error', $this->translator->trans(
-                'admin.data_repair.schema.reconcile_blocked',
-                ['%reason%' => (string) $result['blocked']],
-                'admin',
-            ));
-        } elseif ($result['success']) {
-            $this->addFlash('success', $this->translator->trans(
-                'admin.data_repair.schema.reconcile_applied',
-                ['%count%' => $result['executed']],
-                'admin',
-            ));
-        } else {
-            $this->addFlash('error', $this->translator->trans(
-                'admin.data_repair.schema.reconcile_failed',
-                ['%error%' => (string) $result['error']],
-                'admin',
-            ));
-        }
+        // PRG: 303 redirect to the shared progress page — see runIntegrityCheck() rationale.
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('admin_data_repair_index'),
+        ], Response::HTTP_SEE_OTHER);
 
-        return $this->redirectToRoute('admin_data_repair_index');
+        return $this->jobDispatcher->dispatch(
+            ReconcileSchemaJob::class,
+            ['actor' => $actor, 'bypassMigrationGate' => true],
+            $jobId,
+            $response,
+            $request->getSession(),
+        );
     }
 }
 

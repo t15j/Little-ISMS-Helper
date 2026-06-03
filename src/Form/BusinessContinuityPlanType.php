@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\Asset;
 use App\Entity\BusinessContinuityPlan;
 use App\Entity\BusinessProcess;
-use App\Entity\Person;
-use App\Entity\User;
+use App\Entity\CrisisTeam;
+use App\Form\Trait\OwnerPickerFormTrait;
+use App\Form\Type\JsonStructuredType;
+use App\Repository\CrisisTeamRepository;
+use App\Service\TenantContext;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -19,8 +24,18 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class BusinessContinuityPlanType extends AbstractType
+// SectionMap not applicable — templates (new.html.twig, edit.html.twig) pass
+// their own 'sections' data directly to _auto_form, overriding any SectionMap.
+// The templates also use a custom form_theme (_bc_plan_form_theme.html.twig)
+// which overrides responseTeamMembers/requiredResources/escalationLevels rendering.
+final class BusinessContinuityPlanType extends AbstractType
 {
+    use OwnerPickerFormTrait;
+
+    public function __construct(private readonly TenantContext $tenantContext)
+    {
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
@@ -43,51 +58,29 @@ class BusinessContinuityPlanType extends AbstractType
                 'attr' => ['rows' => 3],
                 'help' => 'bc_plans.help.description',
             ])
-            ->add('planOwnerUser', EntityType::class, [
-                'label' => 'bc_plans.field.plan_owner',
-                'class' => User::class,
-                'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
-                'required' => false,
-                'placeholder' => 'bc_plans.placeholder.plan_owner_user',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'bc_plans.help.plan_owner_user',
-            ])
-            ->add('planOwnerPerson', EntityType::class, [
-                'label' => 'bc_plans.field.plan_owner_person',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'placeholder' => 'bc_plans.placeholder.plan_owner_person',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'bc_plans.help.plan_owner_person',
-            ])
-            ->add('planOwnerDeputyPersons', EntityType::class, [
-                'label' => 'bc_plans.field.plan_owner_deputies',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'multiple' => true,
-                'expanded' => false,
-                'attr' => [
-                    'class' => 'form-select',
-                    'data-controller' => 'tom-select',
-                ],
-                'help' => 'bc_plans.help.plan_owner_deputies',
-            ])
-            ->add('planOwner', TextType::class, [
-                'label' => 'bc_plans.field.plan_owner_legacy',
-                'required' => false,
-                'attr' => ['maxlength' => 100],
-                'help' => 'bc_plans.help.plan_owner',
-            ])
+            // Junior-ISB-Audit-2026-05-22 C2-06: Doppelpflege-Deprecation.
+            // Freetext BC-team superseded by structured `responseTeamMembers`
+            // (ISO 22301 §8.5.3 builder) for per-plan team and `crisisTeams`
+            // (ISO 22301 §8.4.2 M2M) for cross-plan reusable crisis teams.
+            // Disabled in the Form; the show-page renders the value
+            // read-only as "Legacy" only when non-empty. Column kept until S14
+            // cleanup migration so Bestandsdaten remain accessible.
             ->add('bcTeam', TextareaType::class, [
                 'label' => 'bc_plans.field.bc_team',
                 'required' => false,
-                'attr' => ['rows' => 3],
-                'help' => 'bc_plans.help.bc_team',
+                'disabled' => true,
+                'attr' => [
+                    'rows' => 3,
+                    'readonly' => true,
+                ],
+                'help' => 'bc_plans.help.bc_team_deprecated',
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix, Sprint Y.5) ──
+            // Owned by `business_continuity_plan_lifecycle`. ISO 22301 Cl. 8.4
+            // 4-eyes auf `activate`. Transitions via LifecycleService only.
             ->add('status', ChoiceType::class, [
                 'label' => 'bc_plans.field.status',
+                'help' => 'bc_plans.help.status_readonly',
                 'choices' => [
                     'bc_plans.status.draft' => 'draft',
                     'bc_plans.status.under_review' => 'under_review',
@@ -95,8 +88,11 @@ class BusinessContinuityPlanType extends AbstractType
                     'bc_plans.status.archived' => 'archived',
                 ],
                 'choice_translation_domain' => 'bc_plans',
-                'required' => true,
-                'help' => 'bc_plans.help.status',
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
             ])
             ->add('activationCriteria', TextareaType::class, [
                 'label' => 'bc_plans.field.activation_criteria',
@@ -115,6 +111,31 @@ class BusinessContinuityPlanType extends AbstractType
                 'required' => false,
                 'attr' => ['rows' => 6],
                 'help' => 'bc_plans.help.recovery_procedures',
+            ])
+            // ISO 22301 Cl. 8.2.2 — Recovery targets. P0: previously missing from form.
+            ->add('rto', IntegerType::class, [
+                'label' => 'bc_plans.field.rto',
+                'required' => true,
+                'attr' => ['min' => 0, 'max' => 8760],
+                'help' => 'bc_plans.help.rto',
+            ])
+            ->add('rpo', IntegerType::class, [
+                'label' => 'bc_plans.field.rpo',
+                'required' => true,
+                'attr' => ['min' => 0, 'max' => 8760],
+                'help' => 'bc_plans.help.rpo',
+            ])
+            ->add('criticalAssets', EntityType::class, [
+                'label' => 'bc_plans.field.critical_assets',
+                'class' => Asset::class,
+                'choice_label' => 'name',
+                'multiple' => true,
+                'expanded' => false,
+                'required' => false,
+                'attr' => [
+                    'data-controller' => 'tom-select',
+                ],
+                'help' => 'bc_plans.help.critical_assets',
             ])
             ->add('communicationPlan', TextareaType::class, [
                 'label' => 'bc_plans.field.communication_plan',
@@ -200,7 +221,77 @@ class BusinessContinuityPlanType extends AbstractType
                 'attr' => ['rows' => 3],
                 'help' => 'bc_plans.help.review_notes',
             ])
+            // C-06: JsonStructuredType applies JsonArrayTransformer automatically
+            // so invalid JSON surfaces as TransformationFailedException.
+            ->add('responseTeamMembers', JsonStructuredType::class, [
+                'label' => 'bc_plans.field.response_team_members',
+                'required' => false,
+                'attr' => [
+                    'rows' => 6,
+                    'placeholder' => 'bc_plans.placeholder.response_team_members',
+                ],
+                'help' => 'bc_plans.help.response_team_members_json',
+            ])
+            ->add('requiredResources', JsonStructuredType::class, [
+                'label' => 'bc_plans.field.required_resources',
+                'required' => false,
+                'attr' => ['rows' => 4],
+                'help' => 'bc_plans.help.required_resources_json',
+            ])
+            ->add('escalationLevels', JsonStructuredType::class, [
+                'label' => 'bc_plans.field.escalation_levels',
+                'required' => false,
+                'attr' => ['rows' => 5],
+                'help' => 'bc_plans.help.escalation_levels_json',
+            ])
+            // Junior-ISB-Audit-2026-05-22 C2-06: 3-team-worlds consolidation —
+            // optional reusable verlinkung for cross-plan crisis teams.
+            // Per-plan team-roster lives in `responseTeamMembers` (canonical).
+            ->add('crisisTeams', EntityType::class, [
+                'class' => CrisisTeam::class,
+                'choice_label' => 'teamName',
+                'multiple' => true,
+                'expanded' => false,
+                'required' => false,
+                'label' => 'bc_plans.field.crisis_teams_reusable',
+                'help' => 'bc_plans.help.crisis_teams_reusable',
+                'attr' => [
+                    'data-controller' => 'tom-select',
+                ],
+                'query_builder' => function (CrisisTeamRepository $r) {
+                    return $r->createQueryBuilder('ct')
+                        ->where('ct.tenant = :tenant')
+                        ->setParameter('tenant', $this->tenantContext->getCurrentTenant())
+                        ->orderBy('ct.teamName', 'ASC');
+                },
+            ])
         ;
+
+        // S4 P-1 Wave-2 — Plan-Owner compound slot. Replaces the inline
+        // 4-field block (planOwnerUser + planOwnerPerson +
+        // planOwnerDeputyPersons + planOwner legacy text).
+        // Legacy free-text `planOwner` is preserved as read-only Migration-Hint
+        // (rendered only when populated — see _fa_owner_picker macro).
+        $this->addOwnerPicker($builder, [
+            'field_prefix'       => 'planOwner',
+            'user_field'         => 'planOwnerUser',
+            'person_field'       => 'planOwnerPerson',
+            'deputies_field'     => 'planOwnerDeputyPersons',
+            'legacy_field'       => 'planOwner',
+            'label_user'         => 'bc_plans.field.plan_owner',
+            'label_person'       => 'bc_plans.field.plan_owner_person',
+            'label_deputies'     => 'bc_plans.field.plan_owner_deputies',
+            'label_legacy'       => 'bc_plans.field.plan_owner_legacy',
+            'placeholder_user'   => 'bc_plans.placeholder.plan_owner_user',
+            'placeholder_person' => 'bc_plans.placeholder.plan_owner_person',
+            'help_user'          => 'bc_plans.help.plan_owner_user',
+            'help_person'        => 'bc_plans.help.plan_owner_person',
+            'help_deputies'      => 'bc_plans.help.plan_owner_deputies',
+            'with_deputies'      => true,
+            'with_legacy'        => true,
+        ]);
+
+        // JsonArrayTransformer now applied automatically by JsonStructuredType.
     }
 
     public function configureOptions(OptionsResolver $resolver): void
@@ -217,6 +308,7 @@ class BusinessContinuityPlanType extends AbstractType
             'empty_data' => 'new',
             'constraints' => [
                 new Callback([$this, 'validatePlanOwnerSlot']),
+                new Callback([$this, 'validateTeamSlot']),
             ],
         ]);
     }
@@ -232,4 +324,32 @@ class BusinessContinuityPlanType extends AbstractType
                 ->addViolation();
         }
     }
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 C2-06: Cross-field validator — at least ONE of
+     * (responseTeamMembers non-empty) OR (crisisTeams.count >= 1) is required for
+     * a `published` plan. ISO 22301 Cl. 8.4.2 — a BC plan without an identified
+     * response team is non-conformant.
+     */
+    public function validateTeamSlot(?BusinessContinuityPlan $entity, ExecutionContextInterface $context): void
+    {
+        if ($entity === null) {
+            return;
+        }
+        // Only enforce on plans that have moved past draft (published or active
+        // require an identified team). Drafts may still be in the team-design
+        // phase.
+        if (!in_array($entity->getStatus(), ['active', 'under_review', 'published'], true)) {
+            return;
+        }
+        $hasResponseTeam = is_array($entity->getResponseTeamMembers())
+            && count($entity->getResponseTeamMembers()) > 0;
+        $hasCrisisTeams = $entity->getCrisisTeams()->count() >= 1;
+        if (!$hasResponseTeam && !$hasCrisisTeams) {
+            $context->buildViolation('bc_plan.validation.team_required')
+                ->atPath('responseTeamMembers')
+                ->addViolation();
+        }
+    }
+
 }

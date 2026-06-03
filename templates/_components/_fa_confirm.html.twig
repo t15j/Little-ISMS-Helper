@@ -1,0 +1,60 @@
+{#
+ # FairyAurora v4.0 — fa-confirm BC-delegator
+ #
+ # As of 2026-05-21, the canonical modal library lives at
+ # `_components/_fa_modal.html.twig` (`_fa_modal.confirm()`). This file
+ # remains as a backward-compatible shim that translates the legacy
+ # `_fa_confirm.render(props)` signature onto `_fa_modal.confirm(props)`.
+ #
+ # New code MUST import `_fa_modal` directly:
+ #   {% import '_components/_fa_modal.html.twig' as _fa_modal %}
+ #   {{ _fa_modal.confirm({...}) }}
+ #
+ # Legacy callers continue to work; this shim maps:
+ #   tone: 'warn'    → 'warning'
+ #   tone: 'nuclear' → 'danger' + minimum cooldownSeconds 5
+ #   submitLabel     → confirmLabel
+ #   confirmPhrase   → typeToConfirm
+ #
+ # ┌─ Original Usage (still supported via this shim) ────────────────────────┐
+ # │   {% import '_components/_fa_confirm.html.twig' as _fa_confirm %}       │
+ # │   {{ _fa_confirm.render({                                                │
+ # │       tone: 'danger', title: '…',                                        │
+ # │       confirmPhrase: '…', submitLabel: '…', cooldownSeconds: 5,          │
+ # │       formAction: '…', formCsrfToken: '…',                               │
+ # │   }) }}                                                                  │
+ # └──────────────────────────────────────────────────────────────────────────┘
+ #}
+
+{% macro render(props = {}) %}
+    {% import '_components/_fa_modal.html.twig' as _fa_modal %}
+
+    {%- set legacyTone = props.tone ?? 'warn' -%}
+    {%- set tone =
+        legacyTone == 'warn'    ? 'warning' :
+        legacyTone == 'nuclear' ? 'danger'  :
+        legacyTone -%}
+
+    {%- set cooldown = props.cooldownSeconds ?? 0 -%}
+    {%- if legacyTone == 'nuclear' and cooldown < 5 -%}
+        {%- set cooldown = 5 -%}
+    {%- endif -%}
+
+    {{ _fa_modal.confirm({
+        id:              props.id ?? null,
+        title:           props.title ?? '',
+        sub:             props.sub ?? null,
+        tone:            tone,
+        icon:            props.icon ?? null,
+        confirmLabel:    props.submitLabel ?? 'Bestätigen',
+        cancelLabel:     props.cancelLabel ?? 'Abbrechen',
+        submitIcon:      props.submitIcon ?? null,
+        typeToConfirm:   props.confirmPhrase ?? null,
+        confirmHint:     props.confirmHint ?? null,
+        cooldownSeconds: cooldown,
+        formAction:      props.formAction ?? null,
+        formCsrfToken:   props.formCsrfToken ?? null,
+        diff:            props.diff ?? [],
+        message:         props.message ?? null,
+    }) }}
+{% endmacro %}

@@ -1,10 +1,7 @@
 {% extends 'admin/layout.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
-
-{% block admin_title %}
-    <i class="fa-icon fa-icon--nav-stars fairy-icon-sparkle" aria-hidden="true"></i>
-    {{ ('guided_tour.' ~ tour_id ~ '.meta.label')|trans({}, 'guided_tour') }}
-{% endblock %}
+{% import '_components/_status_pill.html.twig' as pill %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block breadcrumb_items %}
     <li class="breadcrumb-item"><a href="{{ path('admin_tour_content_index') }}">{{ 'admin.tour_content.title'|trans({}, 'admin') }}</a></li>
@@ -12,6 +9,11 @@
 {% endblock %}
 
 {% block admin_content %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'ui-stars', label: 'admin.tour_content.title'|trans({}, 'admin') },
+        title: ('guided_tour.' ~ tour_id ~ '.meta.label')|trans({}, 'guided_tour'),
+        subtitle: tour_id,
+    }) }}
 <div class="container-fluid">
     <p class="text-muted mb-3">
         {{ 'admin.tour_content.edit_description'|trans({}, 'admin') }}
@@ -21,7 +23,13 @@
         {{ _fa_alert.render({ variant: 'info', class: 'small', body: 'admin.tour_content.scope_tenant_hint'|trans({'%tenant%': scope_tenant.name}, 'admin') }) }}
     {% endif %}
 
-    <form method="post" action="{{ path('admin_tour_content_save', {tourId: tour_id}) }}">
+    {# C-02 fix: the save-form previously wrapped the reset-form (nested <form>
+       is invalid HTML and breaks button targeting). Bind the save submit button
+       to this form via the HTML5 `form` attribute and keep the reset form as a
+       sibling outside the action-bar wrapper. #}
+    <form id="tour_content_save_form"
+          method="post"
+          action="{{ path('admin_tour_content_save', {tourId: tour_id}) }}">
         <input type="hidden" name="_token" value="{{ csrf_token('admin_tour_content_' ~ tour_id) }}">
 
         {% if can_set_global %}
@@ -56,7 +64,7 @@
 
             <div class="row g-2 mb-3 pb-3 {% if not loop.last and rows[loop.index] is defined and rows[loop.index].step_id == row.step_id %}border-bottom{% endif %}">
                 <div class="col-lg-1 text-center">
-                    <span class="badge text-bg-secondary">{{ row.locale|upper }}</span>
+                    {{ pill.render(row.locale|upper, 'neutral', {size: 'sm'}) }}
                 </div>
                 <div class="col-lg-5">
                     <label for="title-{{ row.step_id }}-{{ row.locale }}" class="form-label small fw-semibold">
@@ -65,7 +73,7 @@
                     <input type="text"
                            id="title-{{ row.step_id }}-{{ row.locale }}"
                            name="title[{{ row.step_id }}|{{ row.locale }}]"
-                           class="form-control form-control-sm"
+                           class="form-control form-control-sm fa-cyber-input__field"
                            placeholder="{{ row.default_title }}"
                            value="{{ row.override_title }}">
                     <div class="small text-muted mt-1">
@@ -79,7 +87,7 @@
                     </label>
                     <textarea id="body-{{ row.step_id }}-{{ row.locale }}"
                               name="body[{{ row.step_id }}|{{ row.locale }}]"
-                              class="form-control form-control-sm"
+                              class="form-control form-control-sm fa-cyber-input__field"
                               rows="3"
                               placeholder="{{ row.default_body }}">{{ row.override_body }}</textarea>
                     {% if row.updated_at %}
@@ -93,29 +101,36 @@
 
             {% if loop.last %}</div></div>{% endif %}
         {% endfor %}
-
-        <div class="d-flex justify-content-between mt-4">
-            <form method="post"
-                  action="{{ path('admin_tour_content_reset', {tourId: tour_id}) }}"
-                  class="d-inline"
-                  onsubmit="return confirm('{{ 'admin.tour_content.confirm_reset'|trans({}, 'admin')|e('js') }}');">
-                <input type="hidden" name="_token" value="{{ csrf_token('admin_tour_content_reset_' ~ tour_id) }}">
-                <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm">
-                    <i class="fa-icon fa-icon--ui-refresh" aria-hidden="true"></i>
-                    {{ 'admin.tour_content.reset_tour'|trans({}, 'admin') }}
-                </button>
-            </form>
-
-            <div class="d-flex gap-2">
-                <a href="{{ path('admin_tour_content_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                    {{ 'common.cancel'|trans({}, 'messages') }}
-                </a>
-                <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary">
-                    <i class="fa-icon fa-icon--ui-save" aria-hidden="true"></i>
-                    {{ 'admin.tour_content.save'|trans({}, 'admin') }}
-                </button>
-            </div>
-        </div>
     </form>
+
+    {# Reset form lives outside the save form so they remain siblings (no nested
+       <form>). Save submit-button below is bound via `form="tour_content_save_form"`. #}
+    <div class="d-flex justify-content-between mt-4">
+        <form method="post"
+              action="{{ path('admin_tour_content_reset', {tourId: tour_id}) }}"
+              class="d-inline"
+              data-controller="ui-actions"
+              data-action="submit->ui-actions#confirm"
+              data-ui-actions-message-param="{{ 'admin.tour_content.confirm_reset'|trans({}, 'admin') }}"
+              data-ui-actions-tone-param="danger">
+            <input type="hidden" name="_token" value="{{ csrf_token('admin_tour_content_reset_' ~ tour_id) }}">
+            <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm">
+                <i class="fa-icon fa-icon--ui-refresh" aria-hidden="true"></i>
+                {{ 'admin.tour_content.reset_tour'|trans({}, 'admin') }}
+            </button>
+        </form>
+
+        <div class="d-flex gap-2">
+            <a href="{{ path('admin_tour_content_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
+                {{ 'common.cancel'|trans({}, 'messages') }}
+            </a>
+            <button type="submit"
+                    form="tour_content_save_form"
+                    class="fa-cyber-btn fa-cyber-btn--primary">
+                <i class="fa-icon fa-icon--ui-save" aria-hidden="true"></i>
+                {{ 'admin.tour_content.save'|trans({}, 'admin') }}
+            </button>
+        </div>
+    </div>
 </div>
 {% endblock %}

@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% trans_default_domain 'privacy' %}
 {% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
@@ -9,23 +10,83 @@
     {# Breadcrumb #}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'processing_activity.breadcrumb.privacy'|trans({}, 'privacy'), icon: 'bi-shield-check' },
+            { label: 'processing_activity.breadcrumb.privacy'|trans({}, 'privacy'), icon: 'shield-check' },
             { label: 'processing_activity.breadcrumb.vvt'|trans({}, 'privacy')}
         ]
     } %}
 
-    {# TODO: export actions (PDF/CSV) use plain href links; data-turbo-disabled is not available in fa-cyber-btn #}
+    {# fa-page-header `attrs:` on each action forwards arbitrary HTML attributes.
+       Direct-download links MUST opt out of Turbo so the browser keeps the
+       binary response stream (otherwise Turbo intercepts and yields a blank page).
+       CSV export is async (Phase 3 async-jobs) — opens dispatch modal that POSTs
+       to job dispatch route, so Turbo handling there is on the inner <form>. #}
     {{ _fa_page_header.render({
-        badge: { icon: 'file-earmark-text', label: 'processing_activity.breadcrumb.vvt'|trans({}, 'privacy') },
+        badge: { icon: 'nav-file-earmark-text', label: 'processing_activity.breadcrumb.vvt'|trans({}, 'privacy') },
         title: 'processing_activity.title'|trans({}, 'privacy'),
         subtitle: 'processing_activity.subtitle'|trans({}, 'privacy'),
         actions: [
-            { label: 'processing_activity.button.dashboard'|trans({}, 'privacy'), variant: 'ghost', icon: 'speedometer2', href: path('app_processing_activity_dashboard') },
-            { label: 'processing_activity.button.export_pdf'|trans({}, 'privacy'), variant: 'ghost', icon: 'file-earmark-pdf', href: path('app_processing_activity_export_pdf') },
-            { label: 'processing_activity.button.export_csv'|trans({}, 'privacy'), variant: 'ghost', icon: 'filetype-csv', href: path('app_processing_activity_export_csv') },
-            { label: 'processing_activity.button.new'|trans({}, 'privacy'), variant: 'primary', icon: 'plus-lg', href: path('app_processing_activity_new') }
+            { label: 'processing_activity.button.dashboard'|trans({}, 'privacy'), variant: 'ghost', icon: 'nav-dashboard', href: path('app_processing_activity_dashboard') },
+            { label: 'processing_activity.button.export_pdf'|trans({}, 'privacy'), variant: 'ghost', icon: 'nav-file-pdf', href: path('app_processing_activity_export_pdf'), attrs: { 'data-turbo': 'false' } },
+            { label: 'processing_activity.button.export_csv'|trans({}, 'privacy'), variant: 'ghost', icon: 'filetype-csv', href: '#', attrs: { 'data-bs-toggle': 'modal', 'data-bs-target': '#vvtExportModal', 'data-turbo': 'false' } },
+            { label: 'processing_activity.button.new'|trans({}, 'privacy'), variant: 'primary', icon: 'plus', href: path('app_processing_activity_new') }
         ]
     }) }}
+
+    {# Async VVT-Export dispatch modal — POSTs to /processing-activity/export/csv/dispatch #}
+    <div class="fa-modal fa-modal--confirm fa-modal--neutral" id="vvtExportModal"
+     data-controller="fa-modal" data-fa-modal-mode-value="confirm" data-fa-modal-tone-value="neutral"
+     role="dialog" aria-modal="true" aria-labelledby="vvtExportModalLabel" aria-hidden="true">
+    <div class="fa-modal__backdrop" data-fa-modal-target="backdrop" data-action="click->fa-modal#backdropClick" aria-hidden="true"></div>
+    <div class="fa-modal__container" data-fa-modal-target="dialog"><header class="fa-modal__header"><span class="fa-modal__icon" aria-hidden="true"><i class="fa-icon fa-icon--nav-download"></i></span><div class="fa-modal__heading"><h2 class="fa-modal__title" id="vvtExportModalLabel">{{ 'processing_activity.export.modal.title'|trans({}, 'privacy') }}</h2></div><button type="button" class="fa-modal__close" data-action="fa-modal#cancel" aria-label="Close"><i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i></button></header>
+                <div class="fa-modal__body">
+                    <p class="mb-0">{{ 'processing_activity.export.modal.body'|trans({}, 'privacy') }}</p>
+                </div>
+                <footer class="fa-modal__footer">
+                    <button type="button" class="fa-cyber-btn fa-cyber-btn--ghost" data-action="fa-modal#cancel">{{ 'common.cancel'|trans({}, 'messages') }}</button>
+                    <form method="post" action="{{ path('app_processing_activity_export_csv_dispatch') }}" data-turbo="false" class="d-inline" data-fa-modal-target="form">
+                        <input type="hidden" name="_token" value="{{ csrf_token('processing_activity_export_csv_dispatch') }}">
+                        <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary">
+                            <i class="fa-icon fa-icon--nav-download" aria-hidden="true"></i>
+                            {{ 'processing_activity.export.modal.start'|trans({}, 'privacy') }}
+                        </button>
+                    </form></div>
+</div>
+    </div>
+
+    {# F25: BfDI-Export button group — only visible for ROLE_DPO and when privacy module is active #}
+    {% if is_module_active('privacy') and is_granted('ROLE_DPO') %}
+    <div class="d-flex gap-2 mt-3 flex-wrap">
+        <span class="text-muted small align-self-center me-1 fw-semibold">BfDI-Export:</span>
+        <a href="{{ path('app_vvt_export_xlsx') }}"
+           class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost"
+           title="{{ 'eu_authorities.vvt.action.export_xlsx'|trans({}, 'eu_authorities') }}"
+           data-turbo="false">
+            <i class="fa-icon fa-icon--nav-file-check me-1" aria-hidden="true"></i>
+            {{ 'eu_authorities.vvt.action.export_xlsx'|trans({}, 'eu_authorities') }}
+        </a>
+        <a href="{{ path('app_vvt_export_csv') }}"
+           class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost"
+           title="{{ 'eu_authorities.vvt.action.export_csv'|trans({}, 'eu_authorities') }}"
+           data-turbo="false">
+            <i class="fa-icon fa-icon--util-filetype-csv me-1" aria-hidden="true"></i>
+            {{ 'eu_authorities.vvt.action.export_csv'|trans({}, 'eu_authorities') }}
+        </a>
+        <a href="{{ path('app_vvt_export_pdf') }}"
+           class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--danger"
+           title="{{ 'eu_authorities.vvt.action.export_pdf'|trans({}, 'eu_authorities') }}"
+           data-turbo="false">
+            <i class="fa-icon fa-icon--nav-file-pdf me-1" aria-hidden="true"></i>
+            {{ 'eu_authorities.vvt.action.export_pdf'|trans({}, 'eu_authorities') }}
+        </a>
+    </div>
+    {% endif %}
+{% set _global_hints = alva_hints('processing_activity_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 
     <main class="fa-aurora-surface">
 
@@ -92,7 +153,7 @@
         {% block filters %}
             <div class="col-md-4">
                 <label for="filter-status" class="form-label">{{ 'processing_activity.filter.title'|trans({}, 'privacy') }}</label>
-                <select class="form-select" id="filter-status" name="filter">
+                <select class="form-select fa-cyber-input__field" id="filter-status" name="filter">
                     <option value="">{{ 'processing_activity.filter.all'|trans({}, 'privacy') }} ({{ statistics.total }})</option>
                     <option value="active" {{ current_filter == 'active' ? 'selected' : '' }}>{{ 'processing_activity.filter.active'|trans({}, 'privacy') }} ({{ statistics.active }})</option>
                     <option value="incomplete" {{ current_filter == 'incomplete' ? 'selected' : '' }}>{{ 'processing_activity.filter.incomplete'|trans({}, 'privacy') }}</option>
@@ -106,9 +167,10 @@
 
     {# Processing Activities Table #}
     {% embed '_components/_card.html.twig' with {noPadding: true} %}
+        {% block card_attrs %}data-controller="bulk-actions" data-bulk-actions-endpoint-value="/{{ app.request.locale }}/processing-activity"{% endblock %}
         {% block card_header %}
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h2 class="mb-0 h5"><i class="bi bi-table" aria-hidden="true"></i> {{ 'processing_activity.table.title'|trans({}, 'privacy')}}</h2>
+                <h2 class="mb-0 h5"><i class="fa-icon fa-icon--nav-grid" aria-hidden="true"></i> {{ 'processing_activity.table.title'|trans({}, 'privacy')}}</h2>
                 {% include '_components/_badge.html.twig' with { variant: 'secondary', content: processing_activities|length ~ ' ' ~ 'processing_activity.table.items'|trans({}, 'privacy') } %}
             </div>
         {% endblock %}
@@ -119,6 +181,13 @@
                 } %}
                     {% block table_head %}
                         <tr>
+                            <th scope="col" class="bulk-select-column">
+                                <input type="checkbox"
+                                       class="form-check-input"
+                                       data-action="bulk-actions#selectAll"
+                                       data-bulk-actions-target="selectAllCheckbox"
+                                       aria-label="{{ 'bulk_actions.select_all'|trans({}, 'messages') }}">
+                            </th>
                             <th scope="col">{{ 'processing_activity.table.name'|trans({}, 'privacy') }}</th>
                             <th scope="col">{{ 'processing_activity.table.legal_basis'|trans({}, 'privacy') }}</th>
                             <th scope="col">{{ 'processing_activity.table.data_subjects'|trans({}, 'privacy') }}</th>
@@ -129,8 +198,18 @@
                         </tr>
                     {% endblock %}
                     {% block table_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
+    {% import '_components/_fa_status_chip.html.twig' as _fa_status_chip %}
                         {% for pa in processing_activities %}
                             <tr>
+                                <td class="bulk-select-column">
+                                    <input type="checkbox"
+                                           class="form-check-input"
+                                           data-bulk-actions-target="item"
+                                           data-action="bulk-actions#selectItem"
+                                           value="{{ pa.id }}"
+                                           aria-label="{{ 'common.select'|trans({}, 'messages') }} {{ pa.name }}">
+                                </td>
                                 <td>
                                     <strong>{{ pa.name }}</strong><br>
                                     <small class="text-muted">
@@ -168,26 +247,16 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% set status_class = {
-                                        'draft': 'secondary',
-                                        'active': 'success',
-                                        'archived': 'dark'
-                                    }[pa.status] %}
-                                    {% include '_components/_badge.html.twig' with { variant: status_class, content: ('processing_activity.status.' ~ pa.status)|trans({}, 'privacy') } %}
+                                    {# S3 P-4: canonical 5-stage lifecycle via LifecycleRegistry. #}
+                                    {{ _fa_status_chip.render({
+                                        entity_class: 'App\\Entity\\ProcessingActivity',
+                                        status_key: pa.status,
+                                        label: ('processing_activity.status.' ~ pa.status)|trans({}, 'privacy')
+                                    }) }}
                                 </td>
                                 <td>
-                                    <div class="progress progress-h-20">
-                                        {% set completeness = pa.completenessPercentage %}
-                                        {% set progress_class = completeness == 100 ? 'bg-success' : (completeness >= 70 ? 'bg-warning' : 'bg-danger') %}
-                                        <div class="progress-bar {{ progress_class }}"
-                                             role="progressbar"
-                                             style="width: {{ completeness }}%"
-                                             aria-valuenow="{{ completeness }}"
-                                             aria-valuemin="0"
-                                             aria-valuemax="100">
-                                            {{ completeness }}%
-                                        </div>
-                                    </div>
+                                    {% set completeness = pa.completenessPercentage %}
+                                    {{ _fa_progress.render({ value: completeness, tone: completeness == 100 ? 'success' : (completeness >= 70 ? 'warning' : 'danger'), showText: true }) }}
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm" role="group">
@@ -207,6 +276,11 @@
                         {% endfor %}
                     {% endblock %}
                 {% endembed %}
+
+                {# Bulk Action Bar #}
+                {% include '_components/_bulk_action_bar.html.twig' with {
+                    actions: ['export', 'delete', 'status_change']
+                } %}
             {% else %}
                 {% if current_filter is defined and current_filter != 'all' and current_filter is not empty %}
                     {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', class: 'm-4' } } %}
@@ -217,6 +291,7 @@
                     {% endembed %}
                 {% else %}
                     {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
+                    {% set _system_templates = system_templates('App\\Entity\\ProcessingActivity') %}
                     <div class="m-4">
                     {{ _fa_empty_state.render({
                         mood: 'thinking',
@@ -225,9 +300,30 @@
                         norm_ref: 'DSGVO Art. 30 · ISO 27701',
                         help_link: path('app_help_glossary') ~ '#glossary-processing-activity',
                         actions: [
-                            { label: 'processing_activity.empty.create_first'|trans({}, 'privacy'), variant: 'primary', icon: 'plus-circle', href: path('app_processing_activity_new') }
+                            { label: 'processing_activity.empty.create_first'|trans({}, 'privacy'), variant: 'primary', icon: 'plus', href: path('app_processing_activity_new') }
                         ]
                     }) }}
+                    {# Foundation P-14 — Standard-VVT-Set (GDPR Art. 30 starters) #}
+                    {% if _system_templates|length > 0 %}
+                        <div class="text-center mt-3">
+                            <button type="button" class="btn btn-outline-primary"
+                                    data-controller="fa-modal-dispatcher"
+                                    data-action="click->fa-modal-dispatcher#open"
+                                    data-fa-modal-id="systemTemplateModalVvt">
+                                <i class="fa-icon fa-icon--nav-collection" aria-hidden="true"></i>
+                                {{ 'system_templates.cta.button'|trans({}, 'system_templates') }}
+                            </button>
+                            <div class="form-text small">
+                                {{ 'system_templates.cta.hint'|trans({}, 'system_templates') }}
+                            </div>
+                        </div>
+                        {% include '_components/_system_template_selector.html.twig' with {
+                            templates: _system_templates,
+                            entity_class: 'App\\Entity\\ProcessingActivity',
+                            redirect_to: 'app_processing_activity_index',
+                            modal_id: 'systemTemplateModalVvt'
+                        } %}
+                    {% endif %}
                     </div>
                 {% endif %}
             {% endif %}

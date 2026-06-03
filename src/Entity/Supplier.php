@@ -17,6 +17,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\Metadata\Delete;
+use App\Enum\SupplierStatus;
 use App\Repository\SupplierRepository;
 use App\State\TenantAwareStateProcessor;
 use App\Entity\Document;
@@ -83,7 +84,7 @@ class Supplier
     private ?Tenant $tenant = null;
 
     #[ORM\Column(length: 255)]
-    #[Assert\NotBlank(message: 'Supplier name is required')]
+    #[Assert\NotBlank(message: 'supplier.validation.name_required')]
     #[Groups(['supplier:read', 'supplier:write'])]
     private ?string $name = null;
 
@@ -96,7 +97,7 @@ class Supplier
     private ?string $contactPerson = null;
 
     #[ORM\Column(length: 255, nullable: true)]
-    #[Assert\Email(message: 'Invalid email address')]
+    #[Assert\Email(message: 'supplier.validation.email_invalid')]
     #[Groups(['supplier:read', 'supplier:write'])]
     private ?string $email = null;
 
@@ -112,7 +113,7 @@ class Supplier
      * Service provided by supplier
      */
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Service description is required')]
+    #[Assert\NotBlank(message: 'supplier.validation.service_description_required')]
     #[Groups(['supplier:read', 'supplier:write'])]
     private ?string $serviceProvided = null;
 
@@ -135,6 +136,14 @@ class Supplier
     #[Assert\Choice(choices: ['active', 'inactive', 'evaluation', 'terminated'])]
     #[Groups(['supplier:read', 'supplier:write'])]
     private ?string $status = 'evaluation';
+
+    /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on supplier_lifecycle.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /**
      * Security assessment score (0-100)
@@ -193,6 +202,15 @@ class Supplier
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['supplier:read', 'supplier:write'])]
     private ?string $certifications = null;
+
+    /**
+     * DORA Art. 28 — Register of Information scope flag.
+     * When true, this supplier is included in the DORA RoI XBRL export
+     * as an ICT third-party service provider (Art. 28 ICT-Drittdienstleister).
+     */
+    #[ORM\Column(type: Types::BOOLEAN)]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private bool $isDoraRelevant = false;
 
     /**
      * Data processing agreement (GDPR)
@@ -276,7 +294,7 @@ class Supplier
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -342,7 +360,7 @@ class Supplier
         return $this->serviceProvided;
     }
 
-    public function setServiceProvided(string $serviceProvided): static
+    public function setServiceProvided(?string $serviceProvided): static
     {
         $this->serviceProvided = $serviceProvided;
         return $this;
@@ -353,7 +371,7 @@ class Supplier
         return $this->criticality;
     }
 
-    public function setCriticality(string $criticality): static
+    public function setCriticality(?string $criticality): static
     {
         $this->criticality = $criticality;
         return $this;
@@ -364,10 +382,18 @@ class Supplier
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(SupplierStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?SupplierStatus
+    {
+        return $this->status === null ? null : SupplierStatus::tryFrom($this->status);
     }
 
     /**
@@ -514,6 +540,17 @@ class Supplier
         return $this;
     }
 
+    public function isDoraRelevant(): bool
+    {
+        return $this->isDoraRelevant;
+    }
+
+    public function setIsDoraRelevant(bool $isDoraRelevant): static
+    {
+        $this->isDoraRelevant = $isDoraRelevant;
+        return $this;
+    }
+
     public function isHasDPA(): bool
     {
         return $this->hasDPA;
@@ -607,7 +644,7 @@ class Supplier
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -830,6 +867,80 @@ class Supplier
     #[ORM\Column(length: 2, nullable: true)]
     private ?string $countryOfHeadOffice = null;  // ISO-3166 alpha-2
 
+    // ── LkSG (Lieferkettensorgfaltspflichtengesetz) ──────────────────────────
+    // Mandatory due-diligence tracking for human-rights and environmental
+    // risks across own business and direct + indirect suppliers. Pflicht ab
+    // 1000 MA seit 2024; Ausweitung auf 250+ MA absehbar.
+
+    /** Aggregierter LkSG-Risiko-Score 0-100 (höher = mehr Risiko). */
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    #[Assert\Range(min: 0, max: 100, notInRangeMessage: 'supplier.validation.lksg_human_rights_risk_score_range')]
+    private ?int $lksgHumanRightsRiskScore = null;
+
+    /** Umweltbezogener Risiko-Score 0-100. */
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    #[Assert\Range(min: 0, max: 100, notInRangeMessage: 'supplier.validation.lksg_environmental_risk_score_range')]
+    private ?int $lksgEnvironmentalRiskScore = null;
+
+    /** Klassifikation der LkSG-Gesamtrisikolage. */
+    #[ORM\Column(length: 20, nullable: true)]
+    #[Assert\Choice(
+        choices: [null, 'low', 'medium', 'high', 'critical'],
+        message: 'supplier.validation.lksg_risk_category_invalid',
+    )]
+    private ?string $lksgRiskCategory = null;
+
+    /** Datum der letzten LkSG-Risikoanalyse. */
+    #[ORM\Column(type: Types::DATE_MUTABLE, nullable: true)]
+    private ?\DateTimeInterface $lksgRiskAnalysisDate = null;
+
+    /** Beschwerdekanal-Beschreibung oder URL. */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $lksgComplaintMechanism = null;
+
+    /** Präventions- und Abhilfemaßnahmen (Freitext, ISO 27001-Belege via Documents-Collection). */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $lksgPreventionMeasures = null;
+
+    /** Berichtspflichtig nach LkSG (Tenant-Pflicht ≥1000 MA, Lieferant innerhalb der Sorgfaltspflicht). */
+    #[ORM\Column(type: Types::BOOLEAN)]
+    private bool $lksgReportingObligation = false;
+
+    public function getLksgHumanRightsRiskScore(): ?int { return $this->lksgHumanRightsRiskScore; }
+    public function setLksgHumanRightsRiskScore(?int $v): self { $this->lksgHumanRightsRiskScore = $v; return $this; }
+
+    public function getLksgEnvironmentalRiskScore(): ?int { return $this->lksgEnvironmentalRiskScore; }
+    public function setLksgEnvironmentalRiskScore(?int $v): self { $this->lksgEnvironmentalRiskScore = $v; return $this; }
+
+    public function getLksgRiskCategory(): ?string { return $this->lksgRiskCategory; }
+    public function setLksgRiskCategory(?string $v): self { $this->lksgRiskCategory = $v; return $this; }
+
+    public function getLksgRiskAnalysisDate(): ?\DateTimeInterface { return $this->lksgRiskAnalysisDate; }
+    public function setLksgRiskAnalysisDate(?\DateTimeInterface $v): self { $this->lksgRiskAnalysisDate = $v; return $this; }
+
+    public function getLksgComplaintMechanism(): ?string { return $this->lksgComplaintMechanism; }
+    public function setLksgComplaintMechanism(?string $v): self { $this->lksgComplaintMechanism = $v; return $this; }
+
+    public function getLksgPreventionMeasures(): ?string { return $this->lksgPreventionMeasures; }
+    public function setLksgPreventionMeasures(?string $v): self { $this->lksgPreventionMeasures = $v; return $this; }
+
+    public function isLksgReportingObligation(): bool { return $this->lksgReportingObligation; }
+    public function setLksgReportingObligation(bool $v): self { $this->lksgReportingObligation = $v; return $this; }
+
+    /**
+     * Aggregated LkSG severity. Highest of the two component scores when both
+     * exist, otherwise the available one. null when neither score is set.
+     */
+    public function getLksgAggregateRiskScore(): ?int
+    {
+        $scores = array_filter(
+            [$this->lksgHumanRightsRiskScore, $this->lksgEnvironmentalRiskScore],
+            static fn(?int $score): bool => $score !== null,
+        );
+
+        return $scores === [] ? null : max($scores);
+    }
+
     public function getNaceCode(): ?string { return $this->naceCode; }
     public function setNaceCode(?string $v): self { $this->naceCode = $v; return $this; }
 
@@ -933,5 +1044,194 @@ class Supplier
     {
         $this->bcmAssessmentResult = $bcmAssessmentResult;
         return $this;
+    }
+
+    // ── Sprint 7-B: MaRisk outsourcing fields (gated 'marisk' module) ─────────
+
+    /**
+     * Outsourcing classification (MaRisk AT 9.1).
+     * Values: substantial | non_substantial
+     * Note: separate from DORA's "critical or important" classification.
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private ?string $outsourcingClassification = null;
+
+    /**
+     * Whether the initial due diligence was completed before outsourcing (MaRisk AT 9.2).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private bool $outsourcingDueDiligenceCompleted = false;
+
+    /**
+     * Date on which due diligence was completed.
+     */
+    #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private ?\DateTimeImmutable $outsourcingDueDiligenceDate = null;
+
+    /**
+     * Exit strategy for the outsourcing relationship (MaRisk AT 9.6).
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private ?string $outsourcingExitStrategy = null;
+
+    /**
+     * Whether BaFin notification is required (MaRisk AT 9.7 + § 24 Abs. 1 Nr. 12 KWG).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private bool $bafinNotificationRequired = false;
+
+    /**
+     * Date when BaFin was notified.
+     */
+    #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private ?\DateTimeImmutable $bafinNotificationDate = null;
+
+    /**
+     * Impact on risk-bearing capacity (MaRisk AT 4.1).
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private ?string $riskBearingCapacityImpact = null;
+
+    /**
+     * Whether the management board has explicitly accepted this outsourcing risk (MaRisk AT 4.3).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private bool $boardLevelRiskAcceptance = false;
+
+    /**
+     * Whether the compliance function was involved in outsourcing assessment (MaRisk AT 4.4.2).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private bool $complianceFunctionInvolvement = false;
+
+    /**
+     * Whether the internal audit function was involved (MaRisk AT 4.4.3).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['supplier:read', 'supplier:write'])]
+    private bool $internalAuditFunctionInvolvement = false;
+
+    public function getOutsourcingClassification(): ?string
+    {
+        return $this->outsourcingClassification;
+    }
+
+    public function setOutsourcingClassification(?string $outsourcingClassification): static
+    {
+        $this->outsourcingClassification = $outsourcingClassification;
+        return $this;
+    }
+
+    public function isOutsourcingDueDiligenceCompleted(): bool
+    {
+        return $this->outsourcingDueDiligenceCompleted;
+    }
+
+    public function setOutsourcingDueDiligenceCompleted(bool $outsourcingDueDiligenceCompleted): static
+    {
+        $this->outsourcingDueDiligenceCompleted = $outsourcingDueDiligenceCompleted;
+        return $this;
+    }
+
+    public function getOutsourcingDueDiligenceDate(): ?\DateTimeImmutable
+    {
+        return $this->outsourcingDueDiligenceDate;
+    }
+
+    public function setOutsourcingDueDiligenceDate(?\DateTimeImmutable $outsourcingDueDiligenceDate): static
+    {
+        $this->outsourcingDueDiligenceDate = $outsourcingDueDiligenceDate;
+        return $this;
+    }
+
+    public function getOutsourcingExitStrategy(): ?string
+    {
+        return $this->outsourcingExitStrategy;
+    }
+
+    public function setOutsourcingExitStrategy(?string $outsourcingExitStrategy): static
+    {
+        $this->outsourcingExitStrategy = $outsourcingExitStrategy;
+        return $this;
+    }
+
+    public function isBafinNotificationRequired(): bool
+    {
+        return $this->bafinNotificationRequired;
+    }
+
+    public function setBafinNotificationRequired(bool $bafinNotificationRequired): static
+    {
+        $this->bafinNotificationRequired = $bafinNotificationRequired;
+        return $this;
+    }
+
+    public function getBafinNotificationDate(): ?\DateTimeImmutable
+    {
+        return $this->bafinNotificationDate;
+    }
+
+    public function setBafinNotificationDate(?\DateTimeImmutable $bafinNotificationDate): static
+    {
+        $this->bafinNotificationDate = $bafinNotificationDate;
+        return $this;
+    }
+
+    public function getRiskBearingCapacityImpact(): ?string
+    {
+        return $this->riskBearingCapacityImpact;
+    }
+
+    public function setRiskBearingCapacityImpact(?string $riskBearingCapacityImpact): static
+    {
+        $this->riskBearingCapacityImpact = $riskBearingCapacityImpact;
+        return $this;
+    }
+
+    public function isBoardLevelRiskAcceptance(): bool
+    {
+        return $this->boardLevelRiskAcceptance;
+    }
+
+    public function setBoardLevelRiskAcceptance(bool $boardLevelRiskAcceptance): static
+    {
+        $this->boardLevelRiskAcceptance = $boardLevelRiskAcceptance;
+        return $this;
+    }
+
+    public function isComplianceFunctionInvolvement(): bool
+    {
+        return $this->complianceFunctionInvolvement;
+    }
+
+    public function setComplianceFunctionInvolvement(bool $complianceFunctionInvolvement): static
+    {
+        $this->complianceFunctionInvolvement = $complianceFunctionInvolvement;
+        return $this;
+    }
+
+    public function isInternalAuditFunctionInvolvement(): bool
+    {
+        return $this->internalAuditFunctionInvolvement;
+    }
+
+    public function setInternalAuditFunctionInvolvement(bool $internalAuditFunctionInvolvement): static
+    {
+        $this->internalAuditFunctionInvolvement = $internalAuditFunctionInvolvement;
+        return $this;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\ISMSObjective;
+use App\Form\SectionMapInterface;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
@@ -15,15 +16,25 @@ use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints as Assert;
 
-class ISMSObjectiveType extends AbstractType
+final class ISMSObjectiveType extends AbstractType implements SectionMapInterface
 {
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview'      => ['title', 'description', 'category'],
+            'target_metric' => ['measurableIndicators', 'targetValue', 'currentValue', 'unit'],
+            'monitoring'    => ['measurementFrequency', 'measurementMethod'],
+            'responsibility'=> ['responsiblePerson', 'responsibleForMeasurement', 'targetDate'],
+            'audit_metadata'=> ['status', 'progressNotes'],
+        ];
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
             ->add('title', TextType::class, [
                 'label' => 'objective.field.title',
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'objective.placeholder.title'
                 ],
                 'constraints' => [
@@ -34,7 +45,6 @@ class ISMSObjectiveType extends AbstractType
             ->add('description', TextareaType::class, [
                 'label' => 'objective.field.description',
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                     'placeholder' => 'objective.placeholder.description'
                 ],
@@ -54,10 +64,7 @@ class ISMSObjectiveType extends AbstractType
                     'objective.category.awareness' => 'awareness',
                     'objective.category.continual_improvement' => 'continual_improvement',
                 ],
-                'attr' => [
-                    'class' => 'form-select'
-                ],
-                'constraints' => [
+                                'constraints' => [
                     new Assert\NotBlank(message: 'objective.validation.category_required')
                 ],
                 'choice_translation_domain' => 'objective',
@@ -66,7 +73,6 @@ class ISMSObjectiveType extends AbstractType
                 'label' => 'objective.field.measurable_indicators',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                     'placeholder' => 'objective.placeholder.measurable_indicators'
                 ]
@@ -75,7 +81,6 @@ class ISMSObjectiveType extends AbstractType
                 'label' => 'objective.field.target_value',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'objective.placeholder.target_value',
                     'step' => '0.01'
                 ],
@@ -86,7 +91,6 @@ class ISMSObjectiveType extends AbstractType
                 'label' => 'objective.field.current_value',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'objective.placeholder.current_value',
                     'step' => '0.01'
                 ],
@@ -107,15 +111,11 @@ class ISMSObjectiveType extends AbstractType
                     'objective.unit.points' => 'points',
                 ],
                 'placeholder' => 'objective.placeholder.unit',
-                'attr' => [
-                    'class' => 'form-select'
-                ],
-                'choice_translation_domain' => 'objective',
+                                'choice_translation_domain' => 'objective',
             ])
             ->add('responsiblePerson', TextType::class, [
                 'label' => 'objective.field.responsible_person',
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'objective.placeholder.responsible_person'
                 ],
                 'constraints' => [
@@ -123,19 +123,52 @@ class ISMSObjectiveType extends AbstractType
                     new Assert\Length(max: 100, maxMessage: 'objective.validation.name_max_length')
                 ]
             ])
+            ->add('responsibleForMeasurement', TextType::class, [
+                'label' => 'objective.field.responsible_for_measurement',
+                'required' => false,
+                'help' => 'objective.help.responsible_for_measurement',
+                                'constraints' => [
+                    new Assert\Length(max: 100, maxMessage: 'objective.validation.name_max_length')
+                ],
+            ])
+            ->add('measurementFrequency', ChoiceType::class, [
+                'label' => 'objective.field.measurement_frequency',
+                'required' => false,
+                'placeholder' => 'objective.placeholder.measurement_frequency',
+                'help' => 'objective.help.measurement_frequency',
+                'choices' => [
+                    'objective.frequency.daily' => 'daily',
+                    'objective.frequency.weekly' => 'weekly',
+                    'objective.frequency.monthly' => 'monthly',
+                    'objective.frequency.quarterly' => 'quarterly',
+                    'objective.frequency.biannually' => 'biannually',
+                    'objective.frequency.annually' => 'annually',
+                    'objective.frequency.on_event' => 'on_event',
+                ],
+            ])
+            ->add('measurementMethod', TextareaType::class, [
+                'label' => 'objective.field.measurement_method',
+                'required' => false,
+                'help' => 'objective.help.measurement_method',
+                'attr' => [
+                    'rows' => 3,
+                    'placeholder' => 'objective.placeholder.measurement_method',
+                ],
+            ])
             ->add('targetDate', DateType::class, [
                 'label' => 'objective.field.target_date',
                 'widget' => 'single_text',
-                'attr' => [
-                    'class' => 'form-control',
-                ],
-                'constraints' => [
+                                'constraints' => [
                     new Assert\NotBlank(message: 'objective.validation.target_date_required')
                 ],
                 'help' => 'objective.help.target_date'
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix) ──────────────
+            // Owned by `isms_objective_lifecycle`. Transitions via
+            // LifecycleService::transition() only.
             ->add('status', ChoiceType::class, [
                 'label' => 'objective.field.status',
+                'help' => 'objective.help.status_readonly',
                 'choices' => [
                     'objective.status.not_started' => 'not_started',
                     'objective.status.in_progress' => 'in_progress',
@@ -143,19 +176,17 @@ class ISMSObjectiveType extends AbstractType
                     'objective.status.delayed' => 'delayed',
                     'objective.status.cancelled' => 'cancelled',
                 ],
-                'attr' => [
-                    'class' => 'form-select'
-                ],
-                'constraints' => [
-                    new Assert\NotBlank(message: 'objective.validation.status_required')
-                ],
-                    'choice_translation_domain' => 'objective',
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
+                'choice_translation_domain' => 'objective',
             ])
             ->add('progressNotes', TextareaType::class, [
                 'label' => 'objective.field.progress_notes',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                     'placeholder' => 'objective.placeholder.progress_notes'
                 ]

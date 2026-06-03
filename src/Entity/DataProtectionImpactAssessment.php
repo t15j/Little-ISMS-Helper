@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use DateTimeInterface;
 use DateTimeImmutable;
+use App\Enum\DpiaStatus;
 use App\Repository\DataProtectionImpactAssessmentRepository;
 use App\Service\OwnerResolver;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -258,6 +259,47 @@ class DataProtectionImpactAssessment
     private ?string $residualRiskLevel = null;
 
     // ============================================================================
+    // Standard-Datenschutzmodell (SDM 3.1) — DSK / Datenschutzkonferenz
+    // ============================================================================
+    //
+    // Maps the seven Gewährleistungsziele onto the DPIA so the DSFA reflects
+    // SDM methodology natively rather than only the GDPR Art. 35 narrative.
+    // Each goal carries an optional risk score (low/medium/high) plus
+    // free-text rationale; aggregate completeness drives the SDM-coverage
+    // KPI on the DPO dashboard.
+
+    public const array SDM_PROTECTION_GOALS = [
+        'verfuegbarkeit',          // Availability
+        'integritaet',             // Integrity
+        'vertraulichkeit',         // Confidentiality
+        'transparenz',             // Transparency
+        'intervenierbarkeit',      // Intervenability
+        'nichtverkettung',         // Unlinkability
+        'datenminimierung',        // Data minimisation
+    ];
+
+    /**
+     * Per-goal SDM 3.1 assessment. Shape:
+     *  [
+     *      'verfuegbarkeit'     => ['risk_level' => 'medium', 'rationale' => '...'],
+     *      'integritaet'        => ['risk_level' => 'high',   'rationale' => '...'],
+     *      …
+     *  ]
+     *
+     * Missing keys mean the goal has not been assessed yet.
+     *
+     * @var array<string, array{risk_level?: string, rationale?: string}>|null
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    private ?array $sdmAssessment = null;
+
+    /**
+     * Free-text overall SDM-3.1 conclusion / Bewertungszusammenfassung.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $sdmAssessmentSummary = null;
+
+    // ============================================================================
     // Stakeholder Consultation (Art. 35(4), 35(9))
     // ============================================================================
 
@@ -348,6 +390,10 @@ class DataProtectionImpactAssessment
     #[ORM\Column(length: 30, options: ['default' => 'draft'])]
     #[Assert\Choice(choices: ['draft', 'in_review', 'approved', 'rejected', 'requires_revision'])]
     private string $status = 'draft';
+
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /**
      * Person responsible for conducting the DPIA
@@ -598,7 +644,7 @@ class DataProtectionImpactAssessment
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -609,7 +655,7 @@ class DataProtectionImpactAssessment
         return $this->referenceNumber;
     }
 
-    public function setReferenceNumber(string $referenceNumber): static
+    public function setReferenceNumber(?string $referenceNumber): static
     {
         $this->referenceNumber = $referenceNumber;
         return $this;
@@ -631,7 +677,7 @@ class DataProtectionImpactAssessment
         return $this->processingDescription;
     }
 
-    public function setProcessingDescription(string $processingDescription): static
+    public function setProcessingDescription(?string $processingDescription): static
     {
         $this->processingDescription = $processingDescription;
         return $this;
@@ -642,7 +688,7 @@ class DataProtectionImpactAssessment
         return $this->processingPurposes;
     }
 
-    public function setProcessingPurposes(string $processingPurposes): static
+    public function setProcessingPurposes(?string $processingPurposes): static
     {
         $this->processingPurposes = $processingPurposes;
         return $this;
@@ -708,7 +754,7 @@ class DataProtectionImpactAssessment
         return $this->necessityAssessment;
     }
 
-    public function setNecessityAssessment(string $necessityAssessment): static
+    public function setNecessityAssessment(?string $necessityAssessment): static
     {
         $this->necessityAssessment = $necessityAssessment;
         return $this;
@@ -719,7 +765,7 @@ class DataProtectionImpactAssessment
         return $this->proportionalityAssessment;
     }
 
-    public function setProportionalityAssessment(string $proportionalityAssessment): static
+    public function setProportionalityAssessment(?string $proportionalityAssessment): static
     {
         $this->proportionalityAssessment = $proportionalityAssessment;
         return $this;
@@ -730,7 +776,7 @@ class DataProtectionImpactAssessment
         return $this->legalBasis;
     }
 
-    public function setLegalBasis(string $legalBasis): static
+    public function setLegalBasis(?string $legalBasis): static
     {
         $this->legalBasis = $legalBasis;
         return $this;
@@ -763,7 +809,7 @@ class DataProtectionImpactAssessment
         return $this->riskLevel;
     }
 
-    public function setRiskLevel(string $riskLevel): static
+    public function setRiskLevel(?string $riskLevel): static
     {
         $this->riskLevel = $riskLevel;
         return $this;
@@ -807,7 +853,7 @@ class DataProtectionImpactAssessment
         return $this->technicalMeasures;
     }
 
-    public function setTechnicalMeasures(string $technicalMeasures): static
+    public function setTechnicalMeasures(?string $technicalMeasures): static
     {
         $this->technicalMeasures = $technicalMeasures;
         return $this;
@@ -818,7 +864,7 @@ class DataProtectionImpactAssessment
         return $this->organizationalMeasures;
     }
 
-    public function setOrganizationalMeasures(string $organizationalMeasures): static
+    public function setOrganizationalMeasures(?string $organizationalMeasures): static
     {
         $this->organizationalMeasures = $organizationalMeasures;
         return $this;
@@ -866,6 +912,69 @@ class DataProtectionImpactAssessment
     {
         $this->residualRiskAssessment = $residualRiskAssessment;
         return $this;
+    }
+
+    public function getSdmAssessment(): ?array
+    {
+        return $this->sdmAssessment;
+    }
+
+    public function setSdmAssessment(?array $sdmAssessment): static
+    {
+        $this->sdmAssessment = $sdmAssessment;
+        return $this;
+    }
+
+    public function getSdmAssessmentSummary(): ?string
+    {
+        return $this->sdmAssessmentSummary;
+    }
+
+    public function setSdmAssessmentSummary(?string $sdmAssessmentSummary): static
+    {
+        $this->sdmAssessmentSummary = $sdmAssessmentSummary;
+        return $this;
+    }
+
+    /**
+     * SDM-Coverage = Anzahl bewerteter Gewährleistungsziele / 7, in Prozent.
+     */
+    public function getSdmCoveragePercent(): int
+    {
+        $valid = ['low', 'medium', 'high'];
+        $assessment = $this->sdmAssessment ?? [];
+        $assessed = 0;
+        foreach (self::SDM_PROTECTION_GOALS as $goal) {
+            $entry = $assessment[$goal] ?? null;
+            $level = is_array($entry) ? ($entry['risk_level'] ?? null) : null;
+            if (is_string($level) && in_array($level, $valid, true)) {
+                $assessed++;
+            }
+        }
+
+        return (int) round(($assessed / count(self::SDM_PROTECTION_GOALS)) * 100);
+    }
+
+    /**
+     * Highest SDM risk severity across the assessed goals (low/medium/high)
+     * or null when nothing has been scored.
+     */
+    public function getSdmHighestRiskLevel(): ?string
+    {
+        $order = ['low' => 1, 'medium' => 2, 'high' => 3];
+        $assessment = $this->sdmAssessment ?? [];
+        $max = null;
+        foreach ($assessment as $entry) {
+            $level = is_array($entry) ? ($entry['risk_level'] ?? null) : null;
+            if (!is_string($level) || !isset($order[$level])) {
+                continue;
+            }
+            if ($max === null || $order[$level] > $order[$max]) {
+                $max = $level;
+            }
+        }
+
+        return $max;
     }
 
     public function getResidualRiskLevel(): ?string
@@ -1041,10 +1150,23 @@ class DataProtectionImpactAssessment
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(DpiaStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum
+        // while existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): DpiaStatus
+    {
+        return DpiaStatus::from($this->status);
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     public function getConductor(): ?User
@@ -1278,7 +1400,7 @@ class DataProtectionImpactAssessment
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -1289,7 +1411,7 @@ class DataProtectionImpactAssessment
         return $this->updatedAt;
     }
 
-    public function setUpdatedAt(DateTimeInterface $updatedAt): static
+    public function setUpdatedAt(?DateTimeInterface $updatedAt): static
     {
         $this->updatedAt = $updatedAt;
         return $this;

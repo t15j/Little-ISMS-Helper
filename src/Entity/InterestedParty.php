@@ -42,9 +42,16 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Index(name: 'idx_party_type', columns: ['party_type'])]
 #[ORM\Index(name: 'idx_party_importance', columns: ['importance'])]
 #[ORM\Index(name: 'idx_interested_party_tenant', columns: ['tenant_id'])]
+#[ORM\Index(name: 'idx_interested_party_status', columns: ['status'])]
 #[ORM\HasLifecycleCallbacks]
 class InterestedParty
 {
+    // Junior-ISB-Audit-2026-05-22 S-01: Lifecycle places (ISO 27001 Cl. 4.2 + 9.3.2 c).
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_IN_REVIEW = 'in_review';
+    public const STATUS_ARCHIVED = 'archived';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -57,7 +64,7 @@ class InterestedParty
     private ?Tenant $tenant = null;
 
     #[ORM\Column(length: 255)]
-    #[Assert\NotBlank(message: 'Party name is required')]
+    #[Assert\NotBlank(message: 'interested_party.validation.name_required')]
     #[Groups(['interested_party:read', 'interested_party:write'])]
     private ?string $name = null;
 
@@ -104,7 +111,7 @@ class InterestedParty
      * Requirements and expectations from this party
      */
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Requirements must be documented')]
+    #[Assert\NotBlank(message: 'interested_party.validation.requirements_required')]
     #[Groups(['interested_party:read', 'interested_party:write'])]
     private ?string $requirements = null;
 
@@ -167,6 +174,24 @@ class InterestedParty
     #[Groups(['interested_party:read', 'interested_party:write'])]
     private ?string $issues = null;
 
+    /**
+     * Junior-ISB-Audit-2026-05-22 S-01: Lifecycle status (ISO 27001 Cl. 4.2 + 9.3.2 c).
+     * Owned by `interested_party_lifecycle` — never call setStatus() directly
+     * outside the initial-marking bootstrap; route transitions through
+     * LifecycleService::transition().
+     */
+    #[ORM\Column(length: 30, options: ['default' => self::STATUS_DRAFT])]
+    #[Groups(['interested_party:read'])]
+    private string $status = self::STATUS_DRAFT;
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 S-01: Optimistic-lock guard for concurrent
+     * lifecycle transitions (HTTP 409 via OptimisticLockException).
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     #[Groups(['interested_party:read'])]
     private ?DateTimeInterface $createdAt = null;
@@ -211,7 +236,7 @@ class InterestedParty
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -222,7 +247,7 @@ class InterestedParty
         return $this->partyType;
     }
 
-    public function setPartyType(string $partyType): static
+    public function setPartyType(?string $partyType): static
     {
         $this->partyType = $partyType;
         return $this;
@@ -277,7 +302,7 @@ class InterestedParty
         return $this->importance;
     }
 
-    public function setImportance(string $importance): static
+    public function setImportance(?string $importance): static
     {
         $this->importance = $importance;
         return $this;
@@ -288,7 +313,7 @@ class InterestedParty
         return $this->requirements;
     }
 
-    public function setRequirements(string $requirements): static
+    public function setRequirements(?string $requirements): static
     {
         $this->requirements = $requirements;
         return $this;
@@ -398,7 +423,7 @@ class InterestedParty
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -413,6 +438,36 @@ class InterestedParty
     {
         $this->updatedAt = $updatedAt;
         return $this;
+    }
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 S-01: marking-store accessor for the
+     * `interested_party_lifecycle` state-machine (ISO 27001 Cl. 4.2 + 9.3.2 c).
+     */
+    public function getStatus(): string
+    {
+        return $this->status;
+    }
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 S-01: marking-store mutator. Only the
+     * Symfony Workflow component / LifecycleService should invoke this in
+     * production code — call-sites that need a transition must go through
+     * LifecycleService::transition().
+     */
+    public function setStatus(string $status): static
+    {
+        $this->status = $status;
+        return $this;
+    }
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 S-01: Optimistic-lock version exposed
+     * for the LifecycleService HTTP 409 path.
+     */
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     /**

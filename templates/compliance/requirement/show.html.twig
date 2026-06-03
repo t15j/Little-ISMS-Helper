@@ -1,10 +1,19 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ requirement.requirementId }} - {{ requirement.title }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid mt-4">
+    {# M-4 — module-gating: Compliance Requirements (depends on compliance module) #}
+    {% if not is_module_active('compliance') %}
+        {{ _fa_alert.render({
+            variant: 'info',
+            icon: 'nav-shield-alert',
+            body: 'common.module_not_active'|trans({'%module%': 'Compliance'}, 'messages')
+        }) }}
+    {% else %}
     {# Breadcrumb Navigation #}
     <nav aria-label="breadcrumb" class="mb-3">
         <ol class="breadcrumb">
@@ -15,17 +24,15 @@
         </ol>
     </nav>
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="fa-icon fa-icon--nav-list-check" aria-hidden="true"></i> {{ requirement.requirementId }}</h1>
-        <div>
-            <a href="{{ path('app_compliance_requirement_edit', {id: requirement.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> Edit
-            </a>
-            <a href="{{ path('app_compliance_requirement_index') }}?framework={{ requirement.framework.id }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> Back to List
-            </a>
-        </div>
-    </div>
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-list-check', label: requirement.framework.code },
+        title: requirement.requirementId,
+        subtitle: requirement.title,
+        actions: [
+            { label: 'common.edit'|trans({}, 'messages'), variant: 'primary', icon: 'ui-edit', href: path('app_compliance_requirement_edit', {id: requirement.id}) },
+            { label: 'common.back_to_list'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_compliance_requirement_index') ~ '?framework=' ~ requirement.framework.id }
+        ]
+    }) }}
 
     <div class="row">
         <div class="col-md-8">
@@ -111,40 +118,38 @@
                             <em>{{ 'compliance.requirement.mris.source'|trans({}, 'compliance') }}</em>
                         </p>
 
-                        <div class="table-responsive mb-3">
-                            <table class="table table-sm align-middle">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th scope="col">{{ 'compliance.requirement.mris.stage'|trans({}, 'compliance') }}</th>
-                                        <th scope="col">{{ 'compliance.requirement.mris.current'|trans({}, 'compliance') }}</th>
-                                        <th scope="col">{{ 'compliance.requirement.mris.target'|trans({}, 'compliance') }}</th>
+                        {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                            {% block table_head %}
+                                <tr>
+                                    <th scope="col" class="fa-table__th">{{ 'compliance.requirement.mris.stage'|trans({}, 'compliance') }}</th>
+                                    <th scope="col" class="fa-table__th fa-table__th--center">{{ 'compliance.requirement.mris.current'|trans({}, 'compliance') }}</th>
+                                    <th scope="col" class="fa-table__th fa-table__th--center">{{ 'compliance.requirement.mris.target'|trans({}, 'compliance') }}</th>
+                                </tr>
+                            {% endblock %}
+                            {% block table_body %}
+                                {% for stage in mris.stages %}
+                                    <tr class="fa-table__row">
+                                        <td class="fa-table__cell"><code>{{ stage }}</code></td>
+                                        <td class="fa-table__cell fa-table__cell--center">
+                                            {% if mris.current == stage %}
+                                                <i class="fa-icon fa-icon--ui-check text-warning" aria-label="{{ 'compliance.requirement.aria.current'|trans({}, 'compliance') }}"></i>
+                                            {% endif %}
+                                        </td>
+                                        <td class="fa-table__cell fa-table__cell--center">
+                                            {% if mris.target == stage %}
+                                                <i class="fa-icon fa-icon--nav-bullseye text-success" aria-label="{{ 'compliance.requirement.aria.target'|trans({}, 'compliance') }}"></i>
+                                            {% endif %}
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    {% for stage in mris.stages %}
-                                        <tr>
-                                            <td><code>{{ stage }}</code></td>
-                                            <td class="text-center">
-                                                {% if mris.current == stage %}
-                                                    <i class="fa-icon fa-icon--ui-check text-warning" aria-label="Ist"></i>
-                                                {% endif %}
-                                            </td>
-                                            <td class="text-center">
-                                                {% if mris.target == stage %}
-                                                    <i class="fa-icon fa-icon--nav-bullseye text-success" aria-label="Soll"></i>
-                                                {% endif %}
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
+                                {% endfor %}
+                            {% endblock %}
+                        {% endembed %}
 
                         <form method="post" action="{{ path('app_compliance_requirement_mris_maturity', {id: requirement.id}) }}" class="row g-2 align-items-end">
                             <input type="hidden" name="_token" value="{{ csrf_token('mris_maturity_' ~ requirement.id) }}">
                             <div class="col-md-5">
                                 <label for="maturity_current" class="form-label small">{{ 'compliance.requirement.mris.set_current'|trans({}, 'compliance') }}</label>
-                                <select id="maturity_current" name="maturity_current" class="form-select form-select-sm">
+                                <select id="maturity_current" name="maturity_current" class="form-select form-select-sm fa-cyber-input__field">
                                     <option value="">—</option>
                                     {% for stage in mris.stages %}
                                         <option value="{{ stage }}" {{ mris.current == stage ? 'selected' : '' }}>{{ stage }}</option>
@@ -153,7 +158,7 @@
                             </div>
                             <div class="col-md-5">
                                 <label for="maturity_target" class="form-label small">{{ 'compliance.requirement.mris.set_target'|trans({}, 'compliance') }}</label>
-                                <select id="maturity_target" name="maturity_target" class="form-select form-select-sm">
+                                <select id="maturity_target" name="maturity_target" class="form-select form-select-sm fa-cyber-input__field">
                                     <option value="">—</option>
                                     {% for stage in mris.stages %}
                                         <option value="{{ stage }}" {{ mris.target == stage ? 'selected' : '' }}>{{ stage }}</option>
@@ -193,10 +198,10 @@
                         } %}
                             {% block table_head %}
                                 <tr>
-                                    <th scope="col">Control ID</th>
-                                    <th scope="col">Name</th>
-                                    <th scope="col">Status</th>
-                                    <th scope="col">Progress</th>
+                                    <th scope="col">{{ 'compliance.requirement.mapped_col.control_id'|trans({}, 'compliance') }}</th>
+                                    <th scope="col">{{ 'compliance.requirement.mapped_col.name'|trans({}, 'compliance') }}</th>
+                                    <th scope="col">{{ 'compliance.requirement.mapped_col.status'|trans({}, 'compliance') }}</th>
+                                    <th scope="col">{{ 'compliance.requirement.mapped_col.progress'|trans({}, 'compliance') }}</th>
                                 </tr>
                             {% endblock %}
                             {% block table_body %}
@@ -212,6 +217,50 @@
                                 {% endfor %}
                             {% endblock %}
                         {% endembed %}
+                    {% endblock %}
+                {% endembed %}
+            {% endif %}
+
+            {# Cross-Framework Equivalents #}
+            {% if cross_framework_equivalents is defined and cross_framework_equivalents|length > 0 %}
+                {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
+                    {% block card_header %}
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h2 class="mb-0"><i class="fa-icon fa-icon--ui-link" aria-hidden="true"></i> {{ 'compliance.requirement.equivalents.title'|trans({}, 'compliance') }}</h2>
+                            <span class="badge bg-secondary">{{ cross_framework_equivalents|length }} {{ 'compliance.requirement.equivalents.frameworks'|trans({}, 'compliance') }}</span>
+                        </div>
+                    {% endblock %}
+                    {% block card_body %}
+                        {# re-import inside embed — embed creates new Twig scope (CLAUDE.md pitfall #10) #}
+                        {% import '_components/_fa_entity_badge.html.twig' as _fa_entity_badge %}
+                        <div class="p-3">
+                            <p class="text-muted small mb-3">{{ 'compliance.requirement.equivalents.intro'|trans({}, 'compliance') }}</p>
+                            {% for frameworkCode, entries in cross_framework_equivalents %}
+                                <div class="mb-3">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="badge text-bg-secondary me-2">{{ frameworkCode }}</span>
+                                        <span class="text-muted small">{{ entries|length }} {{ 'compliance.requirement.equivalents.controls'|trans({}, 'compliance') }}</span>
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        {% for entry in entries %}
+                                            {% set otherReq = entry.requirement %}
+                                            {% set mappingPct = entry.mapping.finalPercentage %}
+                                            {% set badgeVariant = mappingPct >= 100 ? 'success' : (mappingPct >= 50 ? 'warning' : 'secondary') %}
+                                            <a href="{{ path('app_compliance_requirement_show', {id: otherReq.id, _locale: app.request.locale}) }}"
+                                               class="badge text-bg-{{ badgeVariant }} text-decoration-none"
+                                               title="{{ otherReq.title }}{% if entry.direction == 'reverse' %} ({{ 'compliance.requirement.equivalents.reverse'|trans({}, 'compliance') }}){% endif %}">
+                                                <code>{{ otherReq.requirementId }}</code>
+                                                <span class="ms-1">{{ mappingPct }}%</span>
+                                                {% if entry.direction == 'reverse' %}
+                                                    <i class="fa-icon fa-icon--ui-arrow-left ms-1" aria-hidden="true"></i>
+                                                {% endif %}
+                                            </a>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                            <p class="text-muted small mt-2 mb-0"><em>{{ 'compliance.requirement.equivalents.legend'|trans({}, 'compliance') }}</em></p>
+                        </div>
                     {% endblock %}
                 {% endembed %}
             {% endif %}
@@ -277,8 +326,8 @@
                     </div>
 
                     {% if calculated_fulfillment != fulfillment.fulfillmentPercentage %}
-                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-calculator' } } %}
-                            {% block alert_body %}<small><i class="bi bi-calculator" aria-hidden="true"></i> Calculated from controls: <strong>{{ calculated_fulfillment }}%</strong></small>{% endblock %}
+                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'nav-clipboard-data' } } %}
+                            {% block alert_body %}<small><i class="fa-icon fa-icon--nav-bar-chart" aria-hidden="true"></i> Calculated from controls: <strong>{{ calculated_fulfillment }}%</strong></small>{% endblock %}
                         {% endembed %}
                     {% endif %}
 
@@ -306,7 +355,7 @@
                             <div class="mb-3">
                                 <label for="fulfillmentPercentage" class="form-label d-flex justify-content-between">
                                     <span>Fulfillment</span>
-                                    <span data-fulfillment-target="display" class="badge bg-primary">{{ fulfillment.fulfillmentPercentage }}%</span>
+                                    <span data-fulfillment-target="display" class="fa-status-pill fa-status-pill--primary">{{ fulfillment.fulfillmentPercentage }}%</span>
                                 </label>
 
                                 {# Visual Slider #}
@@ -369,7 +418,7 @@
                                 <label for="responsiblePersonUserId" class="form-label small fw-semibold">
                                     {{ 'fulfillment.field.responsible_person_user'|trans({}, 'compliance') }}
                                 </label>
-                                <select id="responsiblePersonUserId" name="responsiblePersonUserId" class="form-select form-select-sm">
+                                <select id="responsiblePersonUserId" name="responsiblePersonUserId" class="form-select form-select-sm fa-cyber-input__field">
                                     <option value="">{{ 'fulfillment.placeholder.responsible_person_user'|trans({}, 'compliance') }}</option>
                                     {% for user in available_users %}
                                         <option value="{{ user.id }}"{% if fulfillment.responsiblePersonUser and fulfillment.responsiblePersonUser.id == user.id %} selected{% endif %}>
@@ -384,7 +433,7 @@
                                 <label for="responsiblePersonId" class="form-label small fw-semibold">
                                     {{ 'fulfillment.field.responsible_person'|trans({}, 'compliance') }}
                                 </label>
-                                <select id="responsiblePersonId" name="responsiblePersonId" class="form-select form-select-sm">
+                                <select id="responsiblePersonId" name="responsiblePersonId" class="form-select form-select-sm fa-cyber-input__field">
                                     <option value="">{{ 'fulfillment.placeholder.responsible_person'|trans({}, 'compliance') }}</option>
                                     {% for person in available_persons %}
                                         <option value="{{ person.id }}"{% if fulfillment.responsiblePerson and fulfillment.responsiblePerson.id == person.id %} selected{% endif %}>
@@ -399,7 +448,7 @@
                                 <label for="responsibleDeputyPersonIds" class="form-label small fw-semibold">
                                     {{ 'fulfillment.field.responsible_deputy_persons'|trans({}, 'compliance') }}
                                 </label>
-                                <select id="responsibleDeputyPersonIds" name="responsibleDeputyPersonIds[]" class="form-select form-select-sm"
+                                <select id="responsibleDeputyPersonIds" name="responsibleDeputyPersonIds[]" class="form-select form-select-sm fa-cyber-input__field"
                                         multiple data-controller="tom-select">
                                     {% for person in available_persons %}
                                         <option value="{{ person.id }}"{% if fulfillment.responsibleDeputyPersons.contains(person) %} selected{% endif %}>
@@ -410,6 +459,23 @@
                                 <small class="text-muted">{{ 'fulfillment.help.responsible_deputy_persons'|trans({}, 'compliance') }}</small>
                             </div>
 
+                            {# Person-Rollout B2 — yearly attestation owner (governance role-holder, distinct from day-to-day responsible owner) #}
+                            <div class="mb-3">
+                                <label for="attestationOwnerPersonId" class="form-label small fw-semibold">
+                                    {{ 'fulfillment.field.attestation_owner_person'|trans({}, 'compliance') }}
+                                </label>
+                                <select id="attestationOwnerPersonId" name="attestationOwnerPersonId" class="form-select form-select-sm fa-cyber-input__field"
+                                        data-controller="tom-select">
+                                    <option value="">{{ 'fulfillment.placeholder.attestation_owner_person'|trans({}, 'compliance') }}</option>
+                                    {% for person in available_persons %}
+                                        <option value="{{ person.id }}"{% if fulfillment.attestationOwnerPerson and fulfillment.attestationOwnerPerson.id == person.id %} selected{% endif %}>
+                                            {{ person.fullName }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted">{{ 'fulfillment.help.attestation_owner_person'|trans({}, 'compliance') }}</small>
+                            </div>
+
                             <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary w-100"
                                     data-bs-toggle="tooltip" data-bs-placement="top"
                                     title="{{ 'compliance.requirement.tooltip.save'|trans({}, 'compliance') }}">
@@ -417,7 +483,7 @@
                             </button>
                         </form>
                     {% else %}
-                        {{ _fa_alert.render({ variant: 'warning', icon: 'bi-lock', class: 'mt-3', body: 'You cannot edit inherited fulfillment data. Only the parent tenant can modify this.' }) }}
+                        {{ _fa_alert.render({ variant: 'warning', icon: 'ui-lock', class: 'mt-3', body: 'You cannot edit inherited fulfillment data. Only the parent tenant can modify this.' }) }}
                     {% endif %}
 
                     <script>
@@ -451,15 +517,17 @@
                     });
 
                     // Initialize Bootstrap tooltips
-                    document.addEventListener('DOMContentLoaded', function() {
+                    function initRequirementTooltips() {
                         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-                        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                        tooltipTriggerList.map(function (tooltipTriggerEl) {
                             return new bootstrap.Tooltip(tooltipTriggerEl, {
                                 trigger: 'hover',
                                 html: false
                             });
                         });
-                    });
+                    }
+                    document.addEventListener('DOMContentLoaded', initRequirementTooltips);
+                    document.addEventListener('turbo:load', initRequirementTooltips);
                     </script>
                 {% endblock %}
             {% endembed %}
@@ -514,7 +582,7 @@
             {# Delete Button #}
             {% embed '_components/_card.html.twig' with { 'class': 'border-danger' } %}
                 {% block card_header %}
-                    <div class="card-header bg-danger text-white"><h2 class="mb-0"><i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ 'common.danger_zone'|trans({}, 'messages') }}</h2></div>
+                    <div class="card-header"><h2 class="mb-0"><i class="fa-icon fa-icon--status-warning text-danger" aria-hidden="true"></i> {{ 'common.danger_zone'|trans({}, 'messages') }}</h2></div>
                 {% endblock %}
                 {% block card_body %}
                     <form method="post" action="{{ path('app_compliance_requirement_delete', {id: requirement.id}) }}"
@@ -530,5 +598,6 @@
             {% endembed %}
         </div>
     </div>
+    {% endif %} {# /M-4 compliance module gate #}
 </div>
 {% endblock %}

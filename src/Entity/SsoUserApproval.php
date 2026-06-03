@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Enum\SsoUserApprovalStatus;
 use App\Repository\SsoUserApprovalRepository;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
@@ -71,13 +72,24 @@ class SsoUserApproval
     public function getProvider(): ?IdentityProvider { return $this->provider; }
     public function setProvider(IdentityProvider $p): self { $this->provider = $p; return $this; }
     public function getEmail(): ?string { return $this->email; }
-    public function setEmail(string $e): self { $this->email = $e; return $this; }
+    public function setEmail(?string $e): self { $this->email = $e; return $this; }
     public function getExternalId(): ?string { return $this->externalId; }
-    public function setExternalId(string $id): self { $this->externalId = $id; return $this; }
+    public function setExternalId(?string $id): self { $this->externalId = $id; return $this; }
     public function getClaims(): array { return $this->claims; }
     public function setClaims(array $c): self { $this->claims = $c; return $this; }
     public function getStatus(): string { return $this->status; }
-    public function setStatus(string $s): self { $this->status = $s; return $this; }
+    public function setStatus(SsoUserApprovalStatus|string $s): self
+    {
+        // Accept both enum and string so new code can pass the typed enum
+        // while existing string-passing callers keep working unchanged.
+        $this->status = is_string($s) ? $s : $s->value;
+        return $this;
+    }
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): SsoUserApprovalStatus
+    {
+        return SsoUserApprovalStatus::from($this->status);
+    }
     public function getRequestedAt(): ?DateTimeImmutable { return $this->requestedAt; }
     public function getReviewedBy(): ?User { return $this->reviewedBy; }
     public function setReviewedBy(?User $u): self { $this->reviewedBy = $u; return $this; }

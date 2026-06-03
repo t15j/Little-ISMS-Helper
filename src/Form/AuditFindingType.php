@@ -5,13 +5,19 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\AuditFinding;
+use App\Entity\ComplianceRequirement;
 use App\Entity\Control;
 use App\Entity\InternalAudit;
 use App\Entity\Person;
 use App\Entity\User;
+use App\Enum\AuditFindingStatus;
+use App\Form\Trait\OwnerPickerFormTrait;
+use App\Form\Type\JsonStructuredType;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
+use App\Form\SectionMapInterface;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\DateTimeType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
@@ -20,8 +26,28 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class AuditFindingType extends AbstractType
+final class AuditFindingType extends AbstractType implements SectionMapInterface
 {
+    use OwnerPickerFormTrait;
+
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview'         => ['audit', 'findingNumber', 'title', 'description'],
+            'classification'   => ['type', 'severity', 'status', 'source', 'clauseReference'],
+            'root_cause'       => ['evidence', 'relatedControls'],
+            'corrective_action'=> ['assignedTo', 'assignedPerson', 'assignedDeputyPersons', 'dueDate'],
+            // S17 B4 — CAPA Hybrid JSON fields (ISO 27001 Cl. 10.2 b) + d)).
+            // `nonconformityDetails` carries the structured CAPA sub-schema
+            // (rootCauseAnalysisMethod + correctiveActions[] + verification*)
+            // and is rendered via the `_fa_capa_builder` Stimulus controller,
+            // NOT a raw TextareaType — Gate 34 stays clean because the field
+            // is wired as JsonStructuredType (data-transformer-bound).
+            'nc_capa'          => ['nonconformityDetails', 'ncRootCauseSummary', 'ncCorrectionDueDate', 'ncVerifiedAt', 'ncVerifiedBy'],
+            'verification'     => ['reportedByPerson', 'reportedByDeputyPersons', 'linkedRequirements'],
+        ];
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
@@ -31,13 +57,12 @@ class AuditFindingType extends AbstractType
                 'choice_label' => fn(InternalAudit $a): string => ($a->getAuditNumber() ?? '') . ' — ' . ($a->getTitle() ?? ''),
                 'placeholder' => 'audit_finding.placeholder.audit',
                 'required' => true,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'audit_finding.help.audit',
             ])
             ->add('findingNumber', TextType::class, [
                 'label' => 'audit_finding.field.finding_number',
                 'required' => false,
-                'attr' => ['maxlength' => 50, 'placeholder' => 'e.g. F-2026-001'],
+                'attr' => ['maxlength' => 50, 'placeholder' => 'audit_finding.placeholder.finding_number'],
                 'help' => 'audit_finding.help.finding_number',
             ])
             ->add('title', TextType::class, [
@@ -61,7 +86,6 @@ class AuditFindingType extends AbstractType
                 ],
                 'choice_translation_domain' => 'audits',
                 'required' => true,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'audit_finding.help.type',
             ])
             ->add('severity', ChoiceType::class, [
@@ -74,25 +98,47 @@ class AuditFindingType extends AbstractType
                 ],
                 'choice_translation_domain' => 'audits',
                 'required' => true,
-                'attr' => ['class' => 'form-select'],
+                'help' => 'audit_finding.help.severity',
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix) ──────────────
+            // Owned by `audit_finding_lifecycle`. Transitions via
+            // LifecycleService::transition() only.
             ->add('status', ChoiceType::class, [
                 'label' => 'audit_finding.field.status',
+                'help' => 'audit_finding.help.status_readonly',
                 'choices' => [
-                    'audit_finding.status.open' => AuditFinding::STATUS_OPEN,
-                    'audit_finding.status.in_progress' => AuditFinding::STATUS_IN_PROGRESS,
-                    'audit_finding.status.resolved' => AuditFinding::STATUS_RESOLVED,
-                    'audit_finding.status.verified' => AuditFinding::STATUS_VERIFIED,
-                    'audit_finding.status.closed' => AuditFinding::STATUS_CLOSED,
+                    'audit_finding.status.open' => AuditFindingStatus::Open->value,
+                    'audit_finding.status.in_progress' => AuditFindingStatus::InProgress->value,
+                    'audit_finding.status.resolved' => AuditFindingStatus::Resolved->value,
+                    'audit_finding.status.verified' => AuditFindingStatus::Verified->value,
+                    'audit_finding.status.closed' => AuditFindingStatus::Closed->value,
                 ],
                 'choice_translation_domain' => 'audits',
-                'required' => true,
-                'attr' => ['class' => 'form-select'],
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
+            ])
+            ->add('source', ChoiceType::class, [
+                'label' => 'audits.field.finding_source',
+                'required' => false,
+                'placeholder' => 'audits.placeholder.finding_source',
+                'choices' => [
+                    'audits.finding_source.internal_audit' => 'internal_audit',
+                    'audits.finding_source.external_audit' => 'external_audit',
+                    'audits.finding_source.incident' => 'incident',
+                    'audits.finding_source.review' => 'review',
+                    'audits.finding_source.customer_complaint' => 'customer_complaint',
+                    'audits.finding_source.management_review' => 'management_review',
+                ],
+                'choice_translation_domain' => 'audits',
+                'help' => 'audits.help.finding_source',
             ])
             ->add('clauseReference', TextType::class, [
                 'label' => 'audit_finding.field.clause_reference',
                 'required' => false,
-                'attr' => ['maxlength' => 100, 'placeholder' => 'ISO 27001 A.5.1 / Clause 9.3'],
+                'attr' => ['maxlength' => 100, 'placeholder' => 'audit_finding.placeholder.clause_reference'],
                 'help' => 'audit_finding.help.clause_reference',
             ])
             ->add('evidence', TextareaType::class, [
@@ -101,51 +147,48 @@ class AuditFindingType extends AbstractType
                 'attr' => ['rows' => 4],
                 'help' => 'audit_finding.help.evidence',
             ])
-            ->add('relatedControl', EntityType::class, [
-                'label' => 'audit_finding.field.related_control',
+            // Plural M:N — Findings can hit multiple controls (e.g. logging
+            // finding A.8.15 + A.8.16). Junior-ISB-audit P0-NEW.
+            ->add('relatedControls', EntityType::class, [
+                'label' => 'audit_finding.field.related_controls',
                 'class' => Control::class,
                 'choice_label' => fn(Control $c): string => ($c->getControlId() ?? '') . ' — ' . ($c->getName() ?? ''),
-                'placeholder' => 'audit_finding.placeholder.related_control',
-                'required' => false,
-                'attr' => ['class' => 'form-select'],
-            ])
-            ->add('assignedTo', EntityType::class, [
-                'label' => 'audit_finding.field.assigned_to',
-                'class' => User::class,
-                'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
-                'placeholder' => 'audit_finding.placeholder.assigned_to',
-                'required' => false,
-                'attr' => ['class' => 'form-select'],
-            ])
-            ->add('assignedPerson', EntityType::class, [
-                'label' => 'audit_finding.field.assigned_person',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'placeholder' => 'audit_finding.placeholder.assigned_person',
-                'required' => false,
-                'attr' => ['class' => 'form-select'],
-                'help' => 'audit_finding.help.assigned_person',
-            ])
-            ->add('assignedDeputyPersons', EntityType::class, [
-                'label' => 'audit_finding.field.assigned_deputy_persons',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
                 'multiple' => true,
                 'expanded' => false,
-                'attr' => [
-                    'class' => 'form-select',
-                    'data-controller' => 'tom-select',
-                ],
-                'help' => 'audit_finding.help.assigned_deputy_persons',
+                'required' => false,
+                'attr' => ['data-controller' => 'tom-select'],
+                'help' => 'audit_finding.help.related_controls',
             ])
+        ;
+
+        // ── Assigned Owner cluster (audit-s4 P-1) ───────────────────────────
+        // Replaces assignedTo / assignedPerson / assignedDeputyPersons. The
+        // separate "reportedByPerson" + "reportedByDeputyPersons" slot stays
+        // hand-rolled below — it is a different governance role (Reporter,
+        // not Owner) per SOLUTIONS_FOUNDATION.md P-1 exception list.
+        $this->addOwnerPicker($builder, [
+            'user_field'         => 'assignedTo',
+            'person_field'       => 'assignedPerson',
+            'deputies_field'     => 'assignedDeputyPersons',
+            'legacy_field'       => null,
+            'translation_prefix' => 'audit_finding',
+            'user_label'         => 'audit_finding.field.assigned_to',
+            'user_placeholder'   => 'audit_finding.placeholder.assigned_to',
+            'user_help'          => 'audit_finding.help.assigned_to',
+            'person_label'       => 'audit_finding.field.assigned_person',
+            'person_placeholder' => 'audit_finding.placeholder.assigned_person',
+            'person_help'        => 'audit_finding.help.assigned_person',
+            'deputies_label'     => 'audit_finding.field.assigned_deputy_persons',
+            'deputies_help'      => 'audit_finding.help.assigned_deputy_persons',
+        ]);
+
+        $builder
             ->add('reportedByPerson', EntityType::class, [
                 'label' => 'audit_finding.field.reported_by_person',
                 'class' => Person::class,
                 'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
                 'placeholder' => 'audit_finding.placeholder.reported_by_person',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'audit_finding.help.reported_by_person',
             ])
             ->add('reportedByDeputyPersons', EntityType::class, [
@@ -156,7 +199,6 @@ class AuditFindingType extends AbstractType
                 'multiple' => true,
                 'expanded' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'audit_finding.help.reported_by_deputy_persons',
@@ -168,6 +210,65 @@ class AuditFindingType extends AbstractType
                 'required' => false,
                 'help' => 'audit_finding.help.due_date',
             ])
+            ->add('linkedRequirements', EntityType::class, [
+                'label' => 'audit_finding.field.linked_requirements',
+                'class' => ComplianceRequirement::class,
+                'choice_label' => fn(ComplianceRequirement $r): string => ($r->getRequirementId() ?? '') . ' — ' . ($r->getTitle() ?? ''),
+                'required' => false,
+                'multiple' => true,
+                'expanded' => false,
+                'by_reference' => false,
+                'attr' => [
+                    'data-controller' => 'tom-select',
+                ],
+                'help' => 'audit_finding.help.linked_requirements',
+            ])
+            // ── S17 B4 — CAPA / NC details (ISO 27001 Cl. 10.2 b) + d)) ─────
+            // Required for NC types but enforced server-side via validateNcSlot()
+            // so non-NC finding types stay lean. Frontend `data-ui-show-if`
+            // gating left to a future polish pass.
+            ->add('ncRootCauseSummary', TextareaType::class, [
+                'label' => 'audit_finding.field.nc_root_cause_summary',
+                'required' => false,
+                'attr' => ['rows' => 4, 'placeholder' => 'audit_finding.placeholder.nc_root_cause_summary'],
+                'help' => 'audit_finding.help.nc_root_cause_summary',
+            ])
+            ->add('ncCorrectionDueDate', DateType::class, [
+                'label' => 'audit_finding.field.nc_correction_due_date',
+                'widget' => 'single_text',
+                'input' => 'datetime_immutable',
+                'required' => false,
+                'help' => 'audit_finding.help.nc_correction_due_date',
+            ])
+            ->add('ncVerifiedAt', DateTimeType::class, [
+                'label' => 'audit_finding.field.nc_verified_at',
+                'widget' => 'single_text',
+                'input' => 'datetime_immutable',
+                'required' => false,
+                'help' => 'audit_finding.help.nc_verified_at',
+            ])
+            ->add('ncVerifiedBy', EntityType::class, [
+                'label' => 'audit_finding.field.nc_verified_by',
+                'class' => User::class,
+                'choice_label' => fn(User $u): string => $u->getEmail() ?? (string) $u->getId(),
+                'placeholder' => 'audit_finding.placeholder.nc_verified_by',
+                'required' => false,
+                'help' => 'audit_finding.help.nc_verified_by',
+            ])
+            // S17 B4 follow-up — CAPA Hybrid JSON field. Wired via
+            // JsonStructuredType (TextareaType parent w/ JsonArrayTransformer)
+            // and rendered by `_fa_capa_builder` macro + Stimulus controller.
+            // The form-theme override in
+            // `templates/audit_finding/_audit_finding_form_theme.html.twig`
+            // replaces the default textarea row with the structured builder.
+            // @capa-builder: not a raw-JSON textarea — Gate 34 only catches
+            //                 direct TextareaType::class usages, JsonStructured
+            //                 carries an explicit JsonArrayTransformer.
+            ->add('nonconformityDetails', JsonStructuredType::class, [
+                'label' => 'audit_finding.field.nonconformity_details',
+                'required' => false,
+                'help' => 'audit_finding.help.nonconformity_details',
+            ])
         ;
     }
 
@@ -178,6 +279,7 @@ class AuditFindingType extends AbstractType
             'translation_domain' => 'audits',
             'constraints' => [
                 new Callback([$this, 'validateAssignedSlot']),
+                new Callback([$this, 'validateNcSlot']),
             ],
         ]);
     }
@@ -190,6 +292,28 @@ class AuditFindingType extends AbstractType
         if ($entity->getAssignedTo() === null && $entity->getAssignedPerson() === null) {
             $context->buildViolation('audits.error.owner_required_user_or_person')
                 ->atPath('assignedTo')
+                ->addViolation();
+        }
+    }
+
+    /**
+     * S17 B4 — NC findings (ISO 27001 Cl. 10.2) MUST have a root-cause summary
+     * and a correction deadline. We do NOT validate observations / opportunities
+     * — those are awareness-only.
+     */
+    public function validateNcSlot(?AuditFinding $entity, ExecutionContextInterface $context): void
+    {
+        if ($entity === null || !$entity->isNonconformity()) {
+            return;
+        }
+        if ($entity->getNcRootCauseSummary() === null || trim($entity->getNcRootCauseSummary()) === '') {
+            $context->buildViolation('audit_finding.error.nc_root_cause_required')
+                ->atPath('ncRootCauseSummary')
+                ->addViolation();
+        }
+        if ($entity->getNcCorrectionDueDate() === null) {
+            $context->buildViolation('audit_finding.error.nc_correction_due_date_required')
+                ->atPath('ncCorrectionDueDate')
                 ->addViolation();
         }
     }

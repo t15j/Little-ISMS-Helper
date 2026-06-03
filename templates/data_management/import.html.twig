@@ -5,6 +5,12 @@
 
 {% block body %}
 <div class="container-fluid">
+    {% include '_components/_breadcrumb.html.twig' with {
+        breadcrumbs: [
+            { label: 'admin.hub.title'|trans({}, 'admin'), url: path('admin_hub_index') },
+            { label: 'admin.nav.import'|trans({}, 'admin') }
+        ]
+    } %}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1><i class="fa-icon fa-icon--import" aria-hidden="true"></i> Data Import</h1>
     </div>
@@ -12,7 +18,7 @@
     {# Warning Banner #}
     {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'danger', class: 'mb-4' } } %}
         {% block alert_body %}
-        <div class="fa-alert__title">Critical Warning</div>
+        <div class="fa-alert__title">{{ 'data.import.warning_title'|trans({}, 'data_management') }}</div>
         <p class="mb-0">
             <strong>Data import can overwrite existing data!</strong>
             Always create a backup before importing data. This feature is currently in preview mode
@@ -41,7 +47,7 @@
                         <strong>Select JSON File:</strong>
                     </label>
                     <input type="file"
-                           class="form-control"
+                           class="form-control fa-cyber-input__field"
                            id="import_file"
                            name="import_file"
                            accept=".json"
@@ -53,7 +59,7 @@
 
                 {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info' } } %}
                     {% block alert_body %}
-                    <div class="fa-alert__title">Import Process</div>
+                    <div class="fa-alert__title">{{ 'data.import.process_title'|trans({}, 'data_management') }}</div>
                     <ol class="mb-0">
                         <li>{{ 'data_management.import.step_upload'|trans({}, 'messages')}}</li>
                         <li>{{ 'data_management.import.step_preview'|trans({}, 'messages')}}</li>

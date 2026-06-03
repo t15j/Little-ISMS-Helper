@@ -5,11 +5,12 @@
 
 {% block body %}
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
+{% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.reports'|trans({}, 'nav'), path: 'app_reports_index' },
-            { label: 'management_reports.title'|trans({}, 'management_reports'), path: 'app_management_reports' },
+            { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_index') },
+            { label: 'management_reports.title'|trans({}, 'management_reports'), url: path('app_management_reports') },
             { label: 'management_reports.executive.title'|trans({}, 'management_reports') }
         ]
     } %}
@@ -18,22 +19,33 @@
         <h1 class="h2 mb-0">
             <i class="fa-icon fa-icon--nav-dashboard text-primary" aria-hidden="true"></i> {{ 'management_reports.executive.title'|trans({}, 'management_reports') }}
         </h1>
-        <div class="btn-group">
-            <a href="{{ path('app_management_reports_executive_pdf') }}" class="fa-cyber-btn fa-cyber-btn--danger">
-                <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'management_reports.action.download_pdf'|trans({}, 'management_reports') }}
-            </a>
+        <div>
+            <div class="btn-group">
+                <a href="{{ path('app_management_reports_executive_pdf') }}" class="fa-cyber-btn fa-cyber-btn--danger">
+                    <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'management_reports.action.download_pdf'|trans({}, 'management_reports') }}
+                </a>
+            </div>
+            {% include '_components/_fa_pdf_locale_switch.html.twig' with {route: 'app_management_reports_executive_pdf'} only %}
         </div>
     </div>
 
     {# Date Range Filter #}
     <form class="d-flex gap-2 mb-3 align-items-end" method="get">
         <div>
-            <label for="filter-from" class="form-label small mb-0">{{ 'management_reports.filter.from'|trans({}, 'management_reports') }}</label>
-            <input type="date" id="filter-from" name="from" value="{{ app.request.query.get('from') }}" class="form-control form-control-sm">
+            {{ _fa_cyber.text('from', {
+                id: 'filter-from',
+                type: 'date',
+                label: 'management_reports.filter.from'|trans({}, 'management_reports'),
+                value: app.request.query.get('from')
+            }) }}
         </div>
         <div>
-            <label for="filter-to" class="form-label small mb-0">{{ 'management_reports.filter.to'|trans({}, 'management_reports') }}</label>
-            <input type="date" id="filter-to" name="to" value="{{ app.request.query.get('to') }}" class="form-control form-control-sm">
+            {{ _fa_cyber.text('to', {
+                id: 'filter-to',
+                type: 'date',
+                label: 'management_reports.filter.to'|trans({}, 'management_reports'),
+                value: app.request.query.get('to')
+            }) }}
         </div>
         <button type="submit" class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm">
             <i class="fa-icon fa-icon--ui-funnel" aria-hidden="true"></i> {{ 'management_reports.filter.apply'|trans({}, 'management_reports') }}
@@ -49,7 +61,7 @@
     <div class="row mb-4">
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'server',
+                icon: 'asset-server',
                 label: 'management_reports.executive.assets'|trans({}, 'management_reports'),
                 value: summary.summary.total_assets,
                 variant: 'primary'
@@ -57,7 +69,7 @@
         </div>
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'exclamation-triangle',
+                icon: 'status-warning',
                 label: 'management_reports.executive.risks'|trans({}, 'management_reports'),
                 value: summary.summary.total_risks,
                 variant: 'danger'
@@ -74,7 +86,7 @@
         </div>
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'shield',
+                icon: 'nav-shield',
                 label: 'management_reports.executive.controls'|trans({}, 'management_reports'),
                 value: summary.summary.total_controls,
                 variant: 'primary'
@@ -95,41 +107,34 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'management_reports.risk_level.critical'|trans({}, 'management_reports') } %}
                             <span>{{ summary.risk_distribution.critical }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-danger" style="width: {{ summary.summary.total_risks > 0 ? (summary.risk_distribution.critical / summary.summary.total_risks * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: summary.summary.total_risks > 0 ? (summary.risk_distribution.critical / summary.summary.total_risks * 100) : 0, tone: 'danger' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'management_reports.risk_level.high'|trans({}, 'management_reports') } %}
                             <span>{{ summary.risk_distribution.high }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-warning" style="width: {{ summary.summary.total_risks > 0 ? (summary.risk_distribution.high / summary.summary.total_risks * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: summary.summary.total_risks > 0 ? (summary.risk_distribution.high / summary.summary.total_risks * 100) : 0, tone: 'warning' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'info', content: 'management_reports.risk_level.medium'|trans({}, 'management_reports') } %}
                             <span>{{ summary.risk_distribution.medium }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-info" style="width: {{ summary.summary.total_risks > 0 ? (summary.risk_distribution.medium / summary.summary.total_risks * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: summary.summary.total_risks > 0 ? (summary.risk_distribution.medium / summary.summary.total_risks * 100) : 0, tone: 'info' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'success', content: 'management_reports.risk_level.low'|trans({}, 'management_reports') } %}
                             <span>{{ summary.risk_distribution.low }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-success" style="width: {{ summary.summary.total_risks > 0 ? (summary.risk_distribution.low / summary.summary.total_risks * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: summary.summary.total_risks > 0 ? (summary.risk_distribution.low / summary.summary.total_risks * 100) : 0, tone: 'success' }) }}
                     </div>
                 {% endblock %}
             {% endembed %}
@@ -147,32 +152,27 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'success', content: 'management_reports.control_status.implemented'|trans({}, 'management_reports') } %}
                             <span>{{ summary.control_status.implemented }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-success" style="width: {{ summary.summary.total_controls > 0 ? (summary.control_status.implemented / summary.summary.total_controls * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: summary.summary.total_controls > 0 ? (summary.control_status.implemented / summary.summary.total_controls * 100) : 0, tone: 'success' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'management_reports.control_status.in_progress'|trans({}, 'management_reports') } %}
                             <span>{{ summary.control_status.in_progress }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-warning" style="width: {{ summary.summary.total_controls > 0 ? (summary.control_status.in_progress / summary.summary.total_controls * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: summary.summary.total_controls > 0 ? (summary.control_status.in_progress / summary.summary.total_controls * 100) : 0, tone: 'warning' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'management_reports.control_status.not_started'|trans({}, 'management_reports') } %}
                             <span>{{ summary.control_status.not_started }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-secondary" style="width: {{ summary.summary.total_controls > 0 ? (summary.control_status.not_started / summary.summary.total_controls * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: summary.summary.total_controls > 0 ? (summary.control_status.not_started / summary.summary.total_controls * 100) : 0, tone: 'neutral' }) }}
                     </div>
                 {% endblock %}
             {% endembed %}
@@ -270,32 +270,32 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
-                    <table class="table table-sm">
-                        <thead>
+                    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                        {% block table_head %}
                             <tr>
-                                <th scope="col">{{ 'management_reports.trend.month'|trans({}, 'management_reports') }}</th>
-                                <th scope="col">{{ 'management_reports.trend.total_risks'|trans({}, 'management_reports') }}</th>
-                                <th scope="col">{{ 'management_reports.trend.high_critical'|trans({}, 'management_reports') }}</th>
-                                <th scope="col">{{ 'management_reports.trend.new_risks'|trans({}, 'management_reports') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'management_reports.trend.month'|trans({}, 'management_reports') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">{{ 'management_reports.trend.total_risks'|trans({}, 'management_reports') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">{{ 'management_reports.trend.high_critical'|trans({}, 'management_reports') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">{{ 'management_reports.trend.new_risks'|trans({}, 'management_reports') }}</th>
                             </tr>
-                        </thead>
-                        <tbody>
+                        {% endblock %}
+                        {% block table_body %}
                             {% for trend in risk_trends %}
-                            <tr>
-                                <td>{{ trend.month_name }}</td>
-                                <td><strong>{{ trend.total }}</strong></td>
-                                <td>
+                            <tr class="fa-table__row">
+                                <td class="fa-table__cell">{{ trend.month_name }}</td>
+                                <td class="fa-table__cell fa-table__cell--num"><strong>{{ trend.total }}</strong></td>
+                                <td class="fa-table__cell fa-table__cell--num">
                                     {% if trend.high_critical > 0 %}
                                     {% include '_components/_badge.html.twig' with { variant: 'danger', content: trend.high_critical } %}
                                     {% else %}
                                     {% include '_components/_badge.html.twig' with { variant: 'success', content: 0 } %}
                                     {% endif %}
                                 </td>
-                                <td>{{ trend.new_risks }}</td>
+                                <td class="fa-table__cell fa-table__cell--num">{{ trend.new_risks }}</td>
                             </tr>
                             {% endfor %}
-                        </tbody>
-                    </table>
+                        {% endblock %}
+                    {% endembed %}
                 {% endblock %}
             {% endembed %}
         </div>
@@ -311,20 +311,20 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
-                    <table class="table table-sm">
-                        <thead>
+                    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                        {% block table_head %}
                             <tr>
-                                <th scope="col">{{ 'management_reports.trend.month'|trans({}, 'management_reports') }}</th>
-                                <th scope="col">{{ 'management_reports.trend.total_incidents'|trans({}, 'management_reports') }}</th>
-                                <th scope="col">{{ 'management_reports.trend.high_critical'|trans({}, 'management_reports') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'management_reports.trend.month'|trans({}, 'management_reports') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">{{ 'management_reports.trend.total_incidents'|trans({}, 'management_reports') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">{{ 'management_reports.trend.high_critical'|trans({}, 'management_reports') }}</th>
                             </tr>
-                        </thead>
-                        <tbody>
+                        {% endblock %}
+                        {% block table_body %}
                             {% for trend in incident_trends %}
-                            <tr>
-                                <td>{{ trend.month_name }}</td>
-                                <td>{{ trend.total }}</td>
-                                <td>
+                            <tr class="fa-table__row">
+                                <td class="fa-table__cell">{{ trend.month_name }}</td>
+                                <td class="fa-table__cell fa-table__cell--num">{{ trend.total }}</td>
+                                <td class="fa-table__cell fa-table__cell--num">
                                     {% if trend.high_critical > 0 %}
                                     {% include '_components/_badge.html.twig' with { variant: 'danger', content: trend.high_critical } %}
                                     {% else %}
@@ -333,8 +333,8 @@
                                 </td>
                             </tr>
                             {% endfor %}
-                        </tbody>
-                    </table>
+                        {% endblock %}
+                    {% endembed %}
                 {% endblock %}
             {% endembed %}
         </div>

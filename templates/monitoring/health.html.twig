@@ -1,5 +1,6 @@
 {% extends 'admin/layout.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_progress.html.twig' as _fa_progress %}
 
 {% block admin_title %}{{ 'monitoring.health.title'|trans({}, 'monitoring') }}{% endblock %}
 {% block admin_subtitle %}
@@ -24,7 +25,7 @@
 {% block admin_content %}
     <div class="mb-3">
         <a href="{{ path('monitoring_health_json') }}" class="fa-cyber-btn fa-cyber-btn--ghost" target="_blank">
-            <i class="bi bi-code-square" aria-hidden="true"></i> {{ 'monitoring.health.json_api'|trans({}, 'monitoring') }}
+            <i class="fa-icon fa-icon--nav-tools" aria-hidden="true"></i> {{ 'monitoring.health.json_api'|trans({}, 'monitoring') }}
         </a>
     </div>
 
@@ -131,7 +132,7 @@
                             {{ 'monitoring.schema.preview_open'|trans({}, 'monitoring') }}
                         </summary>
 
-                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'danger', icon: 'bi-exclamation-triangle-fill', class: 'mt-2 mb-2' } } %}
+                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'danger', icon: 'status-warning', class: 'mt-2 mb-2' } } %}
                             {% block alert_body %}<h3 class="h6 mb-1"> <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ 'monitoring.schema.preview_warning_title'|trans({}, 'monitoring') }} </h3> <p class="mb-0 small"> {{ 'monitoring.schema.preview_warning_body'|trans({}, 'monitoring') }} </p>{% endblock %}
                         {% endembed %}
 
@@ -159,7 +160,7 @@
 
                             <div class="btn-group" role="group" aria-label="{{ 'monitoring.schema.actions_label'|trans({}, 'monitoring') }}">
                                 <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm">
-                                    <i class="bi bi-database-gear" aria-hidden="true"></i>
+                                    <i class="fa-icon fa-icon--asset-database" aria-hidden="true"></i>
                                     {{ 'monitoring.schema.apply_update'|trans({}, 'monitoring') }}
                                 </button>
                             </div>
@@ -186,16 +187,7 @@
                     <dd class="col-sm-8">{{ health_checks.disk.total }}</dd>
                 </dl>
 
-                <div class="progress progress-h-25">
-                    <div class="progress-bar bg-{{ health_checks.disk.percentage > 90 ? 'danger' : (health_checks.disk.percentage > 75 ? 'warning' : 'success') }}"
-                         role="progressbar"
-                         style="width: {{ health_checks.disk.percentage }}%"
-                         aria-valuenow="{{ health_checks.disk.percentage }}"
-                         aria-valuemin="0"
-                         aria-valuemax="100">
-                        {{ health_checks.disk.percentage }}%
-                    </div>
-                </div>
+                {{ _fa_progress.render({ value: health_checks.disk.percentage, tone: health_checks.disk.percentage > 90 ? 'danger' : (health_checks.disk.percentage > 75 ? 'warning' : 'success'), showText: true }) }}
             {% endset %}
             {% set disk_actions %}
                 {% if health_checks.disk.percentage > 75 and is_granted('MONITORING_MANAGE') %}
@@ -285,7 +277,7 @@
                     </dd>
 
                     <dt class="col-sm-4">{{ 'monitoring.cache.directory'|trans({}, 'monitoring') }}:</dt>
-                    <dd class="col-sm-8"><code class="small">{{ health_checks.cache.directory }}</code></dd>
+                    <dd class="col-sm-8"><code class="small">{{ health_checks.cache.directory|path_relative }}</code></dd>
 
                     <dt class="col-sm-4">{{ 'monitoring.cache.writable'|trans({}, 'monitoring') }}:</dt>
                     <dd class="col-sm-8">
@@ -305,7 +297,7 @@
                                 data-action="click->autofix#fix"
                                 data-autofix-action-param="cache"
                                 data-autofix-url-value="{{ path('monitoring_health') }}">
-                            <i class="bi bi-wrench" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }}
+                            <i class="fa-icon fa-icon--nav-tools" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }}
                         </button>
                     {% endif %}
                     <button class="fa-cyber-btn fa-cyber-btn--primary fa-cyber-btn--sm auto-fix-btn"
@@ -336,7 +328,7 @@
                     </dd>
 
                     <dt class="col-sm-4">{{ 'monitoring.logs.directory'|trans({}, 'monitoring') }}:</dt>
-                    <dd class="col-sm-8"><code class="small">{{ health_checks.logs.directory }}</code></dd>
+                    <dd class="col-sm-8"><code class="small">{{ health_checks.logs.directory|path_relative }}</code></dd>
 
                     <dt class="col-sm-4">{{ 'monitoring.logs.writable'|trans({}, 'monitoring') }}:</dt>
                     <dd class="col-sm-8">
@@ -356,7 +348,7 @@
                                 data-action="click->autofix#fix"
                                 data-autofix-action-param="logs"
                                 data-autofix-url-value="{{ path('monitoring_health') }}">
-                            <i class="bi bi-wrench" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }}
+                            <i class="fa-icon fa-icon--nav-tools" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }}
                         </button>
                     {% endif %}
                     <button class="fa-cyber-btn fa-cyber-btn--warning fa-cyber-btn--sm auto-fix-btn"
@@ -426,7 +418,7 @@
                                 data-action="click->autofix#fix"
                                 data-autofix-action-param="var-permissions"
                                 data-autofix-url-value="{{ path('monitoring_health') }}">
-                            <i class="bi bi-wrench" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }} var/
+                            <i class="fa-icon fa-icon--nav-tools" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }} var/
                         </button>
                     {% endif %}
                     {% if health_checks.permissions.uploads_writable is not null and not health_checks.permissions.uploads_writable %}
@@ -435,7 +427,7 @@
                                 data-action="click->autofix#fix"
                                 data-autofix-action-param="uploads-permissions"
                                 data-autofix-url-value="{{ path('monitoring_health') }}">
-                            <i class="bi bi-wrench" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }} uploads/
+                            <i class="fa-icon fa-icon--nav-tools" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }} uploads/
                         </button>
                     {% endif %}
                     <div id="fix-result-var-permissions"></div>
@@ -593,7 +585,7 @@
                     <dd class="col-sm-7"><code>{{ health_checks.sessions.handler }}</code></dd>
 
                     <dt class="col-sm-5">Save Path:</dt>
-                    <dd class="col-sm-7"><code class="small">{{ health_checks.sessions.save_path }}</code></dd>
+                    <dd class="col-sm-7"><code class="small">{{ health_checks.sessions.save_path|path_relative }}</code></dd>
 
                     <dt class="col-sm-5">{{ 'monitoring.cache.writable'|trans({}, 'monitoring') }}:</dt>
                     <dd class="col-sm-7">
@@ -612,7 +604,7 @@
                             data-action="click->autofix#fix"
                             data-autofix-action-param="session-permissions"
                             data-autofix-url-value="{{ path('monitoring_health') }}">
-                        <i class="bi bi-wrench" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }}
+                        <i class="fa-icon fa-icon--nav-tools" aria-hidden="true"></i> {{ 'monitoring.action.fix_permissions'|trans({}, 'monitoring') }}
                     </button>
                     <div id="fix-result-session-permissions"></div>
                 {% endif %}
@@ -629,7 +621,7 @@
             {% set uploads_content %}
                 <dl class="row mb-0">
                     <dt class="col-sm-5">{{ 'monitoring.cache.directory'|trans({}, 'monitoring') }}:</dt>
-                    <dd class="col-sm-7"><code class="small">{{ health_checks.uploads.directory }}</code></dd>
+                    <dd class="col-sm-7"><code class="small">{{ health_checks.uploads.directory|path_relative }}</code></dd>
 
                     <dt class="col-sm-5">Current Size:</dt>
                     <dd class="col-sm-7">{{ health_checks.uploads.size }}</dd>

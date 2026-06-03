@@ -36,6 +36,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *   php bin/console app:schema:reconcile --dry-run
  *   php bin/console app:schema:reconcile --dump-sql
  *   php bin/console app:schema:reconcile --mark-migrations-executed
+ *   php bin/console app:schema:reconcile --non-destructive-only
  */
 #[AsCommand(
     name: 'app:schema:reconcile',
@@ -56,6 +57,8 @@ class SchemaReconcileCommand
         bool $dumpSql = false,
         #[Option(description: 'After reconcile, mark all known migrations as executed without running them (use after a fresh schema:update to prevent CREATE TABLE re-runs)', name: 'mark-migrations-executed')]
         bool $markMigrationsExecuted = false,
+        #[Option(description: 'Apply only additive statements (ADD COLUMN / CREATE TABLE / ADD INDEX); silently skip destructive statements (DROP TABLE / DROP COLUMN). Safe for CI and unattended runs.', name: 'non-destructive-only')]
+        bool $nonDestructiveOnly = false,
         ?SymfonyStyle $io = null,
     ): int {
         $io?->title('Schema Reconcile');
@@ -102,21 +105,53 @@ class SchemaReconcileCommand
             return Command::SUCCESS;
         }
 
+        $destructivePatterns = ['/^DROP TABLE/i', '/^ALTER TABLE .+ DROP /i'];
+
+        if ($nonDestructiveOnly) {
+            $skipped = [];
+            $sqls = array_values(array_filter(
+                $sqls,
+                static function (string $sql) use ($destructivePatterns, &$skipped): bool {
+                    foreach ($destructivePatterns as $pattern) {
+                        if (preg_match($pattern, $sql) === 1) {
+                            $skipped[] = $sql;
+                            return false;
+                        }
+                    }
+                    return true;
+                },
+            ));
+
+            if ($skipped !== []) {
+                $io?->note(sprintf(
+                    'Skipped %d destructive statement(s) (--non-destructive-only). Run without the flag to apply them interactively: %s',
+                    count($skipped),
+                    implode(' | ', $skipped),
+                ));
+            }
+
+            if ($sqls === []) {
+                $io?->success('No additive statements to apply after filtering destructive ones.');
+                return Command::SUCCESS;
+            }
+        }
+
         $io?->text(sprintf(
             'Applying %d statements. Non-destructive for additive changes (ADD COLUMN / CREATE TABLE). Review required for destructive changes.',
             count($sqls),
         ));
 
-        $destructivePatterns = ['/^DROP TABLE/i', '/^ALTER TABLE .+ DROP /i'];
-        foreach ($sqls as $sql) {
-            foreach ($destructivePatterns as $pattern) {
-                if (preg_match($pattern, $sql) === 1) {
-                    $io?->warning('Destructive statement detected: ' . $sql);
-                    if (!$io?->confirm('Continue?', false)) {
-                        $io?->error('Aborted by user.');
-                        return Command::FAILURE;
+        if (!$nonDestructiveOnly) {
+            foreach ($sqls as $sql) {
+                foreach ($destructivePatterns as $pattern) {
+                    if (preg_match($pattern, $sql) === 1) {
+                        $io?->warning('Destructive statement detected: ' . $sql);
+                        if (!$io?->confirm('Continue?', false)) {
+                            $io?->error('Aborted by user.');
+                            return Command::FAILURE;
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -124,8 +159,25 @@ class SchemaReconcileCommand
         // Gefilterte SQLs einzeln ausführen (nicht $tool->updateSchema,
         // weil das die Filter umgehen würde).
         $conn = $this->entityManager->getConnection();
+        $skipped = 0;
         foreach ($sqls as $sql) {
-            $conn->executeStatement($sql);
+            try {
+                $conn->executeStatement($sql);
+            } catch (\Doctrine\DBAL\Exception $e) {
+                // MySQL 1091 (Can't DROP) + 1176 (Key doesn't exist) — FK/INDEX
+                // already absent from prior partial run. Reconcile is idempotent
+                // so we skip + log instead of aborting the whole reconcile.
+                $msg = $e->getMessage();
+                if (preg_match("/(1091|1176|doesn't exist|check that .+ exists)/i", $msg)) {
+                    $skipped++;
+                    $io?->warning(sprintf('Skipped (already-absent): %s — %s', substr($sql, 0, 80), substr($msg, 0, 120)));
+                    continue;
+                }
+                throw $e;
+            }
+        }
+        if ($skipped > 0) {
+            $io?->note(sprintf('Reconcile completed with %d idempotent skips (FK/INDEX already absent).', $skipped));
         }
 
         // Phantom-Drift-Detection: DBAL 4.x + MariaDB emittiert für JSON-

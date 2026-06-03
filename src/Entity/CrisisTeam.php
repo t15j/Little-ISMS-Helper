@@ -13,6 +13,7 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Crisis Team Entity for BSI IT-Grundschutz 200-4 Compliance (Kapitel 4.3)
@@ -101,6 +102,20 @@ class CrisisTeam
     private array $members = [];
 
     /**
+     * Person-Rollout Phase B1 — typed Person roster, twin of the
+     * legacy JSON `members` blob. Used for governance reports + future
+     * cross-linking to PhysicalAccessLog/Training. JSON `members`
+     * stays as the authoritative role/contact descriptor for now.
+     *
+     * @var Collection<int, Person>
+     */
+    #[ORM\ManyToMany(targetEntity: Person::class)]
+    #[ORM\JoinTable(name: 'crisis_team_persons')]
+    #[ORM\JoinColumn(name: 'crisis_team_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'person_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private Collection $personMembers;
+
+    /**
      * Primary contact phone number
      */
     #[ORM\Column(length: 50, nullable: true)]
@@ -134,6 +149,7 @@ class CrisisTeam
      * Virtual meeting URL (e.g., Teams, Zoom)
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Assert\Url(requireTld: false)]
     private ?string $virtualMeetingUrl = null;
 
     /**
@@ -185,13 +201,34 @@ class CrisisTeam
     private ?DateTimeImmutable $nextTrainingAt = null;
 
     /**
-     * Related business continuity plans
+     * Related business continuity plans (legacy unidirectional — kept for backward compat)
      *
      * @var Collection<int, BusinessContinuityPlan>
      */
     #[ORM\ManyToMany(targetEntity: BusinessContinuityPlan::class)]
     #[ORM\JoinTable(name: 'crisis_team_bcp')]
     private Collection $businessContinuityPlans;
+
+    /**
+     * BC Plans that have assigned this team (inverse side of BCP.crisisTeams)
+     *
+     * @var Collection<int, BusinessContinuityPlan>
+     */
+    #[ORM\ManyToMany(targetEntity: BusinessContinuityPlan::class, mappedBy: 'crisisTeams')]
+    private Collection $bcPlans;
+
+    /**
+     * Number of real activations — BSI 200-4 §7.2
+     */
+    #[ORM\Column(type: Types::INTEGER, options: ['default' => 0])]
+    private int $activationCount = 0;
+
+    /**
+     * Escalation matrix for external partners — BSI 200-4 §6.2 + NIS2 Art. 23
+     * [{trigger: string, externalPartner: 'BSI'|'Police'|'CERT-Bund'|string, contactInfo: string, escalateAfter: string}, ...]
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    private ?array $escalationMatrix = null;
 
     /**
      * Documentation and procedures
@@ -219,8 +256,10 @@ class CrisisTeam
 public function __construct()
     {
         $this->businessContinuityPlans = new ArrayCollection();
+        $this->bcPlans = new ArrayCollection();
         $this->teamLeaderDeputyPersons = new ArrayCollection();
         $this->deputyLeaderDeputyPersons = new ArrayCollection();
+        $this->personMembers = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
     }
 
@@ -234,7 +273,7 @@ public function __construct()
         return $this->teamName;
     }
 
-    public function setTeamName(string $teamName): static
+    public function setTeamName(?string $teamName): static
     {
         $this->teamName = $teamName;
         return $this;
@@ -256,7 +295,7 @@ public function __construct()
         return $this->teamType;
     }
 
-    public function setTeamType(string $teamType): static
+    public function setTeamType(?string $teamType): static
     {
         $this->teamType = $teamType;
         return $this;
@@ -408,6 +447,64 @@ public function __construct()
     public function getMemberCount(): int
     {
         return count($this->members);
+    }
+
+    /**
+     * Typed Person roster — Phase B1. Independent of the legacy JSON
+     * `members` blob; combine via {@see getEffectiveMemberCount()}
+     * when reporting total roster size.
+     *
+     * @return Collection<int, Person>
+     */
+    public function getPersonMembers(): Collection
+    {
+        return $this->personMembers;
+    }
+
+    public function addPersonMember(Person $person): static
+    {
+        if (!$this->personMembers->contains($person)) {
+            $this->personMembers->add($person);
+        }
+        return $this;
+    }
+
+    public function removePersonMember(Person $person): static
+    {
+        $this->personMembers->removeElement($person);
+        return $this;
+    }
+
+    public function getPersonMemberCount(): int
+    {
+        return $this->personMembers->count();
+    }
+
+    /**
+     * Combined roster size — JSON entries plus typed Persons. Useful
+     * for dashboards while customers migrate from JSON to Person.
+     */
+    public function getEffectiveMemberCount(): int
+    {
+        return count($this->members) + $this->personMembers->count();
+    }
+
+    /**
+     * Display names for the typed Person roster. Empty list when no
+     * Person has been linked yet.
+     *
+     * @return list<string>
+     */
+    public function getPersonMemberNames(): array
+    {
+        $names = [];
+        foreach ($this->personMembers as $person) {
+            $name = $person->getFullName();
+            if ($name !== null && $name !== '') {
+                $names[] = $name;
+            }
+        }
+        return $names;
     }
 
     public function getPrimaryPhone(): ?string
@@ -691,6 +788,56 @@ public function __construct()
     public function setTenant(?Tenant $tenant): static
     {
         $this->tenant = $tenant;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, BusinessContinuityPlan>
+     */
+    public function getBcPlans(): Collection
+    {
+        return $this->bcPlans;
+    }
+
+    public function addBcPlan(BusinessContinuityPlan $bcPlan): static
+    {
+        if (!$this->bcPlans->contains($bcPlan)) {
+            $this->bcPlans->add($bcPlan);
+        }
+        return $this;
+    }
+
+    public function removeBcPlan(BusinessContinuityPlan $bcPlan): static
+    {
+        $this->bcPlans->removeElement($bcPlan);
+        return $this;
+    }
+
+    public function getActivationCount(): int
+    {
+        return $this->activationCount;
+    }
+
+    public function setActivationCount(int $activationCount): static
+    {
+        $this->activationCount = $activationCount;
+        return $this;
+    }
+
+    public function incrementActivationCount(): static
+    {
+        $this->activationCount++;
+        return $this;
+    }
+
+    public function getEscalationMatrix(): ?array
+    {
+        return $this->escalationMatrix;
+    }
+
+    public function setEscalationMatrix(?array $escalationMatrix): static
+    {
+        $this->escalationMatrix = $escalationMatrix;
         return $this;
     }
 }

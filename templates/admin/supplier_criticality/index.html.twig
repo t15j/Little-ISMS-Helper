@@ -1,26 +1,24 @@
-{% extends 'base.html.twig' %}
+{% extends 'admin/layout.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_status_pill.html.twig' as pill %}
 
-{% block title %}{{ 'supplier_criticality.title'|trans({}, 'supplier_criticality') }}{% endblock %}
+{% block admin_title %}{{ 'supplier_criticality.title'|trans({}, 'supplier_criticality') }}{% endblock %}
 
-{% block body %}
-<div class="container mt-4">
-    <div class="row mb-3">
-        <div class="col">
-            <h1>
-                <i class="bi bi-layers" aria-hidden="true"></i>
-                {{ 'supplier_criticality.title'|trans({}, 'supplier_criticality') }}
-            </h1>
-            <p class="lead">{{ 'supplier_criticality.subtitle'|trans({}, 'supplier_criticality') }}</p>
-        </div>
-        <div class="col-auto d-flex align-items-start">
-            <a href="{{ path('app_admin_supplier_criticality_new') }}" class="fa-cyber-btn fa-cyber-btn--primary">
-                <i class="fa-icon fa-icon--ui-plus" aria-hidden="true"></i>
-                {{ 'supplier_criticality.action.new'|trans({}, 'supplier_criticality') }}
-            </a>
-        </div>
-    </div>
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item active" aria-current="page">{{ 'supplier_criticality.title'|trans({}, 'supplier_criticality') }}</li>
+{% endblock %}
+
+{% block admin_content %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-building', label: 'Suppliers' },
+        title: 'supplier_criticality.title'|trans({}, 'supplier_criticality'),
+        subtitle: 'supplier_criticality.subtitle'|trans({}, 'supplier_criticality'),
+        actions: [
+            { label: 'supplier_criticality.action.new'|trans({}, 'supplier_criticality'), variant: 'primary', icon: 'plus', href: path('app_admin_supplier_criticality_new') }
+        ]
+    }) }}
 
     {% for flash_type, messages in app.flashes %}
         {% for message in messages %}
@@ -29,78 +27,78 @@
         {% endfor %}
     {% endfor %}
 
-    {% embed '_components/_card.html.twig' %}
-        {% block card_body %}
-            {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
-            {% if levels is empty %}
-                {{ _fa_empty_state.render({
-                    mood: 'sleeping',
-                    title: 'supplier_criticality.empty'|trans({}, 'supplier_criticality')
-                }) }}
-            {% else %}
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>{{ 'supplier_criticality.field.sort_order'|trans({}, 'supplier_criticality') }}</th>
-                                <th>{{ 'supplier_criticality.field.code'|trans({}, 'supplier_criticality') }}</th>
-                                <th>{{ 'supplier_criticality.field.label_de'|trans({}, 'supplier_criticality') }}</th>
-                                <th>{{ 'supplier_criticality.field.label_en'|trans({}, 'supplier_criticality') }}</th>
-                                <th>{{ 'supplier_criticality.field.color'|trans({}, 'supplier_criticality') }}</th>
-                                <th>{{ 'supplier_criticality.field.is_default'|trans({}, 'supplier_criticality') }}</th>
-                                <th>{{ 'supplier_criticality.field.is_active'|trans({}, 'supplier_criticality') }}</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for level in levels %}
-                            <tr>
-                                <td>{{ level.sortOrder }}</td>
-                                <td><code>{{ level.code }}</code></td>
-                                <td>{{ level.labelDe }}</td>
-                                <td>{{ level.labelEn }}</td>
-                                <td>
-                                    {% if level.color %}
-                                        {% set _cpill = level.color in ['info'] ? 'primary' : (level.color in ['secondary','light','dark'] ? 'neutral' : level.color) %}
-                                        <span class="badge bg-{{ level.color }} fa-status-pill fa-status-pill--{{ _cpill }}">{{ level.color }}</span>
-                                    {% else %}
-                                        <span class="text-muted">—</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if level.isDefault %}
-                                        <span class="badge bg-success fa-status-pill fa-status-pill--success"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i></span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if level.isActive %}
-                                        <span class="badge bg-success fa-status-pill fa-status-pill--success">{{ 'common.active'|trans({}, 'messages') }}</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary fa-status-pill fa-status-pill--neutral">{{ 'common.inactive'|trans({}, 'messages') }}</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">
-                                    <a href="{{ path('app_admin_supplier_criticality_edit', {id: level.id}) }}"
-                                       class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm">
-                                        <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
-                                    </a>
-                                    <form action="{{ path('app_admin_supplier_criticality_delete', {id: level.id}) }}"
-                                          method="post" class="d-inline"
-                                          onsubmit="return confirm('{{ 'supplier_criticality.confirm_delete'|trans({}, 'supplier_criticality') }}')">
-                                        <input type="hidden" name="_token"
-                                               value="{{ csrf_token('delete_supplier_criticality_' ~ level.id) }}">
-                                        <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm">
-                                            <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i>
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% endif %}
-        {% endblock %}
-    {% endembed %}
-</div>
+    {% if levels is empty %}
+        {{ _fa_empty_state.render({
+            mood: 'thinking',
+            title: 'supplier_criticality.empty'|trans({}, 'supplier_criticality')
+        }) }}
+    {% else %}
+        <section class="fa-section">
+            <div class="fa-section__body">
+                {% embed '_components/_fa_table.html.twig' %}
+                    {% block table_head %}
+                        <tr>
+                            <th scope="col" class="fa-table__th">{{ 'supplier_criticality.field.sort_order'|trans({}, 'supplier_criticality') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'supplier_criticality.field.code'|trans({}, 'supplier_criticality') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'supplier_criticality.field.label_de'|trans({}, 'supplier_criticality') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'supplier_criticality.field.label_en'|trans({}, 'supplier_criticality') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'supplier_criticality.field.color'|trans({}, 'supplier_criticality') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'supplier_criticality.field.is_default'|trans({}, 'supplier_criticality') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'supplier_criticality.field.is_active'|trans({}, 'supplier_criticality') }}</th>
+                            <th class="fa-table__th fa-table__th--actions"></th>
+                        </tr>
+                    {% endblock %}
+                    {% block table_body %}
+                        {% import '_components/_status_pill.html.twig' as pill %}
+                        {% for level in levels %}
+                        <tr class="fa-table__row">
+                            <td class="fa-table__cell">{{ level.sortOrder }}</td>
+                            <td class="fa-table__cell"><code>{{ level.code }}</code></td>
+                            <td class="fa-table__cell">{{ level.labelDe }}</td>
+                            <td class="fa-table__cell">{{ level.labelEn }}</td>
+                            <td class="fa-table__cell">
+                                {% if level.color %}
+                                    {% set _ctone = level.color in ['info'] ? 'primary' : (level.color in ['secondary','light','dark'] ? 'neutral' : level.color) %}
+                                    {{ pill.render(level.color, _ctone, {size: 'sm'}) }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="fa-table__cell">
+                                {% if level.isDefault %}
+                                    <span class="fa-status-pill fa-status-pill--success"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i></span>
+                                {% endif %}
+                            </td>
+                            <td class="fa-table__cell">
+                                {% if level.isActive %}
+                                    <span class="fa-status-pill fa-status-pill--success">{{ 'common.active'|trans({}, 'messages') }}</span>
+                                {% else %}
+                                    <span class="fa-status-pill fa-status-pill--neutral">{{ 'common.inactive'|trans({}, 'messages') }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="fa-table__cell fa-table__cell--actions">
+                                <a href="{{ path('app_admin_supplier_criticality_edit', {id: level.id}) }}"
+                                   class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm">
+                                    <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
+                                </a>
+                                <form action="{{ path('app_admin_supplier_criticality_delete', {id: level.id}) }}"
+                                      method="post" class="d-inline"
+                                      data-controller="ui-actions"
+                                      data-action="submit->ui-actions#confirm"
+                                      data-ui-actions-message-param="{{ 'supplier_criticality.confirm_delete'|trans({}, 'supplier_criticality') }}"
+                                      data-ui-actions-tone-param="danger">
+                                    <input type="hidden" name="_token"
+                                           value="{{ csrf_token('delete_supplier_criticality_' ~ level.id) }}">
+                                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm">
+                                        <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% endblock %}
+                {% endembed %}
+            </div>
+        </section>
+    {% endif %}
 {% endblock %}

@@ -1,20 +1,19 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_icon.html.twig' as _fa_icon %}
 
 {% block title %}{{ 'mfa.token_details'|trans({}, 'mfa') }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>
-            <i class="fa-icon fa-icon--mfa" aria-hidden="true"></i>
-            {{ 'mfa.token_details'|trans({}, 'mfa') }}
-        </h1>
-        <a href="{{ path('app_profile_mfa_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-            <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i>
-            {{ 'common.back'|trans({}, 'messages') }}
-        </a>
-    </div>
+    {{ _fa_page_header.render({
+        badge:   { icon: 'shield-check', label: 'mfa.section.title'|trans({}, 'mfa') },
+        title:   'mfa.token_details'|trans({}, 'mfa'),
+        actions: [
+            { label: 'common.back'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_profile_mfa_index') }
+        ]
+    }) }}
 
     <div class="row">
         <div class="col-lg-8">
@@ -29,32 +28,34 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% import '_components/_fa_icon.html.twig' as _fa_icon %}
                     <dl class="row">
                         <dt class="col-sm-4">{{ 'mfa.field.token_type'|trans({}, 'mfa') }}</dt>
                         <dd class="col-sm-8">
-                            {% include '_components/_badge.html.twig' with { variant: 'primary', icon: mfa_token.tokenType == 'totp' ? 'bi-phone' : 'bi-key', content: mfa_token.tokenType == 'totp' ? 'mfa.token_type.totp'|trans({}, 'mfa') : 'mfa.token_type.webauthn'|trans({}, 'mfa') } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'primary', icon: mfa_token.tokenType == 'totp' ? 'phone' : 'ui-key', content: mfa_token.tokenType == 'totp' ? 'mfa.token_type.totp'|trans({}, 'mfa') : 'mfa.token_type.webauthn'|trans({}, 'mfa') } %}
                         </dd>
 
                         <dt class="col-sm-4">{{ 'mfa.field.device_name'|trans({}, 'mfa') }}</dt>
                         <dd class="col-sm-8">
-                            {# TODO(aurora-migration): dynamic MFA token type icon — keep bi-* #}
-                            <i class="bi bi-{{ mfa_token.tokenType == 'totp' ? 'phone' : 'key' }}" aria-hidden="true"></i>
+                            {# Dynamic token-type icon — Aurora mask-icons (phone = TOTP-app, ui-key = WebAuthn). #}
+                            {% set tokenTypeIcon = mfa_token.tokenType == 'totp' ? 'phone' : 'ui-key' %}
+                            {{ _fa_icon.render(tokenTypeIcon) }}
                             {{ mfa_token.deviceName ?? 'N/A' }}
                         </dd>
 
                         <dt class="col-sm-4">{{ 'mfa.field.status'|trans({}, 'mfa') }}</dt>
                         <dd class="col-sm-8">
                             {% if mfa_token.isActive %}
-                                {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle', content: 'mfa.status.active'|trans({}, 'mfa') } %}
+                                {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'status-ok', content: 'mfa.status.active'|trans({}, 'mfa') } %}
                             {% else %}
-                                {% include '_components/_badge.html.twig' with { variant: 'secondary', icon: 'bi-dash-circle', content: 'mfa.status.inactive'|trans({}, 'mfa') } %}
+                                {% include '_components/_badge.html.twig' with { variant: 'secondary', icon: 'ui-x', content: 'mfa.status.inactive'|trans({}, 'mfa') } %}
                             {% endif %}
                         </dd>
 
                         <dt class="col-sm-4">{{ 'mfa.field.is_primary'|trans({}, 'mfa') }}</dt>
                         <dd class="col-sm-8">
                             {% if mfa_token.isPrimary %}
-                                {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'bi-star-fill', content: 'mfa.is_primary'|trans({}, 'mfa') } %}
+                                {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'ui-star', content: 'mfa.is_primary'|trans({}, 'mfa') } %}
                             {% else %}
                                 <span class="text-muted">{{ 'common.no'|trans({}, 'messages') }}</span>
                             {% endif %}
@@ -115,9 +116,9 @@
             {% if mfa_token.tokenType == 'totp' %}
                 {% embed '_components/_card.html.twig' with { 'class': 'mb-4 border-warning' } %}
                     {% block card_header %}
-                        <div class="card-header bg-warning-subtle text-warning">
+                        <div class="card-header">
                             <h2 class="mb-0">
-                                <i class="fa-icon fa-icon--mfa" aria-hidden="true"></i>
+                                <i class="fa-icon fa-icon--mfa text-warning" aria-hidden="true"></i>
                                 {{ 'mfa.backup_codes.title'|trans({}, 'mfa') }}
                             </h2>
                         </div>
@@ -175,7 +176,7 @@
                                   data-ui-actions-message-param="{{ 'mfa.confirm.disable'|trans({}, 'mfa') }}">
                                 <input type="hidden" name="_token" value="{{ csrf_token('disable_' ~ mfa_token.id) }}">
                                 <button type="submit" class="fa-cyber-btn fa-cyber-btn--warning w-100">
-                                    <i class="bi bi-pause-circle" aria-hidden="true"></i>
+                                    <i class="fa-icon fa-icon--status-pending" aria-hidden="true"></i>
                                     {{ 'mfa.action.disable'|trans({}, 'mfa') }}
                                 </button>
                             </form>

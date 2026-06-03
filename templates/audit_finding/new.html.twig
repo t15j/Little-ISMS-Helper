@@ -1,4 +1,7 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+
+{% form_theme form 'audit_finding/_audit_finding_form_theme.html.twig' %}
 
 {% block title %}{{ 'audit_finding.page.new'|trans({}, 'audits') }}{% endblock %}
 
@@ -11,11 +14,114 @@
             { label: 'audit_finding.page.new'|trans({}, 'audits') }
         ]
     } %}
-    <h1 class="h3 mb-4">{{ 'audit_finding.page.new'|trans({}, 'audits') }}</h1>
-    {% embed '_components/_card.html.twig' %}
-        {% block card_body %}
-            {% include 'audit_finding/_form.html.twig' with {form: form} %}
-        {% endblock %}
-    {% endembed %}
+
+    {{ _fa_page_header.render({
+        title: 'audit_finding.page.new'|trans({}, 'audits'),
+        badge: { icon: 'plus', label: '' }
+    }) }}
+
+    {# Empty-state: a finding is structurally tied to an internal audit
+       (audit_id NOT NULL), so without any audit the required audit-select is
+       empty and the form is a dead end. Guide the user to create an audit
+       first instead of showing an un-submittable form. #}
+    {% if form.audit.vars.choices|length == 0 %}
+        {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
+        {{ _fa_empty_state.render({
+            icon: 'nav-clipboard-check',
+            title: 'audit_finding.empty.no_audit.title'|trans({}, 'audits'),
+            text: 'audit_finding.empty.no_audit.text'|trans({}, 'audits'),
+            actions: [
+                { label: 'audit_finding.empty.no_audit.cta'|trans({}, 'audits'), variant: 'primary', icon: 'plus', href: path('app_audit_new', {_locale: app.request.locale}) },
+                { label: 'audit_finding.empty.no_audit.back'|trans({}, 'audits'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_audit_finding_index', {_locale: app.request.locale}) }
+            ]
+        }) }}
+    {% else %}
+    {# C5-03 — Severity × Type correlation help (ISO 19011 Cl. 6.4.8). #}
+    {# P-19 — Form-Step-Inline-Hint controller. See assets/controllers/alva_hint_in_form_controller.js. #}
+    {{ form_start(form, {'attr': {
+        'data-controller': 'audit-finding-correlation-help alva-hint-in-form',
+        'data-alva-hint-in-form-entity-type-value': 'audit_finding',
+        'data-alva-hint-in-form-form-name-value': 'audit_finding',
+        'data-alva-hint-in-form-endpoint-value': path('api_alva_hint_form_evaluate', {'entityType': 'audit_finding'}),
+        'data-alva-hint-in-form-csrf-token-value': csrf_token('alva_hint_form'),
+        'data-action': 'input->alva-hint-in-form#scheduleEvaluate change->alva-hint-in-form#scheduleEvaluate',
+    }}) }}
+    {# Slot consumed by the audit-finding-correlation-help controller. Translated copy
+       travels via data-* attributes so the JS does not need framework access. #}
+    <div data-audit-finding-correlation-help-slot
+         class="form-text small mb-2"
+         hidden
+         data-audit-finding-correlation-critical-to-major-nc-match="{{ 'audit_finding.correlation.critical_to_major_nc.match'|trans({}, 'audits') }}"
+         data-audit-finding-correlation-critical-to-major-nc-suggest="{{ 'audit_finding.correlation.critical_to_major_nc.suggest'|trans({}, 'audits') }}"
+         data-audit-finding-correlation-high-to-major-nc-match="{{ 'audit_finding.correlation.high_to_major_nc.match'|trans({}, 'audits') }}"
+         data-audit-finding-correlation-high-to-major-nc-suggest="{{ 'audit_finding.correlation.high_to_major_nc.suggest'|trans({}, 'audits') }}"
+         data-audit-finding-correlation-medium-to-minor-nc-match="{{ 'audit_finding.correlation.medium_to_minor_nc.match'|trans({}, 'audits') }}"
+         data-audit-finding-correlation-medium-to-minor-nc-suggest="{{ 'audit_finding.correlation.medium_to_minor_nc.suggest'|trans({}, 'audits') }}"
+         data-audit-finding-correlation-low-to-observation-match="{{ 'audit_finding.correlation.low_to_observation.match'|trans({}, 'audits') }}"
+         data-audit-finding-correlation-low-to-observation-suggest="{{ 'audit_finding.correlation.low_to_observation.suggest'|trans({}, 'audits') }}"></div>
+    {% include '_components/_auto_form.html.twig' with {
+        'form': form,
+        'layout': 'outline-rail',
+        'eyebrow': 'ISO 27001 Cl. 9.2 · Audit Finding',
+        'title': 'audit_finding.page.new'|trans({}, 'audits'),
+        'sections': {
+            'overview': {
+                'label': 'form.section.overview'|trans({}, 'messages'),
+                'fields': ['audit', 'findingNumber', 'title', 'description']
+            },
+            'classification': {
+                'label': 'form.section.classification'|trans({}, 'messages'),
+                'fields': ['type', 'severity', 'status', 'source', 'clauseReference']
+            },
+            'root_cause': {
+                'label': 'form.section.root_cause'|trans({}, 'messages'),
+                'fields': ['evidence', 'relatedControls']
+            },
+            'corrective_action': {
+                'label': 'form.section.corrective_action'|trans({}, 'messages'),
+                'fields': ['assignedTo', 'assignedPerson', 'assignedDeputyPersons', 'dueDate']
+            },
+            'nc_capa': {
+                'label': 'audit_finding.section.nc_capa'|trans({}, 'audits'),
+                'fields': ['nonconformityDetails', 'ncRootCauseSummary', 'ncCorrectionDueDate', 'ncVerifiedAt', 'ncVerifiedBy']
+            },
+            'verification': {
+                'label': 'form.section.verification'|trans({}, 'messages'),
+                'fields': ['reportedByPerson', 'reportedByDeputyPersons', 'linkedRequirements']
+            }
+        },
+        'col_widths': {
+            'audit': 6,
+            'findingNumber': 6,
+            'title': 12,
+            'description': 12,
+            'type': 4,
+            'severity': 4,
+            'status': 4,
+            'source': 6,
+            'clauseReference': 6,
+            'evidence': 12,
+            'relatedControls': 12,
+            'assignedTo': 6,
+            'assignedPerson': 6,
+            'assignedDeputyPersons': 12,
+            'dueDate': 6,
+            'nonconformityDetails': 12,
+            'ncRootCauseSummary': 12,
+            'ncCorrectionDueDate': 6,
+            'ncVerifiedAt': 6,
+            'ncVerifiedBy': 6,
+            'reportedByPerson': 6,
+            'reportedByDeputyPersons': 12,
+            'linkedRequirements': 12
+        },
+        'translation_domain': 'audits',
+        'actions': {
+            'close': { 'label': 'common.cancel'|trans({}, 'messages'), 'variant': 'ghost' },
+            'submit': { 'label': 'common.save'|trans({}, 'messages'), 'variant': 'primary' }
+        }
+    } %}
+    {{ form_end(form) }}
+    {% endif %}
 </div>
 {% endblock %}

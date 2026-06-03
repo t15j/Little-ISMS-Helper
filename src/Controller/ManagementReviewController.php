@@ -7,12 +7,17 @@ namespace App\Controller;
 use DateTimeInterface;
 use DateTimeImmutable;
 use App\Entity\ManagementReview;
+use App\Enum\ManagementReviewStatus;
 use App\Form\ManagementReviewType;
 use App\Repository\ManagementReviewRepository;
+use App\Service\ManagementReportService;
 use App\Service\PdfExportService;
 use App\Service\TenantContext;
 use Doctrine\ORM\EntityManagerInterface;
+use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -27,8 +32,10 @@ class ManagementReviewController extends AbstractController
         private readonly TranslatorInterface $translator,
         private readonly TenantContext $tenantContext,
         private readonly PdfExportService $pdfExportService,
+        private readonly ManagementReportService $managementReportService,
+        private readonly Security $security,
     ) {}
-    #[Route('/management-review/', name: 'app_management_review_index')]
+    #[Route('/management-review', name: 'app_management_review_index', methods: ['GET'])]
     public function index(): Response
     {
         $reviews = $this->managementReviewRepository->findAll();
@@ -36,8 +43,8 @@ class ManagementReviewController extends AbstractController
         // Calculate statistics
         $statistics = [
             'total' => count($reviews),
-            'planned' => count($this->managementReviewRepository->findBy(['status' => 'planned'])),
-            'completed' => count($this->managementReviewRepository->findBy(['status' => 'completed'])),
+            'planned' => count($this->managementReviewRepository->findBy(['status' => ManagementReviewStatus::Planned->value])),
+            'completed' => count($this->managementReviewRepository->findBy(['status' => ManagementReviewStatus::Completed->value])),
             'this_year' => count(array_filter($reviews, fn(ManagementReview $review): bool => $review->getReviewDate() instanceof DateTimeInterface &&
                    $review->getReviewDate()->format('Y') === date('Y'))),
         ];
@@ -47,7 +54,7 @@ class ManagementReviewController extends AbstractController
             'statistics' => $statistics,
         ]);
     }
-    #[Route('/management-review/new', name: 'app_management_review_new')]
+    #[Route('/management-review/new', name: 'app_management_review_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function new(Request $request): Response
     {
@@ -62,23 +69,27 @@ class ManagementReviewController extends AbstractController
             $this->entityManager->persist($managementReview);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('management_review.success.created'));
+            $this->addFlash('success', $this->translator->trans('management_review.success.created', [], 'messages'));
             return $this->redirectToRoute('app_management_review_show', ['id' => $managementReview->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('management_review/new.html.twig', [
             'review' => $managementReview,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/management-review/{id}', name: 'app_management_review_show', requirements: ['id' => '\d+'])]
+    #[Route('/management-review/{id}', name: 'app_management_review_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(ManagementReview $managementReview): Response
     {
         return $this->render('management_review/show.html.twig', [
             'review' => $managementReview,
         ]);
     }
-    #[Route('/management-review/{id}/edit', name: 'app_management_review_edit', requirements: ['id' => '\d+'])]
+    #[Route('/management-review/{id}/edit', name: 'app_management_review_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function edit(Request $request, ManagementReview $managementReview): Response
     {
@@ -89,16 +100,20 @@ class ManagementReviewController extends AbstractController
             $managementReview->setUpdatedAt(new DateTimeImmutable());
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('management_review.success.updated'));
+            $this->addFlash('success', $this->translator->trans('management_review.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_management_review_show', ['id' => $managementReview->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('management_review/edit.html.twig', [
             'review' => $managementReview,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/management-review/{id}/pdf', name: 'app_management_review_pdf', requirements: ['id' => '\d+'])]
+    #[Route('/management-review/{id}/pdf', name: 'app_management_review_pdf', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_MANAGER')]
     public function pdf(ManagementReview $managementReview): Response
     {
@@ -125,6 +140,38 @@ class ManagementReviewController extends AbstractController
         ]);
     }
 
+    /**
+     * V3 B4 / EF-1: Auto-Collect ein Management-Review aus existierender §9.3-Datenlage.
+     * Pre-fills Risk-/Audit-/NC-/KPI-Narratives, anschliessend redirect auf edit.
+     */
+    #[Route('/management-review/auto-collect', name: 'app_management_review_auto_collect', methods: ['POST'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function autoCollect(Request $request): Response
+    {
+        if (!$this->isCsrfTokenValid('auto_collect_review', (string) $request->request->get('_token'))) {
+            $this->addFlash('error', 'Invalid CSRF token.');
+            return $this->redirectToRoute('app_management_review_index');
+        }
+
+        $tenant = $this->tenantContext->getCurrentTenant();
+        if ($tenant === null) {
+            $this->addFlash('error', $this->translator->trans('common.error.no_tenant', [], 'messages'));
+            return $this->redirectToRoute('app_management_review_index');
+        }
+
+        $referenceDate = new DateTimeImmutable();
+        $locale = $request->getLocale() === 'de' ? 'de' : 'en';
+
+        $review = $this->managementReportService->createManagementReviewFromReport(
+            $tenant,
+            $referenceDate,
+            $locale
+        );
+
+        $this->addFlash('success', $this->translator->trans('management_review.auto_collect.success', [], 'management_review'));
+        return $this->redirectToRoute('app_management_review_edit', ['id' => $review->getId()]);
+    }
+
     #[Route('/management-review/{id}/delete', name: 'app_management_review_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function delete(Request $request, ManagementReview $managementReview): Response
@@ -133,9 +180,67 @@ class ManagementReviewController extends AbstractController
             $this->entityManager->remove($managementReview);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('management_review.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('management_review.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_management_review_index');
+    }
+
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * ManagementReviews are terminal — returns empty dependencies.
+     */
+    #[Route('/management-review/bulk-delete-check', name: 'app_management_review_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = (array) ($data['ids'] ?? []);
+        return new JsonResponse(['dependencies' => [], 'checked_count' => count($ids)]);
+    }
+
+    #[Route('/management-review/bulk-delete', name: 'app_management_review_bulk_delete', methods: ['POST'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function bulkDelete(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+        $ids = $data['ids'] ?? [];
+
+        if (empty($ids)) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->security->getUser()?->getTenant();
+        $deleted = 0;
+        $errors = [];
+
+        foreach ($ids as $id) {
+            try {
+                $review = $this->managementReviewRepository->find($id);
+                if (!$review) {
+                    $errors[] = "ManagementReview ID $id not found";
+                    continue;
+                }
+                if ($tenant && $review->getTenant() !== $tenant) {
+                    $errors[] = "ManagementReview ID $id does not belong to your organization";
+                    continue;
+                }
+                $this->entityManager->remove($review);
+                $deleted++;
+            } catch (Exception $e) {
+                $errors[] = "Error deleting ManagementReview ID $id: " . $e->getMessage();
+            }
+        }
+
+        if ($deleted > 0) {
+            $this->entityManager->flush();
+        }
+
+        return $this->json([
+            'success' => $deleted > 0,
+            'deleted' => $deleted,
+            'errors' => $errors,
+            'message' => "$deleted management reviews deleted successfully",
+        ]);
     }
 }

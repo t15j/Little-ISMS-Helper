@@ -1,30 +1,64 @@
 import { Controller } from '@hotwired/stimulus';
 
 /**
- * Bulk Actions Controller
- * Enables bulk operations on table rows
+ * Bulk Actions Controller — canonical Aurora bulk-action-bar (per
+ * docs/design_system/sections/feedback-systems.html §175-255).
  *
- * Usage:
- * <div data-controller="bulk-actions">
- *   <table>
- *     <thead>
- *       <tr>
- *         <th><input type="checkbox" data-action="bulk-actions#selectAll"></th>
- *       </tr>
- *     </thead>
- *     <tbody>
- *       <tr>
- *         <td><input type="checkbox" data-bulk-actions-target="item" value="1"></td>
- *       </tr>
- *     </tbody>
- *   </table>
- *   <div data-bulk-actions-target="actionBar" hidden>...</div>
- * </div>
+ * Usage (canonical Aurora v4 BEM — see docs/design_system/sections/generics-extra.html#bulk-action-bar):
+ *   <div data-controller="bulk-actions" data-bulk-actions-endpoint-value="/asset">
+ *     <table class="table-bulk-selectable">
+ *       <thead><tr>
+ *         <th class="bulk-select-column">
+ *           <input type="checkbox" data-action="bulk-actions#selectAll"
+ *                  data-bulk-actions-target="selectAllCheckbox">
+ *         </th>...
+ *       </tr></thead>
+ *       <tbody><tr>
+ *         <td class="bulk-select-column">
+ *           <input type="checkbox" data-bulk-actions-target="item" value="1"
+ *                  data-action="bulk-actions#selectItem">
+ *         </td>...
+ *       </tr></tbody>
+ *     </table>
+ *
+ *     <div class="fa-bulk-bar" hidden role="region" aria-live="polite"
+ *          data-bulk-actions-target="actionBar">
+ *       <div class="fa-bulk-bar__count">
+ *         <span class="fa-bulk-bar__count-num" data-bulk-actions-target="count">0</span>
+ *         <span class="fa-bulk-bar__count-label">ausgewählt</span>
+ *       </div>
+ *       <div class="fa-bulk-bar__divider"></div>
+ *       <div class="fa-bulk-bar__actions">
+ *         <button class="fa-bulk-btn">…</button>
+ *         <button class="fa-bulk-btn fa-bulk-btn--success">Approven</button>
+ *         <button class="fa-bulk-btn fa-bulk-btn--danger"
+ *                 data-action="click->bulk-actions#bulkDelete">Löschen</button>
+ *       </div>
+ *       <div class="fa-bulk-bar__divider"></div>
+ *       <button class="fa-bulk-bar__close" aria-label="Auswahl aufheben"
+ *               data-action="click->bulk-actions#deselectAll"><i class="fa-icon fa-icon--ui-close"></i></button>
+ *     </div>
+ *   </div>
+ *
+ *   Brand variant (hero lists: risk, document): add class `fa-bulk-bar--brand`.
+ *   Loading state: add class `is-loading` to the active button.
+ *
+ * Targets:
+ *   item                <input type="checkbox"> per row
+ *   actionBar / bar     `.fa-bulk-bar` element to show/hide via [hidden] attribute
+ *   count               `.fa-bulk-bar__count-num` — shows selected count
+ *   selectAllCheckbox   header `<thead>` master checkbox
+ *
+ * Public API:
+ *   ctrl.selectedIds()       → ['1','7','42']  (canonical name)
+ *   ctrl.getSelectedIds()    → alias of selectedIds() for legacy callers
+ *   ctrl.getSelectedItems()  → checked input nodes
  */
 export default class extends Controller {
-    static targets = ['item', 'actionBar', 'count', 'selectAllCheckbox'];
+    static targets = ['item', 'actionBar', 'bar', 'count', 'selectAllCheckbox', 'tagPicker', 'tagCheckbox'];
     static values = {
         endpoint: String,
+        csrfToken: { type: String, default: '' },
         // Translation strings
         entityLabel: { type: String, default: 'items' },
         deleteSuccess: { type: String, default: '%count% %entity% successfully deleted' },
@@ -33,11 +67,48 @@ export default class extends Controller {
         exportError: { type: String, default: 'Error exporting' },
         tagPrompt: { type: String, default: 'Add tag:' },
         tagSuccess: { type: String, default: 'Tag added' },
-        tagError: { type: String, default: 'Error adding tag' }
+        tagError: { type: String, default: 'Error adding tag' },
+        statusChangeSuccess: { type: String, default: '%count% documents updated' },
+        statusChangePartial: { type: String, default: '%changed% updated, %rejected% rejected' },
+        statusChangeError: { type: String, default: 'Update failed' },
+        // Applicability change (SoA)
+        applicabilityUrl: { type: String, default: '' },
+        applicabilityCsrfToken: { type: String, default: '' },
+        // WS-5 Tag-Apply mode (tag_mode = true in _bulk_action_bar.html.twig)
+        entityClass: { type: String, default: '' },
+        tagAddUrl: { type: String, default: '' },
+        tagRemoveUrl: { type: String, default: '' },
+        exportUrl: { type: String, default: '' }
     };
 
     connect() {
+        // No teleport — the bar stays inside the controller's DOM scope so
+        // Stimulus action bindings remain valid. CSS-based stacking-context
+        // escape: .fa-bulk-bar uses position:fixed + isolation:isolate +
+        // will-change:transform so it renders above ancestor card transforms
+        // without leaving the controller subtree.
+        const bar = this.hasActionBarTarget ? this.actionBarTarget : (this.hasBarTarget ? this.barTarget : null);
+        if (bar) {
+            this._bar = bar;
+            // Cache the CSRF token from the bar's data attribute.
+            // (data-bulk-actions-csrf-token on the bar element, set by _bulk_action_bar.html.twig).
+            if (!this.csrfTokenValue && bar.dataset.bulkActionsCsrfToken) {
+                this._csrfToken = bar.dataset.bulkActionsCsrfToken;
+            }
+        }
         this.updateActionBar();
+    }
+
+    /**
+     * Returns the CSRF token for bulk-action POSTs (OWASP A01 / ISO 27001 Cl. 7.5.3).
+     * Reads from Stimulus value first, then from bar data attribute cache.
+     */
+    _getCsrfToken() {
+        return this.csrfTokenValue || this._csrfToken || '';
+    }
+
+    disconnect() {
+        this._bar = null;
     }
 
     selectAll(event) {
@@ -71,15 +142,22 @@ export default class extends Controller {
         }
     }
 
-    showActionBar(count) {
-        if (this.hasActionBarTarget) {
-            this.actionBarTarget.hidden = false;
+    /**
+     * Resolve the bar element. Prefer cached ref (set in connect() before the
+     * body-teleport, since Stimulus targets resolve only inside controller
+     * scope). Fallback to live target lookup for callers before connect().
+     */
+    _barElement() {
+        if (this._bar) return this._bar;
+        if (this.hasBarTarget) return this.barTarget;
+        if (this.hasActionBarTarget) return this.actionBarTarget;
+        return null;
+    }
 
-            // Animate in
-            requestAnimationFrame(() => {
-                this.actionBarTarget.style.transform = 'translateY(0)';
-                this.actionBarTarget.style.opacity = '1';
-            });
+    showActionBar(count) {
+        const bar = this._barElement();
+        if (bar) {
+            bar.hidden = false;
 
             // Update count
             if (this.hasCountTarget) {
@@ -89,13 +167,9 @@ export default class extends Controller {
     }
 
     hideActionBar() {
-        if (this.hasActionBarTarget) {
-            this.actionBarTarget.style.transform = 'translateY(20px)';
-            this.actionBarTarget.style.opacity = '0';
-
-            setTimeout(() => {
-                this.actionBarTarget.hidden = true;
-            }, 200);
+        const bar = this._barElement();
+        if (bar) {
+            bar.hidden = true;
         }
     }
 
@@ -103,14 +177,28 @@ export default class extends Controller {
         return this.itemTargets.filter(item => item.checked);
     }
 
-    getSelectedIds() {
+    /**
+     * Canonical public API — returns array of values for checked items.
+     * Spec: feedback-systems.html §"Public method: selectedIds()".
+     */
+    selectedIds() {
         return this.getSelectedItems().map(item => item.value);
+    }
+
+    /** Alias for legacy callers — prefer selectedIds(). */
+    getSelectedIds() {
+        return this.selectedIds();
+    }
+
+    /** Canonical recount/visibility update — alias of updateActionBar(). */
+    update() {
+        this.updateActionBar();
     }
 
     async bulkDelete(event) {
         event.preventDefault();
 
-        const ids = this.getSelectedIds();
+        const ids = this.selectedIds();
 
         if (ids.length === 0) {
             return;
@@ -124,7 +212,7 @@ export default class extends Controller {
         if (!confirmModal) {
             // Fallback to simple confirm if modal not available
             const confirmText = window.translations?.bulk_delete?.confirm_count || 'Do you really want to delete %count% %entity%?';
-            const confirmed = confirm(confirmText.replace('%count%', ids.length).replace('%entity%', entityLabel));
+            const confirmed = await window.faConfirm(confirmText.replace('%count%', ids.length).replace('%entity%', entityLabel), { tone: 'danger' });
             if (!confirmed) {
                 return;
             }
@@ -198,7 +286,7 @@ export default class extends Controller {
     async bulkExport(event) {
         event.preventDefault();
 
-        const ids = this.getSelectedIds();
+        const ids = this.selectedIds();
 
         if (ids.length === 0) {
             return;
@@ -211,7 +299,7 @@ export default class extends Controller {
                     'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: JSON.stringify({ ids })
+                body: JSON.stringify({ ids, _token: this._getCsrfToken() })
             });
 
             if (!response.ok) {
@@ -220,9 +308,24 @@ export default class extends Controller {
 
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
+
+            // Derive filename from server's Content-Disposition (correct extension).
+            // Fallback: extension from Content-Type, else .csv (BulkActionTrait default).
+            let filename = `export-${Date.now()}.csv`;
+            const cd = response.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename="?([^";]+)"?/i);
+            if (m && m[1]) {
+                filename = m[1];
+            } else {
+                const ct = (response.headers.get('Content-Type') || '').toLowerCase();
+                if (ct.includes('spreadsheetml') || ct.includes('xlsx')) {
+                    filename = `export-${Date.now()}.xlsx`;
+                }
+            }
+
             const a = document.createElement('a');
             a.href = url;
-            a.download = `export-${Date.now()}.xlsx`;
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -238,7 +341,7 @@ export default class extends Controller {
     async bulkTag(event) {
         event.preventDefault();
 
-        const ids = this.getSelectedIds();
+        const ids = this.selectedIds();
 
         if (ids.length === 0) {
             return;
@@ -270,6 +373,264 @@ export default class extends Controller {
 
         } catch (error) {
             this.showToast(this.tagErrorValue, 'error');
+        }
+    }
+
+    /**
+     * Bulk status-change action.
+     * Button must carry: data-target-status="approved" (or another valid status).
+     * Wired via: data-action="click->bulk-actions#bulkStatusChange"
+     */
+    async bulkStatusChange(event) {
+        event.preventDefault();
+
+        const ids = this.selectedIds();
+        if (ids.length === 0) {
+            return;
+        }
+
+        const newStatus = event.currentTarget.dataset.targetStatus;
+        if (!newStatus) {
+            this.showToast(this.statusChangeErrorValue, 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(this.endpointValue + '/bulk-status-change', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ ids, newStatus, _token: this._getCsrfToken() })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok && !payload.ok) {
+                throw new Error(payload.error || this.statusChangeErrorValue);
+            }
+
+            const changed = payload.changed ?? 0;
+            const rejected = payload.rejected ?? [];
+
+            if (rejected.length > 0) {
+                // Partial success — surface non-blocking notice
+                const msg = this.statusChangePartialValue
+                    .replace('%changed%', changed)
+                    .replace('%rejected%', rejected.length);
+                this.showToast(msg, 'warning');
+            } else {
+                const msg = this.statusChangeSuccessValue.replace('%count%', changed);
+                this.showToast(msg, 'success');
+            }
+
+            // Reload page so status pills reflect the new state
+            setTimeout(() => window.location.reload(), 800);
+
+        } catch (error) {
+            this.showToast(this.statusChangeErrorValue + ': ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * Bulk applicability change (SoA only).
+     * Button must carry: data-applicable-value="1" (applicable) or "0" (N/A).
+     * Wired via: data-action="click->bulk-actions#bulkApplicabilityChange"
+     * Requires data-bulk-actions-applicability-url-value and
+     *           data-bulk-actions-applicability-csrf-token-value on the controller element.
+     * Submits a hidden form POST to preserve server-side CSRF validation.
+     */
+    bulkApplicabilityChange(event) {
+        event.preventDefault();
+
+        const ids = this.selectedIds();
+        if (ids.length === 0) {
+            return;
+        }
+
+        const applicableValue = event.currentTarget.dataset.applicableValue;
+        if (applicableValue === undefined) {
+            return;
+        }
+
+        const actionUrl = this.applicabilityUrlValue;
+        const csrfToken = this.applicabilityCsrfTokenValue;
+
+        if (!actionUrl) {
+            console.error('bulk-actions: applicabilityUrl value is not set');
+            return;
+        }
+
+        // Build a transient hidden form and submit it (server expects form POST + CSRF)
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = actionUrl;
+
+        const tokenInput = document.createElement('input');
+        tokenInput.type = 'hidden';
+        tokenInput.name = '_token';
+        tokenInput.value = csrfToken;
+        form.appendChild(tokenInput);
+
+        const applicableInput = document.createElement('input');
+        applicableInput.type = 'hidden';
+        applicableInput.name = 'applicable';
+        applicableInput.value = applicableValue;
+        form.appendChild(applicableInput);
+
+        // The server requires a non-empty reason when applicable=0 (N/A).
+        // For the quick-bar we use the caller-supplied default reason from
+        // data-applicable-reason or fall back to a generic placeholder so the
+        // bulk-operation proceeds without an extra prompt.
+        const defaultReason = event.currentTarget.dataset.applicableReason || '';
+        const reasonInput = document.createElement('input');
+        reasonInput.type = 'hidden';
+        reasonInput.name = 'reason';
+        reasonInput.value = defaultReason;
+        form.appendChild(reasonInput);
+
+        ids.forEach(id => {
+            const idInput = document.createElement('input');
+            idInput.type = 'hidden';
+            idInput.name = 'control_ids[]';
+            idInput.value = id;
+            form.appendChild(idInput);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    /**
+     * Bulk assign — wires to entity-specific /bulk-assign endpoints (Asset, Risk,
+     * Training). A full assignee-picker UI is not yet implemented, so this method
+     * shows a non-blocking toast informing the user that the action is not yet
+     * available via the bulk bar. The button renders conditionally in
+     * _bulk_action_bar.html.twig when 'assign' is in the actions array, so it
+     * would be a dead click without this guard.
+     *
+     * Decision: prefer graceful no-op over removing 'assign' from 3 callers
+     * (asset/index, risk/index, training/index) because the backend endpoint
+     * exists and a picker modal can be wired here in a follow-up sprint without
+     * touching templates.
+     */
+    bulkAssign(event) {
+        event.preventDefault();
+        this.showToast(
+            window.translations?.bulk_actions?.assign_not_available ?? 'Assign via bulk-bar not yet available — use the row action instead.',
+            'warning'
+        );
+    }
+
+    /**
+     * WS-5 Tag-Apply mode — open the inline tag-picker for adding tags.
+     * Sets a data attribute on the picker so submitTagApply knows which URL to use.
+     */
+    openTagAdd(event) {
+        event.preventDefault();
+        const picker = this.hasTagPickerTarget ? this.tagPickerTarget : null;
+        if (!picker) return;
+        picker.dataset.tagMode = 'add';
+        picker.hidden = false;
+        // Uncheck all tag checkboxes for a clean slate
+        if (this.hasTagCheckboxTarget) {
+            this.tagCheckboxTargets.forEach(cb => { cb.checked = false; });
+        }
+    }
+
+    /**
+     * WS-5 Tag-Apply mode — open the inline tag-picker for removing tags.
+     */
+    openTagRemove(event) {
+        event.preventDefault();
+        const picker = this.hasTagPickerTarget ? this.tagPickerTarget : null;
+        if (!picker) return;
+        picker.dataset.tagMode = 'remove';
+        picker.hidden = false;
+        if (this.hasTagCheckboxTarget) {
+            this.tagCheckboxTargets.forEach(cb => { cb.checked = false; });
+        }
+    }
+
+    /**
+     * WS-5 Tag-Apply mode — submit selected tags to the backend.
+     * Uses tagAddUrlValue or tagRemoveUrlValue depending on picker mode,
+     * falling back to the TagController /admin/tags/bulk/{entityClass} endpoint
+     * when no explicit URL is provided.
+     *
+     * The backend (TagController::bulkApply) expects:
+     *   Content-Type: application/json
+     *   X-CSRF-Token: <token>
+     *   body: { entity_ids: [...], tag_ids: [...] }
+     */
+    async submitTagApply(event) {
+        event.preventDefault();
+
+        const ids = this.selectedIds();
+        if (ids.length === 0) return;
+
+        const picker = this.hasTagPickerTarget ? this.tagPickerTarget : null;
+        const mode = picker?.dataset.tagMode ?? 'add';
+
+        // Collect checked tag IDs from the picker checkboxes
+        const tagIds = this.hasTagCheckboxTarget
+            ? this.tagCheckboxTargets.filter(cb => cb.checked).map(cb => cb.value)
+            : [];
+
+        if (tagIds.length === 0) {
+            this.showToast(this.tagErrorValue + ': no tags selected', 'warning');
+            return;
+        }
+
+        // Resolve submit URL: explicit value → fallback to TagController endpoint
+        let url = (mode === 'remove' ? this.tagRemoveUrlValue : this.tagAddUrlValue) || '';
+        if (!url && this.entityClassValue) {
+            // Short class name (e.g. "Asset") extracted from FQCN for the route param
+            const shortClass = this.entityClassValue.split('\\').pop();
+            url = `/admin/tags/bulk/${encodeURIComponent(shortClass)}`;
+        }
+
+        if (!url) {
+            this.showToast(this.tagErrorValue, 'error');
+            return;
+        }
+
+        const csrfToken = this._getCsrfToken();
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+                },
+                body: JSON.stringify({ entity_ids: ids.map(Number), tag_ids: tagIds.map(Number) }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            this.showToast(this.tagSuccessValue, 'success');
+            this.closeTagPicker();
+            setTimeout(() => window.location.reload(), 800);
+
+        } catch (error) {
+            this.showToast(this.tagErrorValue + ': ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * WS-5 Tag-Apply mode — close the inline tag-picker without submitting.
+     */
+    closeTagPicker(event) {
+        if (event) event.preventDefault();
+        const picker = this.hasTagPickerTarget ? this.tagPickerTarget : null;
+        if (picker) {
+            picker.hidden = true;
+            delete picker.dataset.tagMode;
         }
     }
 

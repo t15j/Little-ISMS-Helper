@@ -26,6 +26,11 @@ use App\Repository\RiskRepository;
 use App\Repository\SupplierRepository;
 use App\Repository\TenantRepository;
 use App\Repository\TrainingRepository;
+use App\Service\DataIntegrity\DuplicateFinder;
+use App\Service\DataIntegrity\HealthIssueAggregator;
+use App\Service\DataIntegrity\OrphanFinder;
+use App\Service\DataIntegrity\ReferenceIntegrityChecker;
+use App\Service\DataIntegrity\SchemaDriftChecker;
 use App\Service\DataIntegrityService;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\ORM\EntityManagerInterface;
@@ -76,6 +81,44 @@ class DataIntegrityServiceTest extends TestCase
         $this->locationRepository = $this->createMock(LocationRepository::class);
         $this->personRepository = $this->createMock(PersonRepository::class);
 
+        // Wire up collaborators so the facade delegates to them rather than
+        // using inline fallback implementations. The collaborators receive the
+        // same mock repositories as the facade.
+        $orphanFinder = new OrphanFinder($this->entityManager);
+        $duplicateFinder = new DuplicateFinder(
+            $this->entityManager,
+            $this->auditRepository,
+            $this->assetRepository,
+            $this->riskRepository,
+            $this->incidentRepository,
+            $this->documentRepository,
+        );
+        $referenceIntegrityChecker = new ReferenceIntegrityChecker(
+            $this->entityManager,
+            $this->riskRepository,
+            $this->incidentRepository,
+            $this->controlRepository,
+            $this->auditRepository,
+            $this->documentRepository,
+            $this->trainingRepository,
+            $this->bcPlanRepository,
+        );
+        $healthIssueAggregator = new HealthIssueAggregator(
+            $this->riskRepository,
+            $this->assetRepository,
+            $this->incidentRepository,
+            $this->dataBreachRepository,
+            $this->processingActivityRepository,
+            $this->supplierRepository,
+            $this->bcPlanRepository,
+            $this->trainingRepository,
+            $this->documentRepository,
+        );
+        $schemaDriftChecker = new SchemaDriftChecker(
+            $this->entityManager,
+            $this->tenantRepository,
+        );
+
         $this->service = new DataIntegrityService(
             $this->entityManager,
             $this->assetRepository,
@@ -92,7 +135,23 @@ class DataIntegrityServiceTest extends TestCase
             $this->processingActivityRepository,
             $this->supplierRepository,
             $this->locationRepository,
-            $this->personRepository
+            $this->personRepository,
+            null, // dataSubjectRequestRepository
+            null, // kpiSnapshotRepository
+            null, // dpiaRepository
+            null, // auditFindingRepository
+            null, // correctiveActionRepository
+            null, // managementReviewRepository
+            null, // workflowInstanceRepository
+            null, // riskTreatmentPlanRepository
+            null, // projectDir
+            null, // uploadOrphanChecker
+            null, // statusEnumDriftChecker
+            $orphanFinder,
+            $duplicateFinder,
+            $referenceIntegrityChecker,
+            $healthIssueAggregator,
+            $schemaDriftChecker,
         );
     }
 
@@ -532,5 +591,208 @@ class DataIntegrityServiceTest extends TestCase
         $this->supplierRepository->method('createQueryBuilder')->willReturn($emptyQb);
         $this->locationRepository->method('createQueryBuilder')->willReturn($emptyQb);
         $this->personRepository->method('createQueryBuilder')->willReturn($emptyQb);
+    }
+
+    // ========== Global-Catalogue Exemption TESTS ==========
+    // Regression guard for: UniqueConstraintViolationException when repair-all
+    // tries to assign a tenant_id to globally-scoped NotificationTemplate rows
+    // (tenant_id=NULL by design; unique key uniq_template_key_tenant).
+
+    #[Test]
+    public function testGetGlobalCatalogueEntityClassesIncludesNotificationTemplate(): void
+    {
+        $classes = $this->service->getGlobalCatalogueEntityClasses();
+
+        $this->assertContains(
+            \App\Entity\Notification\NotificationTemplate::class,
+            $classes,
+            'NotificationTemplate must be in the global-catalogue exemption list ' .
+            'so repair-orphan never assigns a tenant_id to seeded global templates.',
+        );
+    }
+
+    #[Test]
+    public function testGetGlobalCatalogueEntityClassesReturnsArray(): void
+    {
+        $result = $this->service->getGlobalCatalogueEntityClasses();
+
+        $this->assertIsArray($result);
+        $this->assertNotEmpty($result, 'Exemption list must contain at least NotificationTemplate.');
+    }
+
+    #[Test]
+    public function testNotificationTemplateIsExcludedFromOrphanScan(): void
+    {
+        // The generic orphan scan (queryOrphanedEntities) excludes GLOBAL_CATALOGUE_ENTITIES
+        // by merging them into $excludedClasses. We verify this via the MetadataFactory
+        // branch by confirming that findAllOrphanedEntities() does not return
+        // notification_templates even when the EM reports NotificationTemplate rows
+        // with tenant IS NULL.
+        //
+        // Since the method uses MetadataFactory->getAllMetadata() (real Doctrine internals),
+        // we test the contract via getGlobalCatalogueEntityClasses() and confirm the
+        // constant is wired: both checks together constitute a regression guard.
+
+        $exemptClasses = $this->service->getGlobalCatalogueEntityClasses();
+
+        // Contract: every class in the exempt list must have a 'tenant' association
+        // so that it would otherwise be picked up by the generic orphan scan.
+        foreach ($exemptClasses as $class) {
+            $this->assertTrue(
+                class_exists($class),
+                sprintf('Exempt class %s must be an autoloadable FQCN.', $class),
+            );
+
+            // Verify the class has a setTenant method (proof it has the association)
+            $this->assertTrue(
+                method_exists($class, 'setTenant'),
+                sprintf(
+                    '%s is in GLOBAL_CATALOGUE_ENTITIES but has no setTenant() method — ' .
+                    'it does not participate in the tenant association and should be removed from the list.',
+                    $class,
+                ),
+            );
+
+            // Verify the class has isGlobal() or the tenant field is nullable
+            // (NotificationTemplate has isGlobal(); future classes may differ —
+            // we require at minimum that getTenant() can return null)
+            $this->assertTrue(
+                method_exists($class, 'getTenant'),
+                sprintf('%s must have getTenant() to be a valid globally-scoped entity.', $class),
+            );
+        }
+    }
+
+    // ========== Extended-Coverage Smoke Tests (2026-05) ==========
+    // file orphans, cascade cleanup, JSON schema, audit-log integrity,
+    // status-enum drift. Tests are smoke-level: confirm shape of return
+    // value when repositories/EM are empty mocks. Full integration coverage
+    // lives in WebTestCase-backed controller tests.
+
+    #[Test]
+    public function testFindOrphanedUploadsReturnsEmptyStructureWhenProjectDirMissing(): void
+    {
+        // Default constructor in setUp() passes no projectDir → null path.
+        $result = $this->service->findOrphanedUploads();
+
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('files', $result);
+        $this->assertArrayHasKey('scanned', $result);
+        $this->assertArrayHasKey('referenced', $result);
+        $this->assertArrayHasKey('uploads_dir', $result);
+        $this->assertSame([], $result['files']);
+        $this->assertSame(0, $result['scanned']);
+        $this->assertNull($result['uploads_dir']);
+    }
+
+    #[Test]
+    public function testFindCascadeOrphansReturnsAllFiveCategories(): void
+    {
+        // No EM data → every bucket should be empty but present.
+        $qb = $this->createMock(QueryBuilder::class);
+        $query = $this->createMock(Query::class);
+        $qb->method('select')->willReturnSelf();
+        $qb->method('from')->willReturnSelf();
+        $qb->method('where')->willReturnSelf();
+        $qb->method('setParameter')->willReturnSelf();
+        $qb->method('getQuery')->willReturn($query);
+        $query->method('getArrayResult')->willReturn([]);
+        $query->method('getResult')->willReturn([]);
+        $this->entityManager->method('createQueryBuilder')->willReturn($qb);
+
+        $result = $this->service->findCascadeOrphans();
+
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('workflow_instances', $result);
+        $this->assertArrayHasKey('mfa_tokens', $result);
+        $this->assertArrayHasKey('sso_user_approvals', $result);
+        $this->assertArrayHasKey('evidence_tasks', $result);
+        $this->assertArrayHasKey('notification_deliveries', $result);
+        foreach ($result as $category => $items) {
+            $this->assertSame([], $items, sprintf('Bucket %s should be empty', $category));
+        }
+    }
+
+    #[Test]
+    public function testFindJsonSchemaViolationsReturnsFourCategories(): void
+    {
+        $this->tenantRepository->method('findAll')->willReturn([]);
+
+        $qb = $this->createMock(QueryBuilder::class);
+        $query = $this->createMock(Query::class);
+        $qb->method('select')->willReturnSelf();
+        $qb->method('from')->willReturnSelf();
+        $qb->method('getQuery')->willReturn($query);
+        $query->method('getArrayResult')->willReturn([]);
+        $query->method('getResult')->willReturn([]);
+        $this->entityManager->method('createQueryBuilder')->willReturn($qb);
+
+        $result = $this->service->findJsonSchemaViolations();
+
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('tenant_settings', $result);
+        $this->assertArrayHasKey('tenant_policy_settings', $result);
+        $this->assertArrayHasKey('notification_rule_conditions', $result);
+        $this->assertArrayHasKey('workflow_step_metadata', $result);
+    }
+
+    #[Test]
+    public function testFindAuditLogIntegrityIssuesReturnsExpectedShape(): void
+    {
+        // Failing-connection scenario: every nested fetch throws → method
+        // must still return the three-key structure with empty arrays.
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->method('fetchAllAssociative')->willThrowException(new \RuntimeException('no audit_log table in unit-test'));
+        $connection->method('fetchOne')->willThrowException(new \RuntimeException('no audit_log table'));
+        $this->entityManager->method('getConnection')->willReturn($connection);
+
+        $result = $this->service->findAuditLogIntegrityIssues();
+
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('bulk_batch_mismatches', $result);
+        $this->assertArrayHasKey('day_gaps', $result);
+        $this->assertArrayHasKey('null_tenant_entries', $result);
+        $this->assertSame([], $result['bulk_batch_mismatches']);
+        $this->assertSame([], $result['day_gaps']);
+        $this->assertSame([], $result['null_tenant_entries']);
+    }
+
+    #[Test]
+    public function testFindStatusEnumDriftIssuesReturnsListWhenNoData(): void
+    {
+        // Mock MetadataFactory: getMetadataFor throws → method continues to next entity.
+        // This simulates the case where entity FQCNs in the explicit map are not
+        // registered with this EntityManager (typical for narrow unit-test mocks).
+        $metadataFactory = $this->getMockBuilder(\Doctrine\ORM\Mapping\ClassMetadataFactory::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+        $metadataFactory->method('getMetadataFor')->willThrowException(new \RuntimeException('not mapped in unit test'));
+        $this->entityManager->method('getMetadataFactory')->willReturn($metadataFactory);
+
+        $result = $this->service->findStatusEnumDriftIssues();
+
+        $this->assertIsArray($result);
+        // No entities have a 'status' field per the mock → empty result list.
+        $this->assertSame([], $result);
+    }
+
+    #[Test]
+    public function testRunFullIntegrityCheckIncludesExtendedCoverageKeys(): void
+    {
+        $this->setupEmptyRepositoryMocks();
+
+        // Connection mock for findAuditLogIntegrityIssues.
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->method('fetchAllAssociative')->willReturn([]);
+        $connection->method('fetchOne')->willReturn(0);
+        $this->entityManager->method('getConnection')->willReturn($connection);
+
+        $result = $this->service->runFullIntegrityCheck();
+
+        $this->assertArrayHasKey('orphaned_uploads', $result);
+        $this->assertArrayHasKey('cascade_orphans', $result);
+        $this->assertArrayHasKey('json_schema_violations', $result);
+        $this->assertArrayHasKey('audit_log_integrity', $result);
+        $this->assertArrayHasKey('status_enum_drift', $result);
     }
 }

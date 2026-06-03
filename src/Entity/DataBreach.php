@@ -7,6 +7,7 @@ namespace App\Entity;
 use DateTimeInterface;
 use DateTimeImmutable;
 use DateTime;
+use App\Enum\DataBreachStatus;
 use App\Repository\DataBreachRepository;
 use App\Service\OwnerResolver;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -103,6 +104,10 @@ class DataBreach
     #[ORM\Column(length: 30, options: ['default' => 'draft'])]
     #[Assert\Choice(choices: ['draft', 'under_assessment', 'authority_notified', 'subjects_notified', 'closed'])]
     private string $status = 'draft';
+
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /**
      * Severity of the breach: low, medium, high, critical
@@ -394,6 +399,10 @@ class DataBreach
         $this->assessorDeputyPersons = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
         $this->updatedAt = new DateTimeImmutable();
+        // CS-P0 #11.3: GDPR Art. 33 72h-SLA start time unambiguous when
+        // detectedAt is pre-filled. Explicit overrides on existing rows
+        // remain untouched (only new instances affected).
+        $this->detectedAt = new DateTimeImmutable();
     }
 
     // ============================================================================
@@ -600,7 +609,7 @@ class DataBreach
         return $this->referenceNumber;
     }
 
-    public function setReferenceNumber(string $referenceNumber): static
+    public function setReferenceNumber(?string $referenceNumber): static
     {
         $this->referenceNumber = $referenceNumber;
         return $this;
@@ -611,7 +620,7 @@ class DataBreach
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -622,10 +631,23 @@ class DataBreach
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(DataBreachStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum
+        // while existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): DataBreachStatus
+    {
+        return DataBreachStatus::from($this->status);
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     public function getSeverity(): ?string
@@ -633,7 +655,7 @@ class DataBreach
         return $this->severity;
     }
 
-    public function setSeverity(string $severity): static
+    public function setSeverity(?string $severity): static
     {
         $this->severity = $severity;
         return $this;
@@ -677,7 +699,7 @@ class DataBreach
         return $this->breachNature;
     }
 
-    public function setBreachNature(string $breachNature): static
+    public function setBreachNature(?string $breachNature): static
     {
         $this->breachNature = $breachNature;
         return $this;
@@ -688,7 +710,7 @@ class DataBreach
         return $this->likelyConsequences;
     }
 
-    public function setLikelyConsequences(string $likelyConsequences): static
+    public function setLikelyConsequences(?string $likelyConsequences): static
     {
         $this->likelyConsequences = $likelyConsequences;
         return $this;
@@ -699,7 +721,7 @@ class DataBreach
         return $this->measuresTaken;
     }
 
-    public function setMeasuresTaken(string $measuresTaken): static
+    public function setMeasuresTaken(?string $measuresTaken): static
     {
         $this->measuresTaken = $measuresTaken;
         return $this;
@@ -808,6 +830,24 @@ class DataBreach
     }
 
     public function getSupervisoryAuthorityNotifiedAt(): ?DateTimeInterface
+    {
+        return $this->supervisoryAuthorityNotifiedAt;
+    }
+
+    /**
+     * Whether a supervisory-authority notification is required (Art. 33 GDPR).
+     * Convenience alias used by reporting.
+     */
+    public function isNotificationRequired(): bool
+    {
+        return $this->requiresAuthorityNotification;
+    }
+
+    /**
+     * Date the supervisory authority was actually notified (null = not yet).
+     * Convenience alias of getSupervisoryAuthorityNotifiedAt() for reporting.
+     */
+    public function getNotificationDate(): ?DateTimeInterface
     {
         return $this->supervisoryAuthorityNotifiedAt;
     }
@@ -1090,7 +1130,7 @@ class DataBreach
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -1101,7 +1141,7 @@ class DataBreach
         return $this->updatedAt;
     }
 
-    public function setUpdatedAt(DateTimeInterface $updatedAt): static
+    public function setUpdatedAt(?DateTimeInterface $updatedAt): static
     {
         $this->updatedAt = $updatedAt;
         return $this;

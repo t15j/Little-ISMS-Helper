@@ -15,9 +15,19 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 
 #[ORM\Entity(repositoryClass: PermissionRepository::class)]
 #[ORM\Table(name: 'permissions')]
-#[UniqueEntity(fields: ['name'], message: 'This permission name is already in use')]
+#[ORM\Index(name: 'idx_permission_status', columns: ['status'])]
+#[UniqueEntity(fields: ['name'], message: 'permission.validation.name_unique')]
 class Permission implements Stringable
 {
+    // Junior-ISB-Audit Phase-2 Lifecycle — RBAC core entities.
+    // 4-stage lifecycle for a permission: drafted → activated → deprecated → archived.
+    // Deprecation flags a permission "discouraged from new assignments" without
+    // breaking existing role bindings — archival removes it from operational use.
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_DEPRECATED = 'deprecated';
+    public const STATUS_ARCHIVED = 'archived';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -35,8 +45,30 @@ class Permission implements Stringable
     #[ORM\Column(length: 50)]
     private ?string $action = null; // e.g., 'view', 'create', 'edit', 'delete', 'approve', 'export'
 
+    #[ORM\Column(length: 64, nullable: true)]
+    private ?string $module = null; // matches config/modules.yaml key, e.g. 'risks', 'privacy', 'audits'
+
+    #[ORM\Column(length: 120, nullable: true)]
+    private ?string $frameworkReference = null; // e.g. 'ISO 27001 Cl. 6.1.2', 'GDPR Art. 33 + 34'
+
     #[ORM\Column(type: Types::BOOLEAN)]
     private bool $isSystemPermission = false;
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — RBAC core entities.
+     * Owned by `permission_lifecycle` — never call setStatus() directly outside
+     * the initial-marking bootstrap; route transitions through LifecycleService::transition().
+     */
+    #[ORM\Column(length: 30, options: ['default' => self::STATUS_DRAFT])]
+    private string $status = self::STATUS_DRAFT;
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — RBAC core entities.
+     * Optimistic-lock guard for concurrent lifecycle transitions.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private ?DateTimeImmutable $createdAt = null;
@@ -63,7 +95,7 @@ class Permission implements Stringable
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -85,7 +117,7 @@ class Permission implements Stringable
         return $this->category;
     }
 
-    public function setCategory(string $category): static
+    public function setCategory(?string $category): static
     {
         $this->category = $category;
         return $this;
@@ -96,7 +128,7 @@ class Permission implements Stringable
         return $this->action;
     }
 
-    public function setAction(string $action): static
+    public function setAction(?string $action): static
     {
         $this->action = $action;
         return $this;
@@ -132,6 +164,28 @@ class Permission implements Stringable
         return $this->roles;
     }
 
+    public function getModule(): ?string
+    {
+        return $this->module;
+    }
+
+    public function setModule(?string $module): static
+    {
+        $this->module = $module;
+        return $this;
+    }
+
+    public function getFrameworkReference(): ?string
+    {
+        return $this->frameworkReference;
+    }
+
+    public function setFrameworkReference(?string $frameworkReference): static
+    {
+        $this->frameworkReference = $frameworkReference;
+        return $this;
+    }
+
     public function addRole(Role $role): static
     {
         if (!$this->roles->contains($role)) {
@@ -149,6 +203,33 @@ class Permission implements Stringable
         }
 
         return $this;
+    }
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — RBAC core entities.
+     */
+    public function getStatus(): string
+    {
+        return $this->status;
+    }
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — RBAC core entities.
+     * Do NOT call directly outside the initial-marking bootstrap; route
+     * transitions through LifecycleService::transition().
+     */
+    public function setStatus(string $status): static
+    {
+        $this->status = $status;
+        return $this;
+    }
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — RBAC core entities.
+     */
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     public function __toString(): string

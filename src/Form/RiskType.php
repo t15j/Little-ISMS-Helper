@@ -14,7 +14,11 @@ use App\Entity\User;
 use App\Entity\Vulnerability;
 use App\Enum\RiskStatus;
 use App\Enum\TreatmentStrategy;
+use App\Form\Trait\ModuleAwareFormTrait;
+use App\Form\Trait\OwnerPickerFormTrait;
+use App\Service\ModuleConfigurationService;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
@@ -25,11 +29,24 @@ use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
-use Symfony\Component\Validator\Constraints\Callback;
-use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class RiskType extends AbstractType
+final class RiskType extends AbstractType implements SectionMapInterface
 {
+    use ModuleAwareFormTrait;
+    use OwnerPickerFormTrait;
+
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleConfiguration,
+        private readonly Security $security,
+    ) {
+    }
+
+    // Junior-ISB-Audit-2026-05-22 4.11: Owner pre-fill — UX-Polish
+    protected function getSecurityForOwnerPicker(): ?Security
+    {
+        return $this->security;
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
@@ -54,68 +71,7 @@ class RiskType extends AbstractType
                 'placeholder' => 'risk.placeholder.category',
                 'required' => true,
                 'help' => 'risk.help.category',
-                'attr' => [
-                    'class' => 'form-select',
-                ],
-                    'choice_translation_domain' => 'risk',
-            ])
-            // DSGVO Risk Assessment Extension (Priority 2.2)
-            ->add('involvesPersonalData', CheckboxType::class, [
-                'label' => 'risk.field.involves_personal_data',
-                'required' => false,
-                'help' => 'risk.help.involves_personal_data',
-            ])
-            ->add('involvesSpecialCategoryData', CheckboxType::class, [
-                'label' => 'risk.field.involves_special_category_data',
-                'required' => false,
-                'help' => 'risk.help.involves_special_category_data',
-            ])
-            ->add('legalBasis', ChoiceType::class, [
-                'label' => 'risk.field.legal_basis',
-                'choices' => [
-                    'risk.legal_basis.consent' => 'consent',
-                    'risk.legal_basis.contract' => 'contract',
-                    'risk.legal_basis.legal_obligation' => 'legal_obligation',
-                    'risk.legal_basis.vital_interests' => 'vital_interests',
-                    'risk.legal_basis.public_task' => 'public_task',
-                    'risk.legal_basis.legitimate_interests' => 'legitimate_interests',
-                ],
-                'placeholder' => 'risk.placeholder.legal_basis',
-                'required' => false,
-                'help' => 'risk.help.legal_basis',
-                'attr' => [
-                    'class' => 'form-select',
-                ],
-                    'choice_translation_domain' => 'risk',
-            ])
-            ->add('processingScale', ChoiceType::class, [
-                'label' => 'risk.field.processing_scale',
-                'choices' => [
-                    'risk.processing_scale.small' => 'small',
-                    'risk.processing_scale.medium' => 'medium',
-                    'risk.processing_scale.large_scale' => 'large_scale',
-                ],
-                'placeholder' => 'risk.placeholder.processing_scale',
-                'required' => false,
-                'help' => 'risk.help.processing_scale',
-                'attr' => [
-                    'class' => 'form-select',
-                ],
-                    'choice_translation_domain' => 'risk',
-            ])
-            ->add('requiresDPIA', CheckboxType::class, [
-                'label' => 'risk.field.requires_dpia',
-                'required' => false,
-                'help' => 'risk.help.requires_dpia',
-            ])
-            ->add('dataSubjectImpact', TextareaType::class, [
-                'label' => 'risk.field.data_subject_impact',
-                'required' => false,
-                'attr' => [
-                    'rows' => 3,
-                    'placeholder' => 'risk.placeholder.data_subject_impact',
-                ],
-                'help' => 'risk.help.data_subject_impact',
+                                    'choice_translation_domain' => 'risk',
             ])
             ->add('description', TextareaType::class, [
                 'label' => 'risk.field.description',
@@ -135,15 +91,6 @@ class RiskType extends AbstractType
                 ],
                 'help' => 'risk.help.threat',
             ])
-            ->add('threatIntelligence', EntityType::class, [
-                'label' => 'risk.field.threat_intelligence',
-                'class' => ThreatIntelligence::class,
-                'choice_label' => fn(ThreatIntelligence $t): string => (string) ($t->getTitle() ?? ''),
-                'required' => false,
-                'placeholder' => 'risk.placeholder.threat_intelligence',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'risk.help.threat_intelligence',
-            ])
             ->add('vulnerability', TextareaType::class, [
                 'label' => 'risk.field.vulnerability',
                 'required' => false,
@@ -152,15 +99,6 @@ class RiskType extends AbstractType
                     'placeholder' => 'risk.placeholder.vulnerability',
                 ],
                 'help' => 'risk.help.vulnerability',
-            ])
-            ->add('linkedVulnerability', EntityType::class, [
-                'label' => 'risk.field.linked_vulnerability',
-                'class' => Vulnerability::class,
-                'choice_label' => fn(Vulnerability $v): string => ($v->getCveId() ?? '') . ' — ' . ($v->getTitle() ?? ''),
-                'required' => false,
-                'placeholder' => 'risk.placeholder.linked_vulnerability',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'risk.help.linked_vulnerability',
             ])
             // Risk Subject - At least one must be selected (Asset, Person, Location, or Supplier)
             ->add('asset', EntityType::class, [
@@ -231,39 +169,30 @@ class RiskType extends AbstractType
                 'attr' => ['min' => 1, 'max' => 5],
                 'help' => 'risk.help.residual_impact',
             ])
-            ->add('riskOwner', EntityType::class, [
-                'label' => 'risk.field.risk_owner',
-                'class' => User::class,
-                'choice_label' => fn(User $user): string => $user->getFullName() . ' (' . $user->getEmail() . ')',
-                'placeholder' => 'risk.placeholder.risk_owner',
-                'required' => false,
-                'help' => 'risk.help.risk_owner',
-                'attr' => [
-                    'class' => 'form-select',
-                ],
-            ])
-            ->add('riskOwnerPerson', EntityType::class, [
-                'label' => 'risk.field.risk_owner_person',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'placeholder' => 'risk.placeholder.risk_owner_person',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'risk.help.risk_owner_person',
-            ])
-            ->add('riskOwnerDeputyPersons', EntityType::class, [
-                'label' => 'risk.field.risk_owner_deputies',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'multiple' => true,
-                'expanded' => false,
-                'attr' => [
-                    'class' => 'form-select',
-                    'data-controller' => 'tom-select',
-                ],
-                'help' => 'risk.help.risk_owner_deputies',
-            ])
+        ;
+
+        // ── Risk Owner cluster (audit-s4 P-1) ───────────────────────────────
+        // Replaces 3 hand-rolled add() calls (riskOwner / riskOwnerPerson /
+        // riskOwnerDeputyPersons). Risk has no legacy free-text field.
+        $this->addOwnerPicker($builder, [
+            'user_field'         => 'riskOwner',
+            'person_field'       => 'riskOwnerPerson',
+            'deputies_field'     => 'riskOwnerDeputyPersons',
+            'legacy_field'       => null,
+            'translation_prefix' => 'risk',
+            'user_label'         => 'risk.field.risk_owner',
+            'user_placeholder'   => 'risk.placeholder.risk_owner',
+            'user_help'          => 'risk.help.risk_owner',
+            'person_label'       => 'risk.field.risk_owner_person',
+            'person_placeholder' => 'risk.placeholder.risk_owner_person',
+            'person_help'        => 'risk.help.risk_owner_person',
+            'deputies_label'     => 'risk.field.risk_owner_deputies',
+            'deputies_help'      => 'risk.help.risk_owner_deputies',
+            // Junior-ISB-Audit-2026-05-22 4.11: Owner pre-fill — UX-Polish
+            'default_to_current_user' => true,
+        ]);
+
+        $builder
             ->add('treatmentStrategy', EnumType::class, [
                 'label' => 'risk.field.treatment_strategy',
                 'class' => TreatmentStrategy::class,
@@ -288,7 +217,6 @@ class RiskType extends AbstractType
                 'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
                 'required' => false,
                 'placeholder' => 'risk.placeholder.acceptance_approved_by_user',
-                'attr' => ['class' => 'form-select'],
                 'help' => 'risk.help.acceptance_approved_by_user',
             ])
             ->add('acceptanceApprovedBy', TextType::class, [
@@ -315,11 +243,66 @@ class RiskType extends AbstractType
                 ],
                 'help' => 'risk.help.acceptance_justification',
             ])
+            // ISO 27001 Cl. 8.3 — Audit-V3 LB-7: acceptance must carry an
+            // expiry / re-evaluation date so accepted risks do not "expire
+            // silent" after the approver leaves the org or threat changes.
+            ->add('acceptanceExpiryDate', DateType::class, [
+                'label' => 'risk.field.acceptance_expiry_date',
+                'widget' => 'single_text',
+                'required' => false,
+                'help' => 'risk.help.acceptance_expiry_date',
+            ])
+            // ── Risk-Decision Audit-Trail (ISO 27001 Cl. 6.1.3) ──────────────
+            // 5 entity-fields previously NOT exposed in any FormType — pure
+            // dead-code per UX-audit 2026-05-22. Required for full
+            // decision-rationale documentation distinct from "acceptance"
+            // (acceptance = WHO/WHEN agreed; decision = WHY likelihood/impact
+            // ratings + WHY overall decision were chosen).
+            ->add('likelihoodJustification', TextareaType::class, [
+                'label' => 'risk.field.likelihood_justification',
+                'required' => false,
+                'help' => 'risk.help.likelihood_justification',
+                'attr' => ['rows' => 3],
+            ])
+            ->add('impactJustification', TextareaType::class, [
+                'label' => 'risk.field.impact_justification',
+                'required' => false,
+                'help' => 'risk.help.impact_justification',
+                'attr' => ['rows' => 3],
+            ])
+            ->add('decisionRationale', TextareaType::class, [
+                'label' => 'risk.field.decision_rationale',
+                'required' => false,
+                'help' => 'risk.help.decision_rationale',
+                'attr' => ['rows' => 3],
+            ])
+            ->add('decisionApprovedByUser', EntityType::class, [
+                'label' => 'risk.field.decision_approved_by_user',
+                'class' => User::class,
+                'choice_label' => fn(User $u) => $u->getFullName() ?: $u->getEmail(),
+                'required' => false,
+                'help' => 'risk.help.decision_approved_by_user',
+                'placeholder' => 'common.please_select',
+            ])
+            ->add('decisionApprovalDate', DateType::class, [
+                'label' => 'risk.field.decision_approval_date',
+                'widget' => 'single_text',
+                'required' => false,
+                'help' => 'risk.help.decision_approval_date',
+            ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix) ──────────────
+            // Owned by `risk_lifecycle`. YAML 4-eyes on `accept`.
+            // Transitions via LifecycleService::transition() only.
             ->add('status', EnumType::class, [
                 'label' => 'risk.field.status',
+                'help' => 'risk.help.status_readonly',
                 'class' => RiskStatus::class,
                 'choice_label' => fn(RiskStatus $s): string => 'risk.status.' . $s->value,
-                'required' => true,
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
                 'choice_translation_domain' => 'risk',
             ])
             ->add('reviewDate', DateType::class, [
@@ -329,28 +312,194 @@ class RiskType extends AbstractType
                 'help' => 'risk.help.review_date',
             ])
         ;
+
+        // ── DSGVO/GDPR Risk Assessment Extension — only when 'privacy' module active.
+        // DSGVO Art. 24 + Art. 32 + Art. 35 — risk-of-rights-and-freedoms-of-natural-persons
+        // assessment. Without privacy-module these fields would be noise.
+        if ($this->isModuleActive('privacy')) {
+            $this->addGdprFields($builder);
+        }
+
+        // ── Vulnerability & Threat-Intel cross-link — only when 'vulnerability_intel'
+        // module is active. CVE/CVSS pivoting + threat-intel correlation is a
+        // niche capability (NIS2 Art. 21.2(e) + DORA Art. 22 use-case).
+        if ($this->isModuleActive('vulnerability_intel')) {
+            $this->addVulnerabilityIntelFields($builder);
+        }
+    }
+
+    /**
+     * DSGVO Art. 35 (DPIA) / Art. 32 (Risk-of-Processing) fields.
+     * Only added when 'privacy' module is active.
+     */
+    private function addGdprFields(FormBuilderInterface $builder): void
+    {
+        $builder
+            ->add('involvesPersonalData', CheckboxType::class, [
+                'label' => 'risk.field.involves_personal_data',
+                'required' => false,
+                'help' => 'risk.help.involves_personal_data',
+            ])
+            ->add('involvesSpecialCategoryData', CheckboxType::class, [
+                'label' => 'risk.field.involves_special_category_data',
+                'required' => false,
+                'help' => 'risk.help.involves_special_category_data',
+            ])
+            ->add('legalBasis', ChoiceType::class, [
+                'label' => 'risk.field.legal_basis',
+                'choices' => [
+                    'risk.legal_basis.consent' => 'consent',
+                    'risk.legal_basis.contract' => 'contract',
+                    'risk.legal_basis.legal_obligation' => 'legal_obligation',
+                    'risk.legal_basis.vital_interests' => 'vital_interests',
+                    'risk.legal_basis.public_task' => 'public_task',
+                    'risk.legal_basis.legitimate_interests' => 'legitimate_interests',
+                ],
+                'placeholder' => 'risk.placeholder.legal_basis',
+                'required' => false,
+                'help' => 'risk.help.legal_basis',
+                'choice_translation_domain' => 'risk',
+            ])
+            ->add('processingScale', ChoiceType::class, [
+                'label' => 'risk.field.processing_scale',
+                'choices' => [
+                    'risk.processing_scale.small' => 'small',
+                    'risk.processing_scale.medium' => 'medium',
+                    'risk.processing_scale.large_scale' => 'large_scale',
+                ],
+                'placeholder' => 'risk.placeholder.processing_scale',
+                'required' => false,
+                'help' => 'risk.help.processing_scale',
+                'choice_translation_domain' => 'risk',
+            ])
+            ->add('requiresDPIA', CheckboxType::class, [
+                'label' => 'risk.field.requires_dpia',
+                'required' => false,
+                'help' => 'risk.help.requires_dpia',
+            ])
+            ->add('dataSubjectImpact', TextareaType::class, [
+                'label' => 'risk.field.data_subject_impact',
+                'required' => false,
+                'attr' => [
+                    'rows' => 3,
+                    'placeholder' => 'risk.placeholder.data_subject_impact',
+                ],
+                'help' => 'risk.help.data_subject_impact',
+            ])
+        ;
+    }
+
+    /**
+     * CVE/CVSS Vulnerability + MITRE/STIX Threat-Intelligence cross-links.
+     * Only added when 'vulnerability_intel' module is active.
+     */
+    private function addVulnerabilityIntelFields(FormBuilderInterface $builder): void
+    {
+        $builder
+            ->add('threatIntelligence', EntityType::class, [
+                'label' => 'risk.field.threat_intelligence',
+                'class' => ThreatIntelligence::class,
+                'choice_label' => fn(ThreatIntelligence $t): string => (string) ($t->getTitle() ?? ''),
+                'required' => false,
+                'placeholder' => 'risk.placeholder.threat_intelligence',
+                'help' => 'risk.help.threat_intelligence',
+            ])
+            ->add('linkedVulnerability', EntityType::class, [
+                'label' => 'risk.field.linked_vulnerability',
+                'class' => Vulnerability::class,
+                'choice_label' => fn(Vulnerability $v): string => ($v->getCveId() ?? '') . ' — ' . ($v->getTitle() ?? ''),
+                'required' => false,
+                'placeholder' => 'risk.placeholder.linked_vulnerability',
+                'help' => 'risk.help.linked_vulnerability',
+            ])
+        ;
     }
 
     public function configureOptions(OptionsResolver $resolver): void
     {
+        // Junior-ISB-Audit-2026-05-22 K-05 / M-02: Form-level Callback
+        // constraints removed — entity-level Assert\Callback methods
+        // validateOwnerEitherOr() + validateSubjectBound() on App\Entity\Risk
+        // now own these rules so both the form-submit path AND the
+        // API Platform write-paths (POST/PUT) hit the same gate.
         $resolver->setDefaults([
             'data_class' => Risk::class,
             'translation_domain' => 'risk',
-            'constraints' => [
-                new Callback([$this, 'validateRiskOwnerSlot']),
-            ],
         ]);
     }
 
-    public function validateRiskOwnerSlot(?Risk $entity, ExecutionContextInterface $context): void
+    /**
+     * SectionPolicy (S4 Foundation P-2) — ISO 27001 Cl. 6.1.2 structure.
+     *
+     * Module-conditional fields are included (privacy, vulnerability_intel)
+     * to prevent Sonstiges-leakage when those modules are active.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function getSectionMap(): array
     {
-        if ($entity === null) {
-            return;
-        }
-        if ($entity->getRiskOwner() === null && $entity->getRiskOwnerPerson() === null) {
-            $context->buildViolation('risk.error.owner_required_user_or_person')
-                ->atPath('riskOwner')
-                ->addViolation();
-        }
+        return [
+            'overview' => [
+                'title',
+                'category',
+                'description',
+                'threat',
+                'vulnerability',
+            ],
+            'details' => [
+                'asset',
+                'person',
+                'location',
+                'supplier',
+            ],
+            'risk_assessment' => [
+                'probability',
+                'impact',
+                'residualProbability',
+                'residualImpact',
+                // vulnerability_intel module fields (NIS2/DORA — conditional)
+                'threatIntelligence',
+                'linkedVulnerability',
+            ],
+            'treatment' => [
+                'treatmentStrategy',
+                'treatmentDescription',
+            ],
+            'acceptance' => [
+                'acceptanceApprovedByUser',
+                'acceptanceApprovedBy',
+                'acceptanceApprovedAt',
+                'acceptanceJustification',
+                'acceptanceExpiryDate',
+            ],
+            // Junior-ISB-Audit-2026-05-22 K-06: decision-trail audit fields.
+            // ISO 27001 Cl. 6.1.2.d (likelihood/impact justifications) +
+            // Cl. 6.1.3 e + Cl. 8.3 (treatment decision rationale +
+            // approver + approval date). Previously living as orphan
+            // Sonstiges-leak — now grouped into a dedicated section.
+            'decision_trail' => [
+                'likelihoodJustification',
+                'impactJustification',
+                'decisionRationale',
+                'decisionApprovedByUser',
+                'decisionApprovalDate',
+            ],
+            // privacy module fields (DSGVO Art. 24/32/35 — conditional)
+            'privacy' => [
+                'involvesPersonalData',
+                'involvesSpecialCategoryData',
+                'legalBasis',
+                'processingScale',
+                'requiresDPIA',
+                'dataSubjectImpact',
+            ],
+            'audit_metadata' => [
+                'riskOwner',
+                'riskOwnerPerson',
+                'riskOwnerDeputyPersons',
+                'status',
+                'reviewDate',
+            ],
+        ];
     }
 }

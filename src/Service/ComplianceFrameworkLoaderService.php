@@ -11,7 +11,7 @@ use Exception;
 use App\Command\LoadTisaxRequirementsCommand;
 use App\Command\LoadDoraRequirementsCommand;
 use App\Command\LoadNis2RequirementsCommand;
-use App\Command\LoadBsiItGrundschutzRequirementsCommand;
+use App\Command\LoadBsiItGrundschutzCatalogueCommand;
 use App\Command\LoadGdprRequirementsCommand;
 use App\Command\LoadIso27001RequirementsCommand;
 use App\Command\LoadIso27701RequirementsCommand;
@@ -25,13 +25,18 @@ use App\Command\LoadTkgRequirementsCommand;
 use App\Command\LoadGxpRequirementsCommand;
 use App\Command\LoadBdsgRequirementsCommand;
 use App\Command\LoadCisControlsRequirementsCommand;
-use App\Command\LoadEuAiActRequirementsCommand;
+use App\Command\LoadEuAiActFullCommand;
 use App\Command\LoadIso22301RequirementsCommand;
 use App\Command\LoadIso27005RequirementsCommand;
 use App\Command\LoadMrisRequirementsCommand;
 use App\Command\LoadNis2UmsuCGRequirementsCommand;
 use App\Command\LoadNistCsfRequirementsCommand;
 use App\Command\LoadSoc2RequirementsCommand;
+use App\Command\LoadIso42001FullCommand;
+use App\Command\LoadIso27017FullCommand;
+use App\Command\LoadIso27018FullCommand;
+use App\Command\LoadEuCraFullCommand;
+use App\Command\LoadPciDss401FullCommand;
 use App\Repository\ComplianceFrameworkRepository;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -39,14 +44,14 @@ use Symfony\Component\Console\Output\BufferedOutput;
 /**
  * Service to manage and load compliance frameworks via UI
  */
-class ComplianceFrameworkLoaderService
+final class ComplianceFrameworkLoaderService
 {
     public function __construct(
         private readonly ComplianceFrameworkRepository $complianceFrameworkRepository,
         private readonly LoadTisaxRequirementsCommand $loadTisaxRequirementsCommand,
         private readonly LoadDoraRequirementsCommand $loadDoraRequirementsCommand,
         private readonly LoadNis2RequirementsCommand $loadNis2RequirementsCommand,
-        private readonly LoadBsiItGrundschutzRequirementsCommand $loadBsiItGrundschutzRequirementsCommand,
+        private readonly LoadBsiItGrundschutzCatalogueCommand $loadBsiItGrundschutzCatalogueCommand,
         private readonly LoadGdprRequirementsCommand $loadGdprRequirementsCommand,
         private readonly LoadIso27001RequirementsCommand $loadIso27001RequirementsCommand,
         private readonly LoadIso27701RequirementsCommand $loadIso27701RequirementsCommand,
@@ -60,13 +65,18 @@ class ComplianceFrameworkLoaderService
         private readonly LoadGxpRequirementsCommand $loadGxpRequirementsCommand,
         private readonly LoadBdsgRequirementsCommand $loadBdsgRequirementsCommand,
         private readonly LoadCisControlsRequirementsCommand $loadCisControlsRequirementsCommand,
-        private readonly LoadEuAiActRequirementsCommand $loadEuAiActRequirementsCommand,
+        private readonly LoadEuAiActFullCommand $loadEuAiActFullCommand,
         private readonly LoadIso22301RequirementsCommand $loadIso22301RequirementsCommand,
         private readonly LoadIso27005RequirementsCommand $loadIso27005RequirementsCommand,
         private readonly LoadNis2UmsuCGRequirementsCommand $loadNis2UmsuCGRequirementsCommand,
         private readonly LoadNistCsfRequirementsCommand $loadNistCsfRequirementsCommand,
         private readonly LoadSoc2RequirementsCommand $loadSoc2RequirementsCommand,
         private readonly LoadMrisRequirementsCommand $loadMrisRequirementsCommand,
+        private readonly LoadIso42001FullCommand $loadIso42001FullCommand,
+        private readonly LoadIso27017FullCommand $loadIso27017FullCommand,
+        private readonly LoadIso27018FullCommand $loadIso27018FullCommand,
+        private readonly LoadEuCraFullCommand $loadEuCraFullCommand,
+        private readonly LoadPciDss401FullCommand $loadPciDss401FullCommand,
     ) {}
 
     /**
@@ -375,7 +385,7 @@ class ComplianceFrameworkLoaderService
             [
                 'code' => 'EU-AI-ACT',
                 'name' => 'EU AI Act (Regulation (EU) 2024/1689)',
-                'description' => 'Risk-based AI regulation with obligations for Providers/Deployers of High-Risk systems (~10 governance requirements)',
+                'description' => 'Risk-based AI regulation — full article-level catalogue (113 Articles + 13 Annexes, Art.X scheme) for Providers/Deployers of High-Risk and GPAI systems',
                 'industry' => 'all_sectors',
                 'regulatory_body' => 'European Union',
                 'mandatory' => false,
@@ -385,6 +395,76 @@ class ComplianceFrameworkLoaderService
                 'loaded' => in_array('EU-AI-ACT', $loadedCodes),
                 'icon' => '🤖',
                 'required_modules' => ['compliance', 'controls', 'risks', 'audit_logging'],
+            ],
+            [
+                'code' => 'ISO42001',
+                'name' => 'ISO/IEC 42001:2023 - AI Management System (AIMS)',
+                'description' => 'AI-Managementsystem-Norm: Governance, Risikobeurteilung, 38 Annex-A-Controls für verantwortungsvolle KI + Klauseln 4-10. Ergänzt den EU AI Act (Art.X-Mapping).',
+                'industry' => 'all_sectors',
+                'regulatory_body' => 'ISO/IEC',
+                'mandatory' => false,
+                'applicability' => 'conditional',
+                'applicability_condition_key' => 'admin.compliance.applicability.condition.iso42001',
+                'version' => '2023',
+                'loaded' => in_array('ISO42001', $loadedCodes),
+                'icon' => '🤖',
+                'required_modules' => ['compliance', 'controls', 'risks'],
+            ],
+            [
+                'code' => 'ISO27017',
+                'name' => 'ISO/IEC 27017:2015 - Cloud Security',
+                'description' => 'Cloud-spezifische Sicherheitscontrols (7 CLD-Controls) + cloud-bezogene Umsetzungsleitlinien zu ISO 27002.',
+                'industry' => 'all_sectors',
+                'regulatory_body' => 'ISO/IEC',
+                'mandatory' => false,
+                'applicability' => 'conditional',
+                'applicability_condition_key' => 'admin.compliance.applicability.condition.iso27017',
+                'version' => '2015',
+                'loaded' => in_array('ISO27017', $loadedCodes),
+                'icon' => '☁️',
+                'required_modules' => ['compliance', 'controls'],
+            ],
+            [
+                'code' => 'ISO27018',
+                'name' => 'ISO/IEC 27018:2019 - Cloud Privacy (PII)',
+                'description' => 'Schutz personenbezogener Daten (PII) in Public-Cloud-Diensten — Annex-A-Privacy-Controls auf Basis ISO 27002.',
+                'industry' => 'all_sectors',
+                'regulatory_body' => 'ISO/IEC',
+                'mandatory' => false,
+                'applicability' => 'conditional',
+                'applicability_condition_key' => 'admin.compliance.applicability.condition.iso27018',
+                'version' => '2019',
+                'loaded' => in_array('ISO27018', $loadedCodes),
+                'icon' => '☁️',
+                'required_modules' => ['compliance', 'controls', 'privacy'],
+            ],
+            [
+                'code' => 'EU-CRA',
+                'name' => 'EU Cyber Resilience Act (Regulation 2024/2847)',
+                'description' => 'Cybersicherheitsanforderungen für Produkte mit digitalen Elementen — Annex-I-Sicherheitsanforderungen + Schwachstellenbehandlung + Hersteller-Pflichten.',
+                'industry' => 'all_sectors',
+                'regulatory_body' => 'European Union',
+                'mandatory' => false,
+                'applicability' => 'conditional',
+                'applicability_condition_key' => 'admin.compliance.applicability.condition.eu_cra',
+                'version' => '2024/2847',
+                'loaded' => in_array('EU-CRA', $loadedCodes),
+                'icon' => '🛡️',
+                'required_modules' => ['compliance', 'controls', 'risks'],
+            ],
+            [
+                'code' => 'PCI-DSS-4.0.1',
+                'name' => 'PCI DSS v4.0.1 - Payment Card Industry Data Security Standard',
+                'description' => '12 Anforderungen für die Sicherheit von Karteninhaberdaten (Netzwerk, Zugriff, Verschlüsselung, Monitoring, Tests).',
+                'industry' => 'financial_services',
+                'regulatory_body' => 'PCI Security Standards Council',
+                'mandatory' => false,
+                'applicability' => 'conditional',
+                'applicability_condition_key' => 'admin.compliance.applicability.condition.pci_dss',
+                'version' => '4.0.1',
+                'loaded' => in_array('PCI-DSS-4.0.1', $loadedCodes),
+                'icon' => '💳',
+                'required_modules' => ['compliance', 'controls'],
             ],
             [
                 'code' => 'NIS2UMSUCG',
@@ -426,7 +506,11 @@ class ComplianceFrameworkLoaderService
             'TISAX' => $this->loadTisaxRequirementsCommand,
             'DORA' => $this->loadDoraRequirementsCommand,
             'NIS2' => $this->loadNis2RequirementsCommand,
-            'BSI_GRUNDSCHUTZ' => $this->loadBsiItGrundschutzRequirementsCommand,
+            // Canonical 360-Anforderung catalogue (10 Schichten, 117 Bausteine)
+            // replaces the deprecated 32-entry hardcoded loader — the latter
+            // gave only ~3% Basis-coverage. The deprecated command stays
+            // available via CLI for legacy callers.
+            'BSI_GRUNDSCHUTZ' => $this->loadBsiItGrundschutzCatalogueCommand,
             'GDPR' => $this->loadGdprRequirementsCommand,
             'ISO27001' => $this->loadIso27001RequirementsCommand,
             'ISO27701' => $this->loadIso27701RequirementsCommand,
@@ -444,9 +528,19 @@ class ComplianceFrameworkLoaderService
             'ISO-22301' => $this->loadIso22301RequirementsCommand,
             'ISO27005' => $this->loadIso27005RequirementsCommand,
             'BDSG' => $this->loadBdsgRequirementsCommand,
-            'EU-AI-ACT' => $this->loadEuAiActRequirementsCommand,
+            // Full article-level catalogue (113 articles + 13 annexes, Art.X
+            // scheme) replaces the 10-entry thematic AIACT-n loader. The Art.X
+            // scheme matches every eu-ai-act library mapping/decomposition, so
+            // those mappings stop being orphaned. Existing AIACT-1..10 rows are
+            // re-keyed to their Art.X equivalents by the migration.
+            'EU-AI-ACT' => $this->loadEuAiActFullCommand,
             'NIS2UMSUCG' => $this->loadNis2UmsuCGRequirementsCommand,
             'MRIS-v1.5' => $this->loadMrisRequirementsCommand,
+            'ISO42001' => $this->loadIso42001FullCommand,
+            'ISO27017' => $this->loadIso27017FullCommand,
+            'ISO27018' => $this->loadIso27018FullCommand,
+            'EU-CRA' => $this->loadEuCraFullCommand,
+            'PCI-DSS-4.0.1' => $this->loadPciDss401FullCommand,
             default => null,
         };
 

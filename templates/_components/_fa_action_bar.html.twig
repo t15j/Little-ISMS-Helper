@@ -1,0 +1,186 @@
+{#
+ # FairyAurora v4.0 — fa-action-bar macro (V3 W3-UX-ActionBar)
+ #
+ # List/Detail-Page Action Toolbar. Sits between page-header and list/table
+ # content. Holds search, filter chips, secondary actions (export, ...) and a
+ # primary CTA. Aurora-styled (token-only).
+ #
+ # Top-level props:
+ #   title, count, search, filters, secondary, primary, flush, id   — as before
+ #   controller   : string         — `data-controller` attribute on the
+ #                                   outer wrapper (Stimulus wiring slot)
+ #   wrapperAttrs : { key: value }  — arbitrary HTML attributes added to the
+ #                                   outer wrapper (e.g. data-* targets)
+ #
+ # Per-action (secondary + primary) extensions:
+ #   disabled : bool            — renders as <span> with .is-disabled +
+ #                                aria-disabled="true" (links cannot use
+ #                                native `disabled` attribute)
+ #   attrs    : { key: value }  — extra HTML attributes on the action element
+ #                                (e.g. data-controller, data-action,
+ #                                data-turbo="false" for download endpoints)
+ #   tag      : 'a'|'button'    — force element type (default 'a' if href
+ #                                set, otherwise 'button')
+ #
+ # Usage:
+ #   {% import '_components/_fa_action_bar.html.twig' as _fa_action_bar %}
+ #   {{ _fa_action_bar.render({
+ #       title: 'All Risks',
+ #       count: risks|length,
+ #       search: {
+ #           placeholder: 'Search risks…',
+ #           name: 'q',
+ #           value: app.request.query.get('q')|default(''),
+ #           action: path('app_risk_index')
+ #       },
+ #       filters: [
+ #           { label: 'High',   href: '?severity=high',   active: false },
+ #           { label: 'Medium', href: '?severity=medium', active: true }
+ #       ],
+ #       secondary: [
+ #           { label: 'Export', icon: 'download', href: path('app_risk_export'),
+ #             attrs: { 'data-turbo': 'false' }, disabled: not selection_ready }
+ #       ],
+ #       primary: {
+ #           label: 'New Risk',
+ #           icon: 'plus',
+ #           variant: 'primary',
+ #           href: path('app_risk_new')
+ #       },
+ #       controller: 'compliance-compare',
+ #       wrapperAttrs: { 'data-compliance-compare-framework1-value': '17' },
+ #       flush: false
+ #   }) }}
+ #
+ # A11y:
+ #   - <form role="search"> wraps search input; visually-hidden label
+ #   - Filter-chips are <a>; aria-current="true" on active
+ #   - Primary action: pass aria-label via attrs map for icon-only
+ #   - Disabled actions: aria-disabled="true" + tabindex="-1" (keep in DOM
+ #     so screen-readers announce the state; CSS pointer-events disabled)
+ #}
+
+{# Shared helper: emit attribute key/value pairs from an attrs hash. #}
+{% macro _emitAttrs(attrs) -%}
+    {%- if attrs is defined and attrs -%}
+        {%- for k, v in attrs -%}
+            {{ ' ' }}{{ k }}="{{ v }}"
+        {%- endfor -%}
+    {%- endif -%}
+{%- endmacro %}
+
+{# Shared helper: emit a single action (secondary or primary). #}
+{% macro _action(action, baseClass, defaults = {}) %}
+    {%- import _self as _self -%}
+    {%- set isDisabled = action.disabled|default(false) -%}
+    {%- set href       = action.href|default(null) -%}
+    {%- set tag        = action.tag|default(href is not null and not isDisabled ? 'a' : 'span') -%}
+    {%- set cls        = baseClass -%}
+    {%- if action.variant is defined %}{% set cls = cls ~ ' fa-cyber-btn--' ~ action.variant %}{% endif -%}
+    {%- if action.size    is defined %}{% set cls = cls ~ ' fa-cyber-btn--' ~ action.size %}{% endif -%}
+    {%- if action.class   is defined %}{% set cls = cls ~ ' ' ~ action.class %}{% endif -%}
+    {%- if isDisabled %}{% set cls = cls ~ ' is-disabled' %}{% endif -%}
+
+    {%- set iconHtml = '' -%}
+    {%- if action.icon is defined -%}
+        {%- set iconName = (action.icon starts with 'bi-') ? action.icon[3:] : action.icon -%}
+        {%- set iconHtml = '<i class="fa-icon fa-icon--' ~ iconName ~ '" aria-hidden="true"></i> ' -%}
+    {%- endif -%}
+
+    {% if isDisabled %}
+        <span class="{{ cls }}"
+              role="button"
+              aria-disabled="true"
+              tabindex="-1"
+              {%- if action.ariaLabel is defined %} aria-label="{{ action.ariaLabel }}"{% endif -%}
+              {{- _self._emitAttrs(action.attrs|default({})) -}}>
+            {{ iconHtml|raw }}{{ action.label }}
+        </span>
+    {% elseif tag == 'button' %}
+        <button type="{{ action.type|default('button') }}"
+                class="{{ cls }}"
+                {%- if action.dataAction is defined %} data-action="{{ action.dataAction }}"{% endif -%}
+                {%- if action.ariaLabel is defined %} aria-label="{{ action.ariaLabel }}"{% endif -%}
+                {%- if action.id is defined %} id="{{ action.id }}"{% endif -%}
+                {{- _self._emitAttrs(action.attrs|default({})) -}}>
+            {{ iconHtml|raw }}{{ action.label }}
+        </button>
+    {% else %}
+        <a href="{{ href|default('#') }}"
+           class="{{ cls }}"
+           {%- if action.target is defined %} target="{{ action.target }}"{% endif -%}
+           {%- if action.dataAction is defined %} data-action="{{ action.dataAction }}"{% endif -%}
+           {%- if action.ariaLabel is defined %} aria-label="{{ action.ariaLabel }}"{% endif -%}
+           {%- if action.id is defined %} id="{{ action.id }}"{% endif -%}
+           {{- _self._emitAttrs(action.attrs|default({})) -}}>
+            {{ iconHtml|raw }}{{ action.label }}
+        </a>
+    {% endif %}
+{% endmacro %}
+
+{% macro render(props = {}) %}
+    {%- import _self as _self -%}
+    {% set fa_flush = props.flush|default(false) %}
+    <div class="fa-action-bar{% if fa_flush %} fa-action-bar--flush{% endif %}"
+         {%- if props.id is defined %} id="{{ props.id }}"{% endif -%}
+         {%- if props.controller is defined %} data-controller="{{ props.controller }}"{% endif -%}
+         {{- _self._emitAttrs(props.wrapperAttrs|default({})) -}}>
+
+        <div class="fa-action-bar__lead">
+            {% if props.title is defined and props.title %}
+                <h2 class="fa-action-bar__title">{{ props.title }}</h2>
+                {% if props.count is defined and props.count is not null %}
+                    <span class="fa-action-bar__count">({{ props.count }})</span>
+                {% endif %}
+            {% endif %}
+
+            {% if props.search is defined and props.search %}
+                {% set _s = props.search %}
+                <form role="search"
+                      method="{{ _s.method|default('get') }}"
+                      action="{{ _s.action|default('') }}"
+                      class="fa-action-bar__search-wrap">
+                    <i class="fa-icon fa-icon--ui-search" aria-hidden="true"></i>
+                    <label for="{{ _s.id|default('fa-action-bar-search') }}" class="visually-hidden">
+                        {{ _s.label|default('common.search'|trans({}, 'messages')) }}
+                    </label>
+                    <input type="search"
+                           id="{{ _s.id|default('fa-action-bar-search') }}"
+                           name="{{ _s.name|default('q') }}"
+                           value="{{ _s.value|default('') }}"
+                           placeholder="{{ _s.placeholder|default('common.search'|trans({}, 'messages')) }}"
+                           class="fa-action-bar__search">
+                </form>
+            {% endif %}
+
+            {% if props.filters is defined and props.filters|length > 0 %}
+                <span class="fa-action-bar__chip-group">
+                    {% for f in props.filters %}
+                        <a class="fa-filter-chip{% if f.active|default(false) %} is-active{% endif %}"
+                           href="{{ f.href|default('#') }}"
+                           {% if f.active|default(false) %}aria-current="true"{% endif %}>
+                            {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+                            {% if f.icon is defined %}<i class="fa-icon fa-icon--{{ (f.icon starts with 'bi-') ? f.icon[3:] : f.icon }}" aria-hidden="true"></i> {% endif %}
+                            {{ f.label }}
+                        </a>
+                    {% endfor %}
+                </span>
+            {% endif %}
+        </div>
+
+        <div class="fa-action-bar__trail">
+            {% if props.secondary is defined and props.secondary|length > 0 %}
+                {% for action in props.secondary %}
+                    {{ _self._action(action, 'fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm') }}
+                {% endfor %}
+            {% endif %}
+
+            {% if props.primary is defined and props.primary %}
+                {% set _p = props.primary %}
+                {# Primary defaults to variant=primary when not specified. #}
+                {% if _p.variant is not defined %}{% set _p = _p|merge({ variant: 'primary' }) %}{% endif %}
+                {{ _self._action(_p, 'fa-cyber-btn') }}
+            {% endif %}
+        </div>
+    </div>
+{% endmacro %}

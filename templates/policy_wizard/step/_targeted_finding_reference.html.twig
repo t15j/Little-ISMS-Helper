@@ -1,0 +1,90 @@
+{% trans_default_domain 'policy_wizard' %}
+{% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
+
+{# Mode 2 (Targeted re-run) Step 2 — Audit-Finding picker.
+
+   Form-Audit (May 2026): replaces the legacy plain-text NCR-XXXX input
+   with a TomSelect dropdown over the tenant's open AuditFinding entities
+   so the wizard can write a structured audit-trail link (entity ID) into
+   the audit log instead of relying on a free-text reference. The picker
+   still allows free typing for legacy / external systems
+   (`create: true`).
+
+   The TargetedFindingReferenceStep::defaults() supplies:
+     - `defaults.finding_reference`  : currently persisted reference (or null)
+     - `defaults.audit_findings`     : list of open finding rows for the
+                                       current tenant. #}
+
+{% set finding_value = defaults.finding_reference|default(run.findingReference|default('')) %}
+{% set audit_findings = defaults.audit_findings|default([]) %}
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        {# Junior-ISB-friendly help-card. Aurora-DS: _fa_alert info-variant + bi-mortarboard icon. #}
+        {% embed '_components/_fa_alert.html.twig' with { props: {
+            variant: 'info',
+            icon: 'nav-mortarboard',
+            class: 'mb-3'
+        } } %}
+            {% block alert_body %}
+                {% trans_default_domain 'policy_wizard' %}
+                <div class="fa-alert__title">{{ 'policy_wizard.step.targeted.finding.help_card.title'|trans }}</div>
+                <p class="fa-alert__message mb-2 small">{{ 'policy_wizard.step.targeted.finding.help_card.body'|trans }}</p>
+                <p class="mb-2 small fst-italic text-muted">{{ 'policy_wizard.step.targeted.finding.help_card.example'|trans }}</p>
+                <p class="mb-0 small">
+                    <i class="fa-icon fa-icon--ui-info" aria-hidden="true"></i>
+                    {{ 'policy_wizard.step.targeted.finding.help_card.optional_hint'|trans }}
+                </p>
+            {% endblock %}
+        {% endembed %}
+
+        {{ _fa_alert.render({
+            variant: 'info',
+            body: 'policy_wizard.step.targeted.finding.subtitle'|trans
+        }) }}
+
+        <div class="mb-3 mt-3">
+            {% if audit_findings|length > 0 %}
+                {% set finding_options = [] %}
+                {% for finding in audit_findings %}
+                    {% set option_value = 'AUDIT_FINDING:' ~ finding.id %}
+                    {% set option_label = finding.finding_number ~ ' — ' ~ finding.title
+                        ~ ' (' ~ ('policy_wizard.step.targeted.finding.severity.' ~ finding.severity)|trans
+                        ~ (finding.due_date ? ', ' ~ 'policy_wizard.step.targeted.finding.due'|trans ~ ': ' ~ finding.due_date : '')
+                        ~ ')' %}
+                    {% set finding_options = finding_options|merge([{value: option_value, label: option_label}]) %}
+                {% endfor %}
+                {# Render the persisted free-text reference back as an option so
+                   the picker can show it as the current selection. #}
+                {% if finding_value is not empty
+                      and finding_value starts with 'AUDIT_FINDING:' is same as(false) %}
+                    {% set finding_options = finding_options|merge([{value: finding_value, label: finding_value}]) %}
+                {% endif %}
+                {{ _fa_cyber.select('finding_reference', finding_options, {
+                    id: 'finding-reference',
+                    label: 'policy_wizard.step.targeted.finding.title'|trans,
+                    help: 'policy_wizard.step.targeted.finding.help_picker'|trans,
+                    placeholder: 'policy_wizard.step.targeted.finding.placeholder'|trans,
+                    value: finding_value,
+                    extra_attrs: {
+                        'data-controller': 'ts-finding-picker',
+                        'data-ts-finding-picker-placeholder-value': 'policy_wizard.step.targeted.finding.placeholder'|trans
+                    }
+                }) }}
+            {% else %}
+                {# No open audit findings for this tenant — fall back to the
+                   plain text input so external references (paper findings,
+                   another GRC system, …) can still be linked. #}
+                {{ _fa_cyber.text('finding_reference', {
+                    id: 'finding-reference',
+                    label: 'policy_wizard.step.targeted.finding.title'|trans,
+                    help: 'policy_wizard.step.targeted.finding.no_open_findings'|trans,
+                    placeholder: 'policy_wizard.step.targeted.finding.placeholder'|trans,
+                    value: finding_value,
+                    max: 100
+                }) }}
+            {% endif %}
+        </div>
+    </div>
+</div>

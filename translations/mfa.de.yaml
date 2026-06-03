@@ -1,5 +1,7 @@
 mfa:
     title: Zwei-Faktor-Authentifizierung
+    section:
+        title: 'Multi-Faktor-Authentifizierung'
     tokens: MFA-Token
     my_tokens: 'Meine MFA-Token'
     enabled: 'MFA aktiviert'
@@ -9,6 +11,12 @@ mfa:
     token_type_label: Token-Typ
     token:
         primary: 'Primärer Token'
+        success:
+            backup_regenerated: 'Backup-Codes erfolgreich neu generiert.'
+            disabled: 'MFA-Token erfolgreich deaktiviert.'
+            deleted: 'MFA-Token erfolgreich gelöscht.'
+        error:
+            invalid_csrf: 'Ungültiges CSRF-Token.'
     device_name: Gerätename
     enrolled_at: 'Registriert am'
     last_used: 'Zuletzt verwendet'
@@ -149,6 +157,7 @@ mfa_token:
     new: 'Neues MFA-Token'
     new.subtitle: 'Neues Authentifizierungsgerät einrichten'
     section:
+        title: 'Multi-Faktor-Authentifizierung'
         basic_info: 'Grundlegende Informationen'
         settings: 'Token-Einstellungen'
     field:

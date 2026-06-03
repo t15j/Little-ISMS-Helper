@@ -1,113 +1,182 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'bc_plans' %}
+{% form_theme form 'business_continuity_plan/_bc_plan_form_theme.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_norm_bridge.html.twig' as _fa_norm_bridge %}
 
 {% block title %}{{ 'common.edit'|trans({}, 'messages') }}: {{ bc_plan.name }}{% endblock %}
 
 {% block body %}
+{# Junior-ISB-Audit-2026-05-22 P-12 rollout — 9001 + 22301 norm-bridge for BC-Plan. #}
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.bcm'|trans({}, 'nav', 'nav'), url: path('app_bc_plan_index'), icon: 'bi-shield-exclamation' },
+            { label: 'nav.bcm'|trans({}, 'nav', 'nav'), url: path('app_bc_plan_index'), icon: 'nav-shield-alert' },
             { label: 'bc_plans.page.title'|trans({}, 'bc_plans'), url: path('app_bc_plan_index') },
             { label: bc_plan.name, url: path('app_bc_plan_show', {id: bc_plan.id}) },
             { label: 'common.edit'|trans({}, 'messages') }
         ]
     } %}
 
-    {% include '_components/_page_header.html.twig' with {
+    {{ _fa_page_header.render({
         title: ('common.edit'|trans({}, 'messages')) ~ ': ' ~ bc_plan.name,
-        icon: 'bi-pencil',
+        badge: { icon: 'ui-edit', label: '' },
         actions: [
-            { label: 'common.view'|trans({}, 'messages'), url: path('app_bc_plan_show', {id: bc_plan.id}), variant: 'outline-primary', icon: 'bi-eye' },
-            { label: 'common.back'|trans({}, 'messages'), url: path('app_bc_plan_index'), variant: 'secondary', icon: 'bi-arrow-left' }
+            { label: 'common.view'|trans({}, 'messages'), href: path('app_bc_plan_show', {id: bc_plan.id}), variant: 'outline-primary', icon: 'ui-eye' },
+            { label: 'common.back'|trans({}, 'messages'), href: path('app_bc_plan_index'), variant: 'secondary', icon: 'util-arrow-left' }
         ]
-    } %}
+    }) }}
 
-    <div class="row">
-        <div class="col-lg-10 col-xl-9 mx-auto">
-            {% embed '_components/_card.html.twig' %}
-                {% block card_body %}
-                    {{ form_start(form, {'attr': {'novalidate': 'novalidate'}}) }}
+    {# 9001-bridge: BC-Plan is part of risk treatment (9001 6.1) and mandatory in 22301 8.4. P-12 rollout. #}
+    {{ _fa_norm_bridge.render({
+        from_norm: 'ISO 22301 8.4',
+        to_norm:   'ISO 9001 6.1',
+        bridge_text: ('iso_9001_bridge.bc_plan'|trans({}, 'bc_plans')),
+        prominence: 'subtle'
+    }) }}
 
-                    {% include '_components/_auto_form.html.twig' with {
-                        'form': form,
-                        'sections': {
-                            'basic_info': {
-                                'label': 'bc_plans.section.basic_info'|trans({}, 'bc_plans'),
-                                'fields': ['name', 'businessProcess', 'description', 'planOwner', 'planOwnerUser', 'planOwnerPerson', 'planOwnerDeputyPersons', 'status']
-                            },
-                            'team': {
-                                'label': 'bc_plans.section.team'|trans({}, 'bc_plans'),
-                                'fields': ['bcTeam']
-                            },
-                            'activation': {
-                                'label': 'bc_plans.section.activation'|trans({}, 'bc_plans'),
-                                'fields': ['activationCriteria', 'rolesAndResponsibilities', 'recoveryProcedures']
-                            },
-                            'communication': {
-                                'label': 'bc_plans.section.communication'|trans({}, 'bc_plans'),
-                                'fields': ['communicationPlan', 'internalCommunication', 'externalCommunication']
-                            },
-                            'alternative_site': {
-                                'label': 'bc_plans.section.alternative_site'|trans({}, 'bc_plans'),
-                                'fields': ['alternativeSite', 'alternativeSiteAddress', 'alternativeSiteCapacity']
-                            },
-                            'backup_recovery': {
-                                'label': 'bc_plans.section.backup_recovery'|trans({}, 'bc_plans'),
-                                'fields': ['backupProcedures', 'restoreProcedures']
-                            },
-                            'version_review': {
-                                'label': 'bc_plans.section.version_review'|trans({}, 'bc_plans'),
-                                'fields': ['version', 'lastTested', 'nextTestDate', 'lastReviewDate', 'nextReviewDate', 'reviewNotes']
-                            }
-                        },
-                        'col_widths': {
-                            'name': 12,
-                            'businessProcess': 12,
-                            'description': 12,
-                            'planOwner': 6,
-                            'planOwnerUser': 6,
-                            'planOwnerPerson': 6,
-                            'planOwnerDeputyPersons': 12,
-                            'status': 6,
-                            'bcTeam': 12,
-                            'activationCriteria': 12,
-                            'rolesAndResponsibilities': 12,
-                            'recoveryProcedures': 12,
-                            'communicationPlan': 12,
-                            'internalCommunication': 6,
-                            'externalCommunication': 6,
-                            'alternativeSite': 12,
-                            'alternativeSiteAddress': 6,
-                            'alternativeSiteCapacity': 6,
-                            'backupProcedures': 6,
-                            'restoreProcedures': 6,
-                            'version': 4,
-                            'lastTested': 4,
-                            'nextTestDate': 4,
-                            'lastReviewDate': 6,
-                            'nextReviewDate': 6,
-                            'reviewNotes': 12
-                        },
-                        'tooltips': {
-                            'activationCriteria': 'bc_plans.tooltip.activation_criteria',
-                            'recoveryProcedures': 'bc_plans.tooltip.recovery_procedures',
-                            'communicationPlan': 'bc_plans.tooltip.communication_plan',
-                            'alternativeSite': 'bc_plans.tooltip.alternative_site',
-                            'requiredResources': 'bc_plans.tooltip.required_resources'
-                        }
-                    } %}
-
-                    {# Form Actions #}
-                    <div class="form-actions d-flex gap-2 justify-content-between pt-3 border-top">
-                        <a href="{{ path('app_bc_plan_show', {id: bc_plan.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost"><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i> {{ 'common.cancel'|trans({}, 'messages') }}</a>
-                        <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary fa-cyber-btn--lg"><i class="fa-icon fa-icon--ui-save" aria-hidden="true"></i> {{ 'common.save'|trans({}, 'messages') }}</button>
-                    </div>
-
-                    {{ form_end(form) }}
-                {% endblock %}
-            {% endembed %}
+    {# Junior-ISB-Audit-2026-05-22 C2-06: 3-team-worlds consolidation.
+       responseTeamMembers (canonical per-plan), crisisTeams (cross-plan
+       reusable), bcTeam (deprecated freetext — disabled, kept for legacy
+       visibility only). #}
+    {# P-19 — Form-Step-Inline-Hint controller. See assets/controllers/alva_hint_in_form_controller.js. #}
+    {{ form_start(form, {'attr': {
+        'novalidate': 'novalidate',
+        'data-controller': 'alva-hint-in-form',
+        'data-alva-hint-in-form-entity-type-value': 'business_continuity_plan',
+        'data-alva-hint-in-form-form-name-value': 'business_continuity_plan',
+        'data-alva-hint-in-form-endpoint-value': path('api_alva_hint_form_evaluate', {'entityType': 'business_continuity_plan'}),
+        'data-alva-hint-in-form-csrf-token-value': csrf_token('alva_hint_form'),
+        'data-action': 'input->alva-hint-in-form#scheduleEvaluate change->alva-hint-in-form#scheduleEvaluate',
+    }}) }}
+    {# S15 A1 + A2 — Quick-Create empty-state rescue triggers (modals for both).
+       Triggers render INSIDE the form (extras_before_actions); dialog markup
+       lives OUTSIDE the form to avoid nested-<form> invalidity. #}
+    {% set _bc_quick_create_triggers %}
+        <div class="quick-create-empty-state-row mt-3 d-flex flex-wrap gap-3 align-items-center" aria-label="{{ 'quick_create.cta'|trans({}, 'quick_create') }}">
+            <div class="d-flex flex-column gap-2">
+                <span class="text-muted small">{{ 'quick_create.hint.missing_crisis_team'|trans({}, 'quick_create') }}</span>
+                {% include '_components/_quick_create_modal_trigger.html.twig' with {
+                    entityType:     'crisis-team',
+                    targetSelectId: 'business_continuity_plan_crisisTeams',
+                    modalId:        'quickCreateCrisisTeamModal',
+                    triggerLabel:   ('bc_plans.action.quick_create_crisis_team'|trans({}, 'bc_plans')),
+                } only %}
+            </div>
+            <div class="d-flex flex-column gap-2">
+                <span class="text-muted small">{{ 'quick_create.hint.missing_business_process'|trans({}, 'quick_create') }}</span>
+                {% include '_components/_quick_create_modal_trigger.html.twig' with {
+                    entityType:     'business-process',
+                    targetSelectId: 'business_continuity_plan_businessProcess',
+                    modalId:        'quickCreateBusinessProcessModal',
+                    triggerLabel:   ('bc_plans.action.quick_create_business_process'|trans({}, 'bc_plans')),
+                } only %}
+            </div>
         </div>
-    </div>
+    {% endset %}
+    {% include '_components/_auto_form.html.twig' with {
+        'form': form,
+        'layout': 'outline-rail',
+        'eyebrow': 'BCM · ISO 22301 Cl. 8.4 · BC-Plan',
+        'title': ('common.edit'|trans({}, 'messages')) ~ ': ' ~ bc_plan.name,
+        'sections': {
+            'basic_info': {
+                'label': 'bc_plans.section.basic_info'|trans({}, 'bc_plans'),
+                'fields': ['name', 'businessProcess', 'description', 'planOwner', 'planOwnerUser', 'planOwnerPerson', 'planOwnerDeputyPersons', 'status']
+            },
+            'response_team': {
+                'label': 'bc_plan.section.response_team'|trans({}, 'bc_plans'),
+                'fields': ['responseTeamMembers', 'crisisTeams', 'criticalAssets', 'bcTeam']
+            },
+            'activation': {
+                'label': 'bc_plans.section.activation'|trans({}, 'bc_plans'),
+                'fields': ['activationCriteria', 'escalationLevels', 'rolesAndResponsibilities', 'recoveryProcedures', 'rto', 'rpo']
+            },
+            'resources': {
+                'label': 'bc_plans.section.resources'|trans({}, 'bc_plans'),
+                'fields': ['requiredResources']
+            },
+            'communication': {
+                'label': 'bc_plans.section.communication'|trans({}, 'bc_plans'),
+                'fields': ['communicationPlan', 'internalCommunication', 'externalCommunication']
+            },
+            'alternative_site': {
+                'label': 'bc_plans.section.alternative_site'|trans({}, 'bc_plans'),
+                'fields': ['alternativeSite', 'alternativeSiteAddress', 'alternativeSiteCapacity']
+            },
+            'backup_recovery': {
+                'label': 'bc_plans.section.backup_recovery'|trans({}, 'bc_plans'),
+                'fields': ['backupProcedures', 'restoreProcedures']
+            },
+            'version_review': {
+                'label': 'bc_plans.section.version_review'|trans({}, 'bc_plans'),
+                'fields': ['version', 'lastTested', 'nextTestDate', 'lastReviewDate', 'nextReviewDate', 'reviewNotes']
+            }
+        },
+        'col_widths': {
+            'name': 12,
+            'businessProcess': 12,
+            'description': 12,
+            'planOwner': 6,
+            'planOwnerUser': 6,
+            'planOwnerPerson': 6,
+            'planOwnerDeputyPersons': 12,
+            'status': 6,
+            'responseTeamMembers': 12,
+            'crisisTeams': 12,
+            'bcTeam': 12,
+            'activationCriteria': 12,
+            'escalationLevels': 12,
+            'rolesAndResponsibilities': 12,
+            'recoveryProcedures': 12,
+            'rto': 6,
+            'rpo': 6,
+            'requiredResources': 12,
+            'communicationPlan': 12,
+            'internalCommunication': 6,
+            'externalCommunication': 6,
+            'alternativeSite': 12,
+            'alternativeSiteAddress': 6,
+            'alternativeSiteCapacity': 6,
+            'backupProcedures': 6,
+            'restoreProcedures': 6,
+            'version': 4,
+            'lastTested': 4,
+            'nextTestDate': 4,
+            'lastReviewDate': 6,
+            'nextReviewDate': 6,
+            'reviewNotes': 12
+        },
+        'tooltips': {
+            'activationCriteria': 'bc_plans.tooltip.activation_criteria',
+            'recoveryProcedures': 'bc_plans.tooltip.recovery_procedures',
+            'communicationPlan': 'bc_plans.tooltip.communication_plan',
+            'alternativeSite': 'bc_plans.tooltip.alternative_site',
+            'requiredResources': 'bc_plans.tooltip.required_resources'
+        },
+        'translation_domain': 'bc_plans',
+        'actions': {
+            'close': { 'label': 'common.cancel'|trans({}, 'messages'), 'variant': 'ghost' },
+            'submit': { 'label': 'common.save'|trans({}, 'messages'), 'variant': 'primary' }
+        },
+        'extras_before_actions': _bc_quick_create_triggers
+    } %}
+    {{ form_end(form) }}
+
+    {# Quick-Create modal dialogs — body-level (OUTSIDE the form). #}
+    {% include '_components/_quick_create_modal_dialog.html.twig' with {
+        entityType:     'crisis-team',
+        targetSelectId: 'business_continuity_plan_crisisTeams',
+        modalId:        'quickCreateCrisisTeamModal',
+        title:          ('bc_plans.action.quick_create_crisis_team'|trans({}, 'bc_plans')),
+        placeholder:    ('crisis_team.placeholder.team_name'|trans({}, 'crisis_team')),
+    } only %}
+    {% include '_components/_quick_create_modal_dialog.html.twig' with {
+        entityType:     'business-process',
+        targetSelectId: 'business_continuity_plan_businessProcess',
+        modalId:        'quickCreateBusinessProcessModal',
+        title:          ('bc_plans.action.quick_create_business_process'|trans({}, 'bc_plans')),
+        placeholder:    ('business_process.placeholder.name'|trans({}, 'business_process')),
+    } only %}
 </div>
 {% endblock %}

@@ -1,0 +1,624 @@
+{% trans_default_domain 'policy_wizard' %}
+{% import '_components/_fa_section.html.twig' as _fa_section %}
+{% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
+{% import '_components/_status_pill.html.twig' as pill %}
+
+{# Form-Audit follow-up (May 2026) — REWRITE.
+   Template now matches OperationalBaselinesStep::validate() contract
+   exactly. Field list (from validate normalised_input):
+     crypto_allowlist[]              — multi-select TomSelect
+     backup_rpo_hours                — number 1..720
+     patch_sla_hours[critical|high|medium]
+     continuity_rto_hours[high|medium|low]   (only when bcm in scope)
+     dora.entity_type|is_significant|competent_authority|
+       ictt_concentration_threshold_pct|is_ctpp_self_assessment
+                                       (only when dora in scope)
+     dpo_user_id                     (only when gdpr or dora in scope)
+     bcm_officer_user_id             (only when bcm in scope)
+     industry_preset_bundle_key      (one-shot apply)
+#}
+
+{# BSI-TR-02102:2024-1 conformant default set + modern AEAD/EdDSA — kept
+   in sync with OperationalBaselinesStep::BSI_TR02102_DEFAULT_ALGOS.
+   Used both for the dropdown options AND as a fallback when defaults
+   from the step are unexpectedly missing. #}
+{% set bsi_tr02102_algos = [
+    'AES-128-GCM', 'AES-192-GCM', 'AES-256-GCM',
+    'CHACHA20-POLY1305',
+    'SHA-256', 'SHA-384', 'SHA-512',
+    'SHA3-256', 'SHA3-384', 'SHA3-512',
+    'ECDH-P256', 'ECDH-P384', 'ECDH-P521',
+    'ECDH-BRAINPOOLP256R1', 'ECDH-BRAINPOOLP384R1', 'ECDH-BRAINPOOLP512R1',
+    'ECDSA-P256', 'ECDSA-P384', 'ECDSA-P521',
+    'RSA-3072', 'RSA-4096',
+    'ED25519', 'ED448'
+] %}
+{% set crypto_default = defaults.crypto_allowlist|default(bsi_tr02102_algos) %}
+{% set rpo_default = defaults.backup_rpo_hours|default(24) %}
+{% set patch_default = defaults.patch_sla_hours|default({'critical': 4, 'high': 24, 'medium': 168}) %}
+{% set rto_default = defaults.continuity_rto_hours|default({'high': 24, 'medium': 72, 'low': 168}) %}
+{% set dora_default = defaults.dora|default({}) %}
+{% set dpo_default = defaults.dpo_user_id|default(null) %}
+{% set bcm_default = defaults.bcm_officer_user_id|default(null) %}
+{% set _legacy_preset = defaults.industry_preset_bundle_key|default(null) %}
+{% set preset_default_keys = defaults.industry_preset_bundle_keys|default(
+    (_legacy_preset is not null and _legacy_preset != '' ? [_legacy_preset] : [])
+) %}
+{% set has_preset_applied = preset_default_keys|length > 0 %}
+{% set bcm_in_scope = 'bcm' in standards %}
+{% set dora_in_scope = 'dora' in standards %}
+{% set gdpr_in_scope = 'gdpr' in standards %}
+{% set bsi_in_scope = 'bsi' in standards %}
+{% set dora_not_applicable_hint = defaults._dora_not_applicable_hint|default(false) %}
+{% set access_review_default = defaults.access_review_cadence_months|default(6) %}
+{% set mfa_scope_default = defaults.mfa_scope|default('all_users') %}
+{% set logging_default = defaults.logging_retention_months|default({'security': 12, 'app': 3, 'system': 3}) %}
+{% set vuln_default = defaults.vuln_scan_cadence|default({'external_cadence': 'monthly', 'internal_cadence': 'weekly'}) %}
+{% set working_modes_default = defaults.working_modes|default(['office', 'hybrid']) %}
+{% set cloud_mix_default = defaults.cloud_onprem_mix_pct|default(50) %}
+
+{# Junior-ISB-friendly help-card. Aurora-DS: _fa_alert info-variant + bi-mortarboard icon. #}
+{% embed '_components/_fa_alert.html.twig' with { props: {
+    variant: 'info',
+    icon: 'nav-mortarboard',
+    class: 'mb-3'
+} } %}
+    {% block alert_body %}
+        {% trans_default_domain 'policy_wizard' %}
+        <div class="fa-alert__title">{{ 'policy_wizard.step.operational_baselines.help.title'|trans }}</div>
+        <p class="fa-alert__message mb-2 small">{{ 'policy_wizard.step.operational_baselines.help.body'|trans }}</p>
+        <p class="mb-2 small fst-italic text-muted">{{ 'policy_wizard.step.operational_baselines.help.example'|trans }}</p>
+        {% if has_preset_applied %}
+            <p class="mb-0 small">
+                <i class="fa-icon fa-icon--ui-stars" aria-hidden="true"></i>
+                {{ 'policy_wizard.step.operational_baselines.help.preset_hint'|trans }}
+            </p>
+        {% endif %}
+    {% endblock %}
+{% endembed %}
+
+{# ── Crypto allowlist ─────────────────────────────────────────────── #}
+{# Junior-Helps: keep a compact TomSelect for keyboard-power-users + render
+   a parallel "decision aid" panel that lists every algorithm with
+   purpose / BSI-status / when-can-it-be-un-ticked. Both controls submit
+   the same field name; the TomSelect remains the canonical input, the
+   decision-aid is read-only documentation. #}
+<div class="fa-form-row mb-2">
+    <label class="form-label" for="op-crypto-allowlist">
+        {{ 'policy_wizard.step.operational_baselines.crypto_allowlist_label'|trans }}
+        <i class="fa-icon fa-icon--ui-info text-muted ms-1"
+           data-bs-toggle="tooltip"
+           title="{{ (bsi_in_scope
+                ? 'policy_wizard.step.operational_baselines.tooltip.crypto_allowlist_bsi'
+                : 'policy_wizard.step.operational_baselines.tooltip.crypto_allowlist_modern')|trans }}"
+           aria-label="{{ (bsi_in_scope
+                ? 'policy_wizard.step.operational_baselines.tooltip.crypto_allowlist_bsi'
+                : 'policy_wizard.step.operational_baselines.tooltip.crypto_allowlist_modern')|trans }}"></i>
+    </label>
+    <select id="op-crypto-allowlist"
+            name="crypto_allowlist[]"
+            multiple
+            class="form-select fa-cyber-input__field"
+            data-controller="tom-select"
+            aria-describedby="op-crypto-allowlist-help">
+        {% for algo in bsi_tr02102_algos %}
+            <option value="{{ algo }}" {% if algo in crypto_default %}selected{% endif %}>{{ algo }}</option>
+        {% endfor %}
+    </select>
+    <div id="op-crypto-allowlist-help" class="form-text">
+        {{ 'policy_wizard.step.operational_baselines.crypto_allowlist_help'|trans }}
+    </div>
+</div>
+
+{# Junior-Helps: per-algorithm decision-aid (read-only), collapsible to keep
+   the page short for Senior-ISBs who already know the algos. Default open
+   so a Junior cannot miss it. #}
+<details class="mb-4 border rounded p-2 bg-body-tertiary" open>
+    <summary class="small fw-semibold">
+        <i class="fa-icon fa-icon--nav-mortarboard me-1" aria-hidden="true"></i>
+        {{ 'policy_wizard.step.operational_baselines.crypto_decision_aid_title'|trans }}
+    </summary>
+    <p class="small text-muted mt-2 mb-2">
+        {{ 'policy_wizard.step.operational_baselines.crypto_decision_aid_intro'|trans }}
+    </p>
+    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+        {% block table_head %}
+            <tr>
+                <th scope="col" class="fa-table__th">{{ 'policy_wizard.step.operational_baselines.crypto_col.algorithm'|trans({}, 'policy_wizard') }}</th>
+                <th scope="col" class="fa-table__th">{{ 'policy_wizard.step.operational_baselines.crypto_col.purpose'|trans({}, 'policy_wizard') }}</th>
+                <th scope="col" class="fa-table__th">{{ 'policy_wizard.step.operational_baselines.crypto_col.bsi_status'|trans({}, 'policy_wizard') }}</th>
+                <th scope="col" class="fa-table__th">{{ 'policy_wizard.step.operational_baselines.crypto_col.optional_when'|trans({}, 'policy_wizard') }}</th>
+            </tr>
+        {% endblock %}
+        {% block table_body %}
+            {% for algo in bsi_tr02102_algos %}
+                {% set algo_purpose_key = 'policy_wizard.step.operational_baselines.crypto_algorithms.' ~ algo ~ '.purpose' %}
+                {% set algo_bsi_key = 'policy_wizard.step.operational_baselines.crypto_algorithms.' ~ algo ~ '.bsi_status' %}
+                {% set algo_optional_key = 'policy_wizard.step.operational_baselines.crypto_algorithms.' ~ algo ~ '.optional_when' %}
+                {% set algo_purpose = algo_purpose_key|trans({}, 'policy_wizard') %}
+                {% set algo_bsi = algo_bsi_key|trans({}, 'policy_wizard') %}
+                {% set algo_optional = algo_optional_key|trans({}, 'policy_wizard') %}
+                {# Highlight "NIE abwählen" rows so a Junior cannot accidentally remove them. #}
+                {% set is_critical = ('NIE' in algo_optional) or ('NEVER' in algo_optional) %}
+                <tr class="fa-table__row{{ is_critical ? ' table-warning' : '' }}">
+                    <td class="fa-table__cell"><code>{{ algo }}</code></td>
+                    <td class="fa-table__cell">{{ algo_purpose }}</td>
+                    <td class="fa-table__cell">{{ algo_bsi }}</td>
+                    <td class="fa-table__cell">
+                        {% if is_critical %}
+                            <strong class="text-danger">{{ algo_optional }}</strong>
+                        {% else %}
+                            {{ algo_optional }}
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+        {% endblock %}
+    {% endembed %}
+</details>
+
+<div class="row g-3 mb-4">
+    {# ── Backup RPO ───────────────────────────────────────────────── #}
+    <div class="col-md-4">
+        {{ _fa_cyber.text('backup_rpo_hours', {
+            id: 'op-backup-rpo',
+            type: 'number',
+            label: 'policy_wizard.step.operational_baselines.backup_rpo_label'|trans,
+            help: 'policy_wizard.step.operational_baselines.backup_rpo_help'|trans,
+            value: rpo_default,
+            extra_attrs: {
+                'min': '1',
+                'max': '720'
+            }
+        }) }}
+    </div>
+
+    {# ── Patch SLA per severity ───────────────────────────────────── #}
+    {% for severity in ['critical', 'high', 'medium'] %}
+        <div class="col-md-2">
+            {{ _fa_cyber.text('patch_sla_hours[' ~ severity ~ ']', {
+                id: 'op-patch-' ~ severity,
+                type: 'number',
+                label: ('policy_wizard.step.operational_baselines.patch_sla_' ~ severity ~ '_label')|trans,
+                help: ('policy_wizard.step.operational_baselines.patch_sla_' ~ severity ~ '_help')|trans,
+                value: patch_default[severity]|default(''),
+                extra_attrs: {
+                    'min': '1',
+                    'max': '8760'
+                }
+            }) }}
+        </div>
+    {% endfor %}
+</div>
+
+{# ── Access, Identity & Logging baselines ───────────────────────── #}
+{% set access_identity_body %}
+    <div class="row g-3">
+        {# ── Access review cadence ──────────────────────────────── #}
+        <div class="col-md-4">
+            {{ _fa_cyber.text('access_review_cadence_months', {
+                id: 'op-access-review',
+                type: 'number',
+                label: 'policy_wizard.step.operational_baselines.access_review_cadence_label'|trans,
+                help: 'policy_wizard.step.operational_baselines.access_review_cadence_help'|trans,
+                value: access_review_default,
+                extra_attrs: {
+                    'min': '1',
+                    'max': '24'
+                }
+            }) }}
+        </div>
+
+        {# ── MFA scope ─────────────────────────────────────────── #}
+        <div class="col-md-4">
+            {% set mfa_options = [] %}
+            {% for opt in ['all_users', 'privileged_only', 'external_facing_only'] %}
+                {% set mfa_options = mfa_options|merge([{
+                    value: opt,
+                    label: ('policy_wizard.step.operational_baselines.mfa_scope.' ~ opt)|trans
+                }]) %}
+            {% endfor %}
+            {{ _fa_cyber.select('mfa_scope', mfa_options, {
+                id: 'op-mfa-scope',
+                label: 'policy_wizard.step.operational_baselines.mfa_scope_label'|trans,
+                help: 'policy_wizard.step.operational_baselines.mfa_scope_help'|trans,
+                value: mfa_scope_default
+            }) }}
+        </div>
+
+        {# ── Cloud/on-prem mix ─────────────────────────────────── #}
+        <div class="col-md-4">
+            {{ _fa_cyber.text('cloud_onprem_mix_pct', {
+                id: 'op-cloud-mix',
+                type: 'number',
+                label: 'policy_wizard.step.operational_baselines.cloud_onprem_mix_pct_label'|trans,
+                help: 'policy_wizard.step.operational_baselines.cloud_onprem_mix_pct_help'|trans,
+                value: cloud_mix_default,
+                extra_attrs: {
+                    'min': '0',
+                    'max': '100'
+                }
+            }) }}
+        </div>
+
+        {# ── Logging retention per category ──────────────────────── #}
+        {% for cat in ['security', 'app', 'system'] %}
+            <div class="col-md-4">
+                {{ _fa_cyber.text('logging_retention_months[' ~ cat ~ ']', {
+                    id: 'op-log-ret-' ~ cat,
+                    type: 'number',
+                    label: ('policy_wizard.step.operational_baselines.logging_retention_' ~ cat ~ '_label')|trans,
+                    help: ('policy_wizard.step.operational_baselines.logging_retention_' ~ cat ~ '_help')|trans,
+                    value: logging_default[cat]|default(''),
+                    extra_attrs: {
+                        'min': '1',
+                        'max': '120'
+                    }
+                }) }}
+            </div>
+        {% endfor %}
+
+        {# ── Vuln scan cadence ─────────────────────────────────── #}
+        {% for key in ['external_cadence', 'internal_cadence'] %}
+            <div class="col-md-3">
+                {% set cadence_options = [] %}
+                {% for opt in ['weekly', 'monthly', 'quarterly'] %}
+                    {% set cadence_options = cadence_options|merge([{
+                        value: opt,
+                        label: ('policy_wizard.step.operational_baselines.vuln_scan_cadence.' ~ opt)|trans
+                    }]) %}
+                {% endfor %}
+                {{ _fa_cyber.select('vuln_scan_cadence[' ~ key ~ ']', cadence_options, {
+                    id: 'op-vuln-' ~ key,
+                    label: ('policy_wizard.step.operational_baselines.vuln_scan_cadence_' ~ key ~ '_label')|trans,
+                    help: ('policy_wizard.step.operational_baselines.vuln_scan_cadence_' ~ key ~ '_help')|trans,
+                    value: vuln_default[key]|default('')
+                }) }}
+            </div>
+        {% endfor %}
+
+        {# ── Working modes ─────────────────────────────────────── #}
+        <div class="col-md-6">
+            <div class="fa-form-row mb-2">
+                <label class="form-label" for="op-working-modes">
+                    {{ 'policy_wizard.step.operational_baselines.working_modes_label'|trans }}
+                    <i class="fa-icon fa-icon--ui-info text-muted ms-1"
+                       data-bs-toggle="tooltip"
+                       title="{{ 'policy_wizard.step.operational_baselines.tooltip.working_modes'|trans }}"
+                       aria-label="{{ 'policy_wizard.step.operational_baselines.tooltip.working_modes'|trans }}"></i>
+                </label>
+                <select id="op-working-modes"
+                        name="working_modes[]"
+                        multiple
+                        class="form-select fa-cyber-input__field"
+                        data-controller="tom-select"
+                        aria-describedby="op-working-modes-help">
+                    {% for mode in ['office', 'hybrid', 'fully_remote'] %}
+                        <option value="{{ mode }}" {% if mode in working_modes_default %}selected{% endif %}>
+                            {{ ('policy_wizard.step.operational_baselines.working_modes.' ~ mode)|trans }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <div id="op-working-modes-help" class="form-text">
+                    {{ 'policy_wizard.step.operational_baselines.working_modes_help'|trans }}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endset %}
+{{ _fa_section.render({
+    title: 'policy_wizard.step.operational_baselines.access_identity_section_title'|trans,
+    subtitle: 'policy_wizard.step.operational_baselines.access_identity_section_subtitle'|trans,
+    body: access_identity_body
+}) }}
+
+{# ── Continuity RTO (BCM only) ───────────────────────────────────── #}
+{% if bcm_in_scope %}
+    {% set rto_body %}
+        <div class="row g-3">
+            {% for level in ['high', 'medium', 'low'] %}
+                <div class="col-md-4">
+                    {{ _fa_cyber.text('continuity_rto_hours[' ~ level ~ ']', {
+                        id: 'op-rto-' ~ level,
+                        type: 'number',
+                        label: ('policy_wizard.step.operational_baselines.rto_' ~ level ~ '_label')|trans,
+                        help: ('policy_wizard.step.operational_baselines.rto_' ~ level ~ '_help')|trans,
+                        value: rto_default[level]|default(''),
+                        extra_attrs: {
+                            'min': '1',
+                            'max': '8760'
+                        }
+                    }) }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endset %}
+    {{ _fa_section.render({
+        title: 'policy_wizard.step.operational_baselines.rto_section_title'|trans,
+        subtitle: 'policy_wizard.step.operational_baselines.rto_section_subtitle'|trans,
+        body: rto_body
+    }) }}
+{% endif %}
+
+{# ── DORA block (DORA only) ──────────────────────────────────────── #}
+{% if dora_in_scope %}
+    {# Junior-ISB hint: surface a "DORA-not-applicable" notice when the
+       tenant picked a non-financial industry-preset bundle but DORA is
+       still in their Step-1 standards-mix. The hint is silenced once
+       the user picks an entity_type (signals "yes, DORA does apply"). #}
+    {% if dora_not_applicable_hint %}
+        {% embed '_components/_fa_alert.html.twig' with { props: {
+            variant: 'warning',
+            icon: 'question-circle',
+            class: 'mb-3'
+        } } %}
+            {% block alert_body %}
+                {% trans_default_domain 'policy_wizard' %}
+                <div class="fa-alert__title">
+                    {{ 'policy_wizard.step.operational_baselines.dora.not_applicable_hint.title'|trans }}
+                </div>
+                <p class="fa-alert__message mb-2 small">
+                    {{ 'policy_wizard.step.operational_baselines.dora.not_applicable_hint.body'|trans }}
+                </p>
+                {% if run is defined and run is not null and run.id is defined %}
+                    <p class="mb-0 small">
+                        <a href="{{ path('app_policy_wizard_step_show', {runId: run.id, step: 'welcome'}) }}">
+                            <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i>
+                            {{ 'policy_wizard.step.operational_baselines.dora.not_applicable_hint.link_label'|trans }}
+                        </a>
+                    </p>
+                {% endif %}
+            {% endblock %}
+        {% endembed %}
+    {% endif %}
+
+    {% set dora_body %}
+        <div class="row g-3">
+            <div class="col-md-6">
+                {% set dora_entity_options = [{value: '', label: '—'}] %}
+                {% for et in ['kreditinstitut', 'wertpapierfirma', 'zahlungsdienstleister', 'e_geld_institut', 'fmi', 'sonstige'] %}
+                    {% set dora_entity_options = dora_entity_options|merge([{
+                        value: et,
+                        label: ('policy_wizard.step.operational_baselines.dora_entity_type.' ~ et)|trans
+                    }]) %}
+                {% endfor %}
+                {{ _fa_cyber.select('dora[entity_type]', dora_entity_options, {
+                    id: 'op-dora-entity-type',
+                    label: 'policy_wizard.step.operational_baselines.dora_entity_type_label'|trans,
+                    value: dora_default.entity_type|default('')
+                }) }}
+            </div>
+            <div class="col-md-6">
+                {% set dora_authority_options = [{value: '', label: '—'}] %}
+                {% for ca in ['BaFin', 'Bundesbank', 'ECB', 'EBA', 'sonstige'] %}
+                    {% set dora_authority_options = dora_authority_options|merge([{value: ca, label: ca}]) %}
+                {% endfor %}
+                {{ _fa_cyber.select('dora[competent_authority]', dora_authority_options, {
+                    id: 'op-dora-authority',
+                    label: 'policy_wizard.step.operational_baselines.dora_authority_label'|trans,
+                    value: dora_default.competent_authority|default('')
+                }) }}
+            </div>
+            {# ── DORA-Significance Self-Check (DORA Art. 16 + RTS) ───
+               Replaces the bare `is_significant` checkbox with a guided
+               three-question Self-Check. Backend derives is_significant
+               server-side: ≥ 2 yes out of 3 → significant. The derived
+               result is rendered read-only below the questions so the
+               Junior-ISB sees the consequence of their answers. #}
+            <div class="col-12">
+                <div class="border rounded p-3 bg-body-tertiary">
+                    <h6 class="mb-2">
+                        <i class="fa-icon fa-icon--nav-clipboard-check me-1" aria-hidden="true"></i>
+                        {{ 'policy_wizard.step.operational_baselines.dora.significance_self_check.title'|trans }}
+                    </h6>
+                    <p class="small text-muted mb-3">
+                        {{ 'policy_wizard.step.operational_baselines.dora.significance_self_check.intro'|trans }}
+                    </p>
+                    {% set sc_questions = ['q1', 'q2', 'q3'] %}
+                    {% for q in sc_questions %}
+                        {% set q_value = dora_default['significance_' ~ q]|default(false) %}
+                        <div class="mb-3 p-2 border-start border-3 border-info-subtle">
+                            {# Q-text inline-visible (Junior-Helps): user does NOT have to click to see what they answer. #}
+                            <p class="mb-1 small fw-semibold">
+                                {{ ('policy_wizard.step.operational_baselines.dora.significance_self_check.' ~ q)|trans }}
+                            </p>
+                            <p class="mb-2 small text-muted">
+                                {{ ('policy_wizard.step.operational_baselines.dora.significance_self_check.' ~ q ~ '_help')|trans }}
+                            </p>
+                            <div class="d-flex gap-3 mb-2">
+                                <div class="form-check">
+                                    <input type="radio"
+                                           class="form-check-input"
+                                           id="op-dora-{{ q }}-yes"
+                                           name="dora[significance_{{ q }}]"
+                                           value="1"
+                                           {% if q_value %}checked{% endif %}>
+                                    <label class="form-check-label small" for="op-dora-{{ q }}-yes">
+                                        {{ 'policy_wizard.step.operational_baselines.dora.significance_self_check.answer_yes'|trans }}
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input type="radio"
+                                           class="form-check-input"
+                                           id="op-dora-{{ q }}-no"
+                                           name="dora[significance_{{ q }}]"
+                                           value="0"
+                                           {% if not q_value %}checked{% endif %}>
+                                    <label class="form-check-label small" for="op-dora-{{ q }}-no">
+                                        {{ 'policy_wizard.step.operational_baselines.dora.significance_self_check.answer_no'|trans }}
+                                    </label>
+                                </div>
+                            </div>
+                            {# Junior-Helps: per-Q yes/no implication is rendered ABOVE the answer
+                               so users see the consequence before they choose, not after. #}
+                            <div class="small text-muted">
+                                <div>
+                                    <i class="fa-icon fa-icon--ui-check text-success me-1" aria-hidden="true"></i>
+                                    {{ ('policy_wizard.step.operational_baselines.dora.significance_self_check.' ~ q ~ '_yes_implication')|trans }}
+                                </div>
+                                <div>
+                                    <i class="fa-icon fa-icon--ui-close text-secondary me-1" aria-hidden="true"></i>
+                                    {{ ('policy_wizard.step.operational_baselines.dora.significance_self_check.' ~ q ~ '_no_implication')|trans }}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                    {# Derived read-only chip — server is the source of truth.
+                       We render the current state for fast feedback after
+                       a postback; the user cannot toggle it directly. #}
+                    {% set derived_significant = dora_default.is_significant|default(false) %}
+                    <div class="mt-3 pt-3 border-top">
+                        <span class="small fw-semibold">
+                            <i class="fa-icon fa-icon--util-arrow-right" aria-hidden="true"></i>
+                            {{ 'policy_wizard.step.operational_baselines.dora.significance_self_check.derived_label'|trans }}
+                        </span>
+                        {% if derived_significant %}
+                            {{ pill.render('policy_wizard.step.operational_baselines.dora.significance_self_check.derived_yes'|trans, 'warning', {size: 'sm', class: 'ms-2'}) }}
+                        {% else %}
+                            {{ pill.render('policy_wizard.step.operational_baselines.dora.significance_self_check.derived_no'|trans, 'neutral', {size: 'sm', class: 'ms-2'}) }}
+                        {% endif %}
+                        <i class="fa-icon fa-icon--ui-info text-muted ms-2"
+                           data-bs-toggle="tooltip"
+                           title="{{ 'policy_wizard.step.operational_baselines.tooltip.dora_significant'|trans }}"
+                           aria-label="{{ 'policy_wizard.step.operational_baselines.tooltip.dora_significant'|trans }}"></i>
+                        {# Junior-Helps: explain in plain language what the result MEANS for the tenant. #}
+                        <p class="small text-muted mb-0 mt-2">
+                            {% if derived_significant %}
+                                {{ 'policy_wizard.step.operational_baselines.dora.significance_self_check.derived_yes_consequence'|trans }}
+                            {% else %}
+                                {{ 'policy_wizard.step.operational_baselines.dora.significance_self_check.derived_no_consequence'|trans }}
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                {{ _fa_cyber.text('dora[ictt_concentration_threshold_pct]', {
+                    id: 'op-dora-threshold',
+                    type: 'number',
+                    label: 'policy_wizard.step.operational_baselines.dora_threshold_label'|trans,
+                    help: 'policy_wizard.step.operational_baselines.dora_threshold_help'|trans,
+                    value: dora_default.ictt_concentration_threshold_pct|default(''),
+                    extra_attrs: {
+                        'min': '1',
+                        'max': '100'
+                    }
+                }) }}
+            </div>
+            <div class="col-md-4">
+                <div class="form-check mt-4">
+                    <input type="hidden" name="dora[is_ctpp_self_assessment]" value="0">
+                    <input class="form-check-input"
+                           type="checkbox"
+                           id="op-dora-ctpp"
+                           name="dora[is_ctpp_self_assessment]"
+                           value="1"
+                           {% if dora_default.is_ctpp_self_assessment|default(false) %}checked{% endif %}>
+                    <label class="form-check-label" for="op-dora-ctpp">
+                        {{ 'policy_wizard.step.operational_baselines.dora_ctpp_label'|trans }}
+                        <i class="fa-icon fa-icon--ui-info text-muted ms-1"
+                           data-bs-toggle="tooltip"
+                           title="{{ 'policy_wizard.step.operational_baselines.tooltip.dora_ctpp'|trans }}"
+                           aria-label="{{ 'policy_wizard.step.operational_baselines.tooltip.dora_ctpp'|trans }}"></i>
+                    </label>
+                </div>
+            </div>
+        </div>
+    {% endset %}
+    {{ _fa_section.render({
+        title: 'policy_wizard.step.operational_baselines.dora_section_title'|trans,
+        subtitle: 'policy_wizard.step.operational_baselines.dora_section_subtitle'|trans,
+        body: dora_body
+    }) }}
+{% endif %}
+
+{# ── DPO + BCM-Officer pickers ───────────────────────────────────── #}
+{% if (gdpr_in_scope or dora_in_scope) or bcm_in_scope %}
+    {% set roles_body %}
+        <div class="row g-3">
+            {% if gdpr_in_scope or dora_in_scope %}
+                <div class="col-md-6">
+                    {% set dpo_options = [{value: '', label: '—'}] %}
+                    {% for u in dpo_user_choices|default([]) %}
+                        {% set dpo_options = dpo_options|merge([{
+                            value: u.id,
+                            label: (u.lastName|default('') ~ ', ' ~ u.firstName|default('') ~ ' (' ~ u.email ~ ')')
+                        }]) %}
+                    {% endfor %}
+                    {{ _fa_cyber.select('dpo_user_id', dpo_options, {
+                        id: 'op-dpo-user',
+                        label: 'policy_wizard.step.operational_baselines.dpo_user_label'|trans,
+                        help: 'policy_wizard.step.operational_baselines.dpo_user_help'|trans,
+                        value: dpo_default,
+                        extra_attrs: {'data-controller': 'tom-select'}
+                    }) }}
+                </div>
+            {% endif %}
+            {% if bcm_in_scope %}
+                <div class="col-md-6">
+                    {% set bcm_options = [{value: '', label: '—'}] %}
+                    {% for u in bcm_officer_user_choices|default([]) %}
+                        {% set bcm_options = bcm_options|merge([{
+                            value: u.id,
+                            label: (u.lastName|default('') ~ ', ' ~ u.firstName|default('') ~ ' (' ~ u.email ~ ')')
+                        }]) %}
+                    {% endfor %}
+                    {{ _fa_cyber.select('bcm_officer_user_id', bcm_options, {
+                        id: 'op-bcm-user',
+                        label: 'policy_wizard.step.operational_baselines.bcm_officer_label'|trans,
+                        help: 'policy_wizard.step.operational_baselines.bcm_officer_help'|trans,
+                        value: bcm_default,
+                        extra_attrs: {'data-controller': 'tom-select'}
+                    }) }}
+                </div>
+            {% endif %}
+            <div class="col-12">
+                <p class="small text-muted mb-0">
+                    <i class="fa-icon fa-icon--nav-people" aria-hidden="true"></i>
+                    {{ 'policy_wizard.step.roles.help.missing_user_link'|trans }}
+                    <a href="{{ path('user_management_index') }}" target="_blank" rel="noopener">
+                        {{ 'policy_wizard.step.roles.help.missing_user_link_cta'|trans }}
+                        <i class="fa-icon fa-icon--util-external-link" aria-hidden="true"></i>
+                    </a>
+                </p>
+            </div>
+        </div>
+    {% endset %}
+    {{ _fa_section.render({
+        title: 'policy_wizard.step.operational_baselines.responsible_section_title'|trans,
+        subtitle: 'policy_wizard.step.operational_baselines.responsible_section_subtitle'|trans,
+        body: roles_body
+    }) }}
+{% endif %}
+
+{# ── Industry preset bundles (multi-select, one-shot apply) ────────── #}
+{% if preset_bundles_for_step|default([])|length > 0 %}
+    {% set preset_body %}
+        <div class="fa-form-row mb-2">
+            <label class="form-label" for="op-preset-bundles">
+                {{ 'policy_wizard.step.operational_baselines.preset_bundle_label'|trans }}
+            </label>
+            <select id="op-preset-bundles"
+                    name="industry_preset_bundle_keys[]"
+                    multiple
+                    class="form-select fa-cyber-input__field"
+                    data-controller="tom-select"
+                    aria-describedby="op-preset-bundles-help">
+                {% for bundle in preset_bundles_for_step %}
+                    <option value="{{ bundle.key }}"
+                            {% if bundle.key in preset_default_keys %}selected{% endif %}>
+                        {{ bundle.label }}
+                    </option>
+                {% endfor %}
+            </select>
+            <div id="op-preset-bundles-help" class="form-text">
+                {{ 'policy_wizard.step.operational_baselines.preset_bundle_help_multi'|trans }}
+            </div>
+        </div>
+    {% endset %}
+    {{ _fa_section.render({
+        title: 'policy_wizard.step.operational_baselines.preset_section_title'|trans,
+        body: preset_body
+    }) }}
+{% endif %}

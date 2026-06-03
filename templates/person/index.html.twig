@@ -6,6 +6,7 @@
 
 {% block body %}
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 
 <div class="container">
     {% include '_components/_breadcrumb.html.twig' with {
@@ -16,13 +17,20 @@
 </div>
 
 {{ _fa_page_header.render({
-    badge: { icon: 'people', label: 'nav.people'|trans({}, 'nav') },
+    badge: { icon: 'nav-people', label: 'nav.people'|trans({}, 'nav') },
     title: 'person.title.list'|trans({}, 'messages'),
     subtitle: 'person.description.overview'|trans({}, 'messages'),
     actions: [
-        { label: 'person.action.create'|trans({}, 'messages'), variant: 'primary', icon: 'plus-circle', href: path('app_person_new') }
+        { label: 'person.action.create'|trans({}, 'messages'), variant: 'primary', icon: 'plus', href: path('app_person_new') }
     ]
 }) }}
+{% set _global_hints = alva_hints('person_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 
 <main class="fa-aurora-surface">
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\RoleDashboardService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -16,7 +17,15 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  *
  * Phase 7D: Provides specialized dashboards for different user roles.
  * Each dashboard shows KPIs and information most relevant to the role.
+ *
+ * Role-Scope Architecture Phase 6 (spec
+ * `docs/superpowers/specs/2026-05-18-role-scope-architecture.md`): persona
+ * dashboards are guarded via `TenantScopedAdminVoter::PERSONA_*` attributes
+ * (module-visibility filter). Semantic equivalent of `#[IsGranted('ROLE_X')]`
+ * — the voter resolves PERSONA_CISO → ROLE_CISO etc — but consistent with
+ * the hub-catalog `requiredAttribute` convention.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/dashboards')]
 class RoleDashboardController extends AbstractController
 {
@@ -28,7 +37,7 @@ class RoleDashboardController extends AbstractController
     /**
      * Dashboard selector - redirects to appropriate dashboard based on role
      */
-    #[Route('', name: 'app_role_dashboard_index')]
+    #[Route('', name: 'app_role_dashboard_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(): Response
     {
@@ -39,6 +48,8 @@ class RoleDashboardController extends AbstractController
             'risk_manager' => $this->redirectToRoute('app_dashboard_risk_manager'),
             'auditor' => $this->redirectToRoute('app_dashboard_auditor'),
             'board' => $this->redirectToRoute('app_dashboard_board'),
+            // Audit V3 W2-C5 — Compliance-Manager / DPO persona dashboard.
+            'compliance_manager' => $this->redirectToRoute('app_dashboard_compliance_manager'),
             default => $this->redirectToRoute('app_dashboard'),
         };
     }
@@ -49,8 +60,8 @@ class RoleDashboardController extends AbstractController
      * Strategic view with compliance across frameworks, high-level risk posture,
      * and pending approvals requiring attention.
      */
-    #[Route('/ciso', name: 'app_dashboard_ciso')]
-    #[IsGranted('ROLE_MANAGER')]
+    #[Route('/ciso', name: 'app_dashboard_ciso', methods: ['GET'])]
+    #[IsGranted(TenantScopedAdminVoter::PERSONA_CISO)]
     public function cisoDashboard(): Response
     {
         $data = $this->roleDashboardService->getCisoDashboard();
@@ -66,8 +77,8 @@ class RoleDashboardController extends AbstractController
      * Operational risk view with treatment pipeline, appetite monitoring,
      * and mitigation effectiveness tracking.
      */
-    #[Route('/risk-manager', name: 'app_dashboard_risk_manager')]
-    #[IsGranted('ROLE_MANAGER')]
+    #[Route('/risk-manager', name: 'app_dashboard_risk_manager', methods: ['GET'])]
+    #[IsGranted(TenantScopedAdminVoter::PERSONA_RISK)]
     public function riskManagerDashboard(): Response
     {
         $data = $this->roleDashboardService->getRiskManagerDashboard();
@@ -83,7 +94,7 @@ class RoleDashboardController extends AbstractController
      * Evidence collection status, findings tracker, audit timeline,
      * and corrective action monitoring.
      */
-    #[Route('/auditor', name: 'app_dashboard_auditor')]
+    #[Route('/auditor', name: 'app_dashboard_auditor', methods: ['GET'])]
     #[IsGranted('ROLE_AUDITOR')]
     public function auditorDashboard(): Response
     {
@@ -100,8 +111,8 @@ class RoleDashboardController extends AbstractController
      * Executive summary with RAG status indicators, trend arrows,
      * and top critical items requiring board attention.
      */
-    #[Route('/board', name: 'app_dashboard_board')]
-    #[IsGranted('ROLE_MANAGER')]
+    #[Route('/board', name: 'app_dashboard_board', methods: ['GET'])]
+    #[IsGranted(TenantScopedAdminVoter::PERSONA_CISO)]
     public function boardDashboard(): Response
     {
         $data = $this->roleDashboardService->getBoardDashboard();
@@ -116,8 +127,8 @@ class RoleDashboardController extends AbstractController
     /**
      * API: Get CISO dashboard data
      */
-    #[Route('/api/ciso', name: 'app_dashboard_api_ciso')]
-    #[IsGranted('ROLE_MANAGER')]
+    #[Route('/api/ciso', name: 'app_dashboard_api_ciso', methods: ['GET'])]
+    #[IsGranted(TenantScopedAdminVoter::PERSONA_CISO)]
     public function getCisoDashboardData(): JsonResponse
     {
         return new JsonResponse($this->roleDashboardService->getCisoDashboard());
@@ -126,8 +137,8 @@ class RoleDashboardController extends AbstractController
     /**
      * API: Get Risk Manager dashboard data
      */
-    #[Route('/api/risk-manager', name: 'app_dashboard_api_risk_manager')]
-    #[IsGranted('ROLE_MANAGER')]
+    #[Route('/api/risk-manager', name: 'app_dashboard_api_risk_manager', methods: ['GET'])]
+    #[IsGranted(TenantScopedAdminVoter::PERSONA_RISK)]
     public function getRiskManagerDashboardData(): JsonResponse
     {
         return new JsonResponse($this->roleDashboardService->getRiskManagerDashboard());
@@ -136,7 +147,7 @@ class RoleDashboardController extends AbstractController
     /**
      * API: Get Auditor dashboard data
      */
-    #[Route('/api/auditor', name: 'app_dashboard_api_auditor')]
+    #[Route('/api/auditor', name: 'app_dashboard_api_auditor', methods: ['GET'])]
     #[IsGranted('ROLE_AUDITOR')]
     public function getAuditorDashboardData(): JsonResponse
     {
@@ -146,8 +157,8 @@ class RoleDashboardController extends AbstractController
     /**
      * API: Get Board dashboard data
      */
-    #[Route('/api/board', name: 'app_dashboard_api_board')]
-    #[IsGranted('ROLE_MANAGER')]
+    #[Route('/api/board', name: 'app_dashboard_api_board', methods: ['GET'])]
+    #[IsGranted(TenantScopedAdminVoter::PERSONA_CISO)]
     public function getBoardDashboardData(): JsonResponse
     {
         return new JsonResponse($this->roleDashboardService->getBoardDashboard());

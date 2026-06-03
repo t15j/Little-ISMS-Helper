@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use RuntimeException;
 use DateTimeImmutable;
 use App\Entity\DataSubjectRequest;
 use App\Entity\Tenant;
+use App\Enum\DataSubjectRequestStatus;
+use App\Exception\Tenant\TenantOrphanException;
+use App\Exception\Workflow\InvalidStatusTransitionException;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Repository\DataSubjectRequestRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -18,7 +21,7 @@ use Psr\Log\LoggerInterface;
  * Handles the full lifecycle: receive, verify identity, process, complete/reject/extend.
  * Art. 12(3): 30-day deadline, extendable to 90 days for complex requests.
  */
-class DataSubjectRequestService
+final class DataSubjectRequestService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -26,6 +29,7 @@ class DataSubjectRequestService
         private readonly TenantContext $tenantContext,
         private readonly AuditLogger $auditLogger,
         private readonly LoggerInterface $logger,
+        private readonly LifecycleTransitionInterface $lifecycleService,
     ) {
     }
 
@@ -36,7 +40,7 @@ class DataSubjectRequestService
     {
         $tenant = $this->tenantContext->getCurrentTenant();
         if (!$tenant instanceof Tenant) {
-            throw new RuntimeException('No tenant context available');
+            throw new TenantOrphanException(null, 'No tenant context available');
         }
 
         $request->setTenant($tenant);
@@ -67,33 +71,61 @@ class DataSubjectRequestService
     }
 
     /**
-     * Update status with validation of allowed transitions
+     * Update status with validation of allowed transitions.
+     *
+     * X.6: Delegates to LifecycleService::transition() using named transitions
+     * from data_subject_request_lifecycle (extended with identity_verification +
+     * extended places in X.6). The transition name is resolved from the
+     * (currentStatus, newStatus) pair via a canonical map.
      */
-    public function updateStatus(DataSubjectRequest $request, string $newStatus): void
+    public function updateStatus(DataSubjectRequest $request, string $newStatus, ?string $reason = null): void
     {
         $currentStatus = $request->getStatus();
 
-        $allowedTransitions = [
-            'received' => ['identity_verification', 'in_progress', 'rejected'],
-            'identity_verification' => ['in_progress', 'rejected'],
-            'in_progress' => ['completed', 'rejected', 'extended'],
-            'extended' => ['completed', 'rejected', 'in_progress'],
+        // Transition map: [fromStatus][toStatus] => transitionName
+        // Mirrors the data_subject_request_lifecycle YAML transitions (X.6 extended).
+        $transitionMap = [
+            'received' => [
+                'identity_verification' => 'verify_identity',
+                'in_progress' => 'process',
+                'rejected' => 'reject',
+            ],
+            'identity_verification' => [
+                'in_progress' => 'confirm_identity',
+                'rejected' => 'reject',
+            ],
+            'in_progress' => [
+                'completed' => 'complete',
+                'rejected' => 'reject',
+                'extended' => 'extend_deadline',
+            ],
+            'extended' => [
+                'completed' => 'complete',
+                'rejected' => 'reject',
+                'in_progress' => 'resume_processing',
+            ],
         ];
 
-        $allowed = $allowedTransitions[$currentStatus] ?? [];
-        if (!in_array($newStatus, $allowed, true)) {
-            throw new RuntimeException(sprintf(
-                'Cannot transition from "%s" to "%s". Allowed: %s',
+        $transitionName = $transitionMap[$currentStatus][$newStatus] ?? null;
+        if ($transitionName === null) {
+            $allowed = array_keys($transitionMap[$currentStatus] ?? []);
+            throw new \App\Exception\BusinessRule\BusinessRuleException(sprintf(
+                'Cannot transition from "%s" to "%s". Allowed targets: %s',
                 $currentStatus,
                 $newStatus,
-                implode(', ', $allowed)
-            ));
+                $allowed === [] ? '<none>' : implode(', ', $allowed),
+            ), 'invalid_transition');
         }
 
-        $oldStatus = $request->getStatus();
-        $request->setStatus($newStatus);
-
-        $this->entityManager->flush();
+        $oldStatus = $currentStatus;
+        // X.6: LifecycleService::transition() handles setStatus + flush + audit-log hook.
+        $this->lifecycleService->transition(
+            $request,
+            'data_subject_request_lifecycle',
+            $transitionName,
+            null, // user not available at this call-site; callers with User context should pass it
+            $reason,
+        );
 
         $this->auditLogger->logCustom(
             'data_subject_request.status_changed',
@@ -115,15 +147,15 @@ class DataSubjectRequestService
      */
     public function complete(DataSubjectRequest $request, string $responseDescription): void
     {
-        if (in_array($request->getStatus(), ['completed', 'rejected'], true)) {
-            throw new RuntimeException('Request is already in a terminal state');
+        if (in_array($request->getStatus(), [DataSubjectRequestStatus::Completed->value, DataSubjectRequestStatus::Rejected->value], true)) {
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Request is already in a terminal state', 'terminal_state');
         }
 
-        $request->setStatus('completed');
         $request->setCompletedAt(new DateTimeImmutable());
         $request->setResponseDescription($responseDescription);
 
         $this->entityManager->flush();
+        $this->lifecycleService->transition($request, 'data_subject_request_lifecycle', 'complete');
 
         $this->auditLogger->logCustom(
             'data_subject_request.completed',
@@ -148,15 +180,15 @@ class DataSubjectRequestService
      */
     public function reject(DataSubjectRequest $request, string $reason): void
     {
-        if (in_array($request->getStatus(), ['completed', 'rejected'], true)) {
-            throw new RuntimeException('Request is already in a terminal state');
+        if (in_array($request->getStatus(), [DataSubjectRequestStatus::Completed->value, DataSubjectRequestStatus::Rejected->value], true)) {
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Request is already in a terminal state', 'terminal_state');
         }
 
-        $request->setStatus('rejected');
         $request->setRejectionReason($reason);
         $request->setCompletedAt(new DateTimeImmutable());
 
         $this->entityManager->flush();
+        $this->lifecycleService->transition($request, 'data_subject_request_lifecycle', 'reject', null, $reason);
 
         $this->auditLogger->logCustom(
             'data_subject_request.rejected',
@@ -179,20 +211,34 @@ class DataSubjectRequestService
      */
     public function extend(DataSubjectRequest $request, string $reason): void
     {
-        if (in_array($request->getStatus(), ['completed', 'rejected'], true)) {
-            throw new RuntimeException('Cannot extend a completed or rejected request');
+        if (in_array($request->getStatus(), [DataSubjectRequestStatus::Completed->value, DataSubjectRequestStatus::Rejected->value], true)) {
+            throw new InvalidStatusTransitionException(
+                (string) $request->getStatus(),
+                'extended',
+                DataSubjectRequest::class,
+                'Cannot extend a completed or rejected request',
+            );
         }
 
         if ($request->getExtendedDeadlineAt() !== null) {
-            throw new RuntimeException('Deadline has already been extended');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Deadline has already been extended', 'already_extended');
         }
 
         $extendedDeadline = $request->getReceivedAt()->modify('+90 days');
         $request->setExtendedDeadlineAt($extendedDeadline);
         $request->setExtensionReason($reason);
-        $request->setStatus('extended');
-
-        $this->entityManager->flush();
+        // X.6: extend_deadline transition — data_subject_request_lifecycle extended with
+        // 'extended' place in X.6 (config/workflows/data_subject_request.yaml).
+        // Works from received / identity_verification / in_progress.
+        $this->lifecycleService->transition(
+            $request,
+            'data_subject_request_lifecycle',
+            'extend_deadline',
+            null,
+            $reason,
+        );
+        // Note: LifecycleService::transition() flushes internally.
+        // setExtendedDeadlineAt() + setExtensionReason() mutations above are included.
 
         $this->auditLogger->logCustom(
             'data_subject_request.extended',

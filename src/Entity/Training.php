@@ -20,6 +20,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\Metadata\Delete;
+use App\Enum\TrainingStatus;
 use App\Repository\TrainingRepository;
 use App\State\TenantAwareStateProcessor;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -75,8 +76,8 @@ class Training
 
     #[ORM\Column(length: 255)]
     #[Groups(['training:read', 'training:write'])]
-    #[Assert\NotBlank(message: 'Training title is required')]
-    #[Assert\Length(max: 255, maxMessage: 'Title cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'training.validation.title_required')]
+    #[Assert\Length(max: 255, maxMessage: 'training.validation.title_max_length')]
     private ?string $title = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
@@ -85,23 +86,23 @@ class Training
 
     #[ORM\Column(length: 100)]
     #[Groups(['training:read', 'training:write'])]
-    #[Assert\NotBlank(message: 'Training type is required')]
-    #[Assert\Length(max: 100, maxMessage: 'Training type cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'training.validation.training_type_required')]
+    #[Assert\Length(max: 100, maxMessage: 'training.validation.training_type_max_length')]
     private ?string $trainingType = null;
 
     #[ORM\Column(type: Types::DATE_MUTABLE)]
     #[Groups(['training:read', 'training:write'])]
-    #[Assert\NotNull(message: 'Scheduled date is required')]
+    #[Assert\NotNull(message: 'training.validation.scheduled_date_required')]
     private ?DateTimeInterface $scheduledDate = null;
 
     #[ORM\Column(type: Types::INTEGER, nullable: true)]
     #[Groups(['training:read', 'training:write'])]
-    #[Assert\Positive(message: 'Duration must be a positive number')]
+    #[Assert\Positive(message: 'training.validation.duration_positive')]
     private ?int $durationMinutes = null;
 
     #[ORM\Column(length: 100, nullable: true)]
     #[Groups(['training:read', 'training:write'])]
-    #[Assert\Length(max: 100, maxMessage: 'Trainer name cannot exceed { limit } characters')]
+    #[Assert\Length(max: 100, maxMessage: 'training.validation.trainer_max_length')]
     private ?string $trainer = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
@@ -112,16 +113,28 @@ class Training
     #[Groups(['training:read', 'training:write'])]
     private ?string $participants = null;
 
+    /**
+     * Junior-ISB-Audit-2026-05-22 9.7: attendeeCount derived from participants Collection.
+     *
+     * Legacy stored column kept for backwards compatibility with historical
+     * imports (pre-P-15 free-text trainings carry a manually-set integer
+     * here). New code MUST NOT rely on this directly — use
+     * {@see Training::getAttendeeCount()} which returns the canonical
+     * derived value (count of {@see TrainingParticipation} rows for this
+     * training). The legacy stored value is returned only when no
+     * structured TrainingParticipation rows exist, so old migration data
+     * remains visible.
+     */
     #[ORM\Column(type: Types::INTEGER, nullable: true)]
-    #[Groups(['training:read', 'training:write'])]
-    #[Assert\PositiveOrZero(message: 'Attendee count must be zero or positive')]
+    #[Groups(['training:read'])]
+    #[Assert\PositiveOrZero(message: 'training.validation.attendee_count_positive')]
     private ?int $attendeeCount = 0;
 
     #[ORM\Column(length: 50, nullable: true)]
     #[Groups(['training:read', 'training:write'])]
     #[Assert\Choice(
         choices: ['in_person', 'online_live', 'e_learning', 'hybrid', 'workshop'],
-        message: 'Delivery method must be one of: { choices }'
+        message: 'training.validation.delivery_method_invalid'
     )]
     private ?string $deliveryMethod = null;
 
@@ -131,16 +144,52 @@ class Training
 
     #[ORM\Column(length: 50)]
     #[Groups(['training:read', 'training:write'])]
-    #[Assert\NotBlank(message: 'Status is required')]
+    #[Assert\NotBlank(message: 'training.validation.status_required')]
     #[Assert\Choice(
         choices: ['planned', 'scheduled', 'in_progress', 'completed', 'cancelled'],
-        message: 'Status must be one of: { choices }'
+        message: 'training.validation.status_invalid'
     )]
     private ?string $status = 'planned';
 
+    /**
+     * Optimistic-locking version field for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on training_lifecycle.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 9.5: File-Upload statt Freitext-Pfade.
+     *
+     * Legacy free-text column retained for already-migrated data (URLs /
+     * descriptive paragraphs). New uploads land in {@see $materialFiles}
+     * via the FileType form widget; this column stays read-only on the
+     * Twig show-page for historical content.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['training:read', 'training:write'])]
     private ?string $materials = null;
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 9.5: File-Upload statt Freitext-Pfade.
+     *
+     * Structured list of uploaded training material files. Each entry is
+     * an associative array with the keys:
+     *   - `filename` (safe-renamed on disk)
+     *   - `originalName` (client-supplied display name)
+     *   - `mimeType`
+     *   - `size` (bytes)
+     *   - `uploadedAt` (ISO-8601 string)
+     * Files live under `public/uploads/training-materials/`. Validation
+     * flows through {@see FileUploadSecurityService::validateUploadedFile()}
+     * (MIME / magic-byte / extension / size whitelist).
+     *
+     * @var array<int, array{filename: string, originalName: string, mimeType: string, size: int, uploadedAt: string}>|null
+     */
+    #[ORM\Column(name: 'material_files', type: Types::JSON, nullable: true)]
+    #[Groups(['training:read'])]
+    private ?array $materialFiles = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['training:read', 'training:write'])]
@@ -178,16 +227,129 @@ class Training
     private Collection $complianceRequirements;
 
 
+    /**
+     * ISO 27001 §7.3 Awareness — programme classification for reporting
+     * Values: awareness | role_specific | management | onboarding | compliance_specific | technical | regulatory_required
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['training:read', 'training:write'])]
+    private ?string $programType = null;
+
+    /**
+     * Junior-ISB-Audit C3-02 (S14, 2026-05-23) — Awareness-Recurrence.
+     *
+     * ISO 27001 A.6.3 expects awareness training to recur on a defined
+     * cadence (typically annually). This integer holds the cadence in
+     * months. NULL disables the recurrence/reminder cron for this
+     * training (one-off events). Typical values: 12 (annual), 6
+     * (semi-annual), 3 (quarterly). The cron command
+     * `app:training-send-reminders` reads this field together with
+     * {@see $lastReminderSentAt} to decide when to re-fire reminders.
+     */
+    #[ORM\Column(name: 'recurrence_months', type: Types::INTEGER, nullable: true)]
+    #[Groups(['training:read', 'training:write'])]
+    private ?int $recurrenceMonths = null;
+
+    /**
+     * Junior-ISB-Audit C3-02 (S14, 2026-05-23) — last reminder timestamp.
+     *
+     * Updated by `app:training-send-reminders` on every successful run.
+     * The cron computes `lastReminderSentAt + recurrenceMonths` and re-
+     * fires reminders once that point lies in the past. NULL means
+     * "no reminder ever sent" — the cron then fires immediately on the
+     * next run (subject to recurrenceMonths being set).
+     */
+    #[ORM\Column(name: 'last_reminder_sent_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    #[Groups(['training:read'])]
+    private ?DateTimeInterface $lastReminderSentAt = null;
+
     #[ORM\ManyToOne(targetEntity: Tenant::class)]
     #[ORM\JoinColumn(nullable: true)]
     private ?Tenant $tenant = null;
+
+    /**
+     * Pattern A dual-state (P-15 DataReuse): structured participants as
+     * application Users. Persisting Users here triggers TrainingParticipation
+     * row creation in TrainingController so the audit-trail (ISO 27001 §7.3)
+     * stays intact. Legacy `participants` Textarea remains for migration
+     * display only.
+     *
+     * NOTE: this collection is *transient* on the form — it is NOT a Doctrine
+     * association on its own. We re-use the existing TrainingParticipation
+     * entity as the canonical M:N link; this property is a UI convenience
+     * for the multi-select. The setter is therefore a noop persistance-wise
+     * (data lives in TrainingParticipation rows).
+     *
+     * @var Collection<int, User>
+     */
+    private ?Collection $participantUsers = null;
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 9.7: attendeeCount derived from participants Collection.
+     *
+     * Doctrine-managed inverse-side OneToMany to TrainingParticipation. This
+     * is the canonical M:N link Training x User (the transient
+     * `$participantUsers` above is a UI convenience for the multi-select
+     * widget only). {@see Training::getAttendeeCount()} derives its return
+     * value from `count($this->participations)` — Doctrine's lazy
+     * `ExtraLazy` fetch issues a single COUNT(*) query rather than
+     * hydrating all rows.
+     *
+     * @var Collection<int, TrainingParticipation>
+     */
+    #[ORM\OneToMany(mappedBy: 'training', targetEntity: TrainingParticipation::class, fetch: 'EXTRA_LAZY')]
+    private Collection $participations;
 
 public function __construct()
     {
         $this->coveredControls = new ArrayCollection();
         $this->complianceRequirements = new ArrayCollection();
         $this->trainerDeputyPersons = new ArrayCollection();
+        $this->participantUsers = new ArrayCollection();
+        $this->participations = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
+    }
+
+    /** @return Collection<int, TrainingParticipation> */
+    public function getParticipations(): Collection
+    {
+        // Doctrine bypasses __construct() on hydration; lazy-init keeps
+        // reflection-based readers (AuditLogger, serializer) safe.
+        return $this->participations ??= new ArrayCollection();
+    }
+
+    /** @return Collection<int, User> */
+    public function getParticipantUsers(): Collection
+    {
+        // Doctrine bypasses __construct() on hydration; lazy-init keeps
+        // AuditLogger and other reflection-based readers safe.
+        return $this->participantUsers ??= new ArrayCollection();
+    }
+
+    /**
+     * @param iterable<User> $users
+     */
+    public function setParticipantUsers(iterable $users): static
+    {
+        $this->participantUsers = new ArrayCollection();
+        foreach ($users as $user) {
+            $this->getParticipantUsers()->add($user);
+        }
+        return $this;
+    }
+
+    public function addParticipantUser(User $user): static
+    {
+        if (!$this->getParticipantUsers()->contains($user)) {
+            $this->getParticipantUsers()->add($user);
+        }
+        return $this;
+    }
+
+    public function removeParticipantUser(User $user): static
+    {
+        $this->getParticipantUsers()->removeElement($user);
+        return $this;
     }
 
     public function getId(): ?int
@@ -200,7 +362,7 @@ public function __construct()
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -222,7 +384,7 @@ public function __construct()
         return $this->trainingType;
     }
 
-    public function setTrainingType(string $trainingType): static
+    public function setTrainingType(?string $trainingType): static
     {
         $this->trainingType = $trainingType;
         return $this;
@@ -233,7 +395,7 @@ public function __construct()
         return $this->scheduledDate;
     }
 
-    public function setScheduledDate(DateTimeInterface $scheduledDate): static
+    public function setScheduledDate(?DateTimeInterface $scheduledDate): static
     {
         $this->scheduledDate = $scheduledDate;
         return $this;
@@ -255,7 +417,7 @@ public function __construct()
         return $this->trainer;
     }
 
-    public function setTrainer(string $trainer): static
+    public function setTrainer(?string $trainer): static
     {
         $this->trainer = $trainer;
         return $this;
@@ -283,11 +445,37 @@ public function __construct()
         return $this;
     }
 
+    /**
+     * Junior-ISB-Audit-2026-05-22 9.7: attendeeCount derived from participants Collection.
+     *
+     * Canonical attendee count = number of {@see TrainingParticipation}
+     * rows for this training. Falls back to the legacy stored column when
+     * no structured rows exist (pre-P-15 import data). Doctrine's
+     * EXTRA_LAZY fetch on $participations makes `->count()` a single
+     * COUNT(*) query, so this getter is safe for use in list templates.
+     *
+     * Marked with the API-Platform read group so the JSON API surfaces
+     * the derived value, not the legacy column.
+     */
+    #[Groups(['training:read'])]
     public function getAttendeeCount(): ?int
     {
+        $derived = $this->getParticipations()->count();
+        if ($derived > 0) {
+            return $derived;
+        }
+        // No structured participation rows yet — surface the legacy stored
+        // value so historical migrations stay readable.
         return $this->attendeeCount;
     }
 
+    /**
+     * Junior-ISB-Audit-2026-05-22 9.7: kept for migration backfills only.
+     *
+     * @internal Production code MUST derive the value from
+     * {@see Training::$participations}. This setter survives only so
+     * fixtures / data-import commands can hydrate pre-P-15 records.
+     */
     public function setAttendeeCount(?int $attendeeCount): static
     {
         $this->attendeeCount = $attendeeCount;
@@ -299,10 +487,18 @@ public function __construct()
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(TrainingStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum
+        // while existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?TrainingStatus
+    {
+        return $this->status === null ? null : TrainingStatus::tryFrom($this->status);
     }
 
     public function getDeliveryMethod(): ?string
@@ -338,6 +534,63 @@ public function __construct()
         return $this;
     }
 
+    /**
+     * Junior-ISB-Audit-2026-05-22 9.5: File-Upload statt Freitext-Pfade.
+     *
+     * @return array<int, array{filename: string, originalName: string, mimeType: string, size: int, uploadedAt: string}>
+     */
+    public function getMaterialFiles(): array
+    {
+        return $this->materialFiles ?? [];
+    }
+
+    /**
+     * @param array<int, array{filename: string, originalName: string, mimeType: string, size: int, uploadedAt: string}>|null $materialFiles
+     */
+    public function setMaterialFiles(?array $materialFiles): static
+    {
+        $this->materialFiles = $materialFiles === null || $materialFiles === [] ? null : array_values($materialFiles);
+        return $this;
+    }
+
+    /**
+     * Append a single material-file metadata entry. Caller is responsible
+     * for moving the physical file to `public/uploads/training-materials/`
+     * and producing the metadata array.
+     *
+     * @param array{filename: string, originalName: string, mimeType: string, size: int, uploadedAt: string} $entry
+     */
+    public function addMaterialFile(array $entry): static
+    {
+        $current = $this->materialFiles ?? [];
+        $current[] = $entry;
+        $this->materialFiles = $current;
+        return $this;
+    }
+
+    /**
+     * Remove a material-file metadata entry by its on-disk filename. Returns
+     * the removed entry or null when no match. Caller is responsible for
+     * unlinking the physical file.
+     *
+     * @return array{filename: string, originalName: string, mimeType: string, size: int, uploadedAt: string}|null
+     */
+    public function removeMaterialFileByFilename(string $filename): ?array
+    {
+        if ($this->materialFiles === null) {
+            return null;
+        }
+        foreach ($this->materialFiles as $idx => $entry) {
+            if (($entry['filename'] ?? null) === $filename) {
+                $removed = $entry;
+                unset($this->materialFiles[$idx]);
+                $this->materialFiles = $this->materialFiles === [] ? null : array_values($this->materialFiles);
+                return $removed;
+            }
+        }
+        return null;
+    }
+
     public function getFeedback(): ?string
     {
         return $this->feedback;
@@ -365,7 +618,7 @@ public function __construct()
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -622,4 +875,46 @@ public function __construct()
         return OwnerResolver::resolveAll($this->trainerUser, $this->trainerPerson, $this->trainer, $this->trainerDeputyPersons);
     }
 
+    public function getProgramType(): ?string
+    {
+        return $this->programType;
+    }
+
+    public function setProgramType(?string $programType): static
+    {
+        $this->programType = $programType;
+        return $this;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
+    }
+
+    // ── C3-02 (S14 Cluster C) — Recurrence + reminder timestamp ────────
+
+    public function getRecurrenceMonths(): ?int
+    {
+        return $this->recurrenceMonths;
+    }
+
+    public function setRecurrenceMonths(?int $recurrenceMonths): static
+    {
+        if ($recurrenceMonths !== null && $recurrenceMonths < 1) {
+            $recurrenceMonths = null;
+        }
+        $this->recurrenceMonths = $recurrenceMonths;
+        return $this;
+    }
+
+    public function getLastReminderSentAt(): ?DateTimeInterface
+    {
+        return $this->lastReminderSentAt;
+    }
+
+    public function setLastReminderSentAt(?DateTimeInterface $lastReminderSentAt): static
+    {
+        $this->lastReminderSentAt = $lastReminderSentAt;
+        return $this;
+    }
 }

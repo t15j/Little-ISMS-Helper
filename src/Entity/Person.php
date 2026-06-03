@@ -86,7 +86,7 @@ class Person
     #[Groups(['person:read', 'person:write'])]
     private ?string $jobTitle = null;
 
-    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\ManyToOne(targetEntity: User::class, inversedBy: 'linkedPersons')]
     #[ORM\JoinColumn(nullable: true)]
     #[Groups(['person:read'])]
     private ?User $linkedUser = null;
@@ -138,7 +138,7 @@ class Person
         return $this->fullName;
     }
 
-    public function setFullName(string $fullName): static
+    public function setFullName(?string $fullName): static
     {
         $this->fullName = $fullName;
         return $this;
@@ -149,7 +149,7 @@ class Person
         return $this->personType;
     }
 
-    public function setPersonType(string $personType): static
+    public function setPersonType(?string $personType): static
     {
         $this->personType = $personType;
         return $this;
@@ -237,7 +237,7 @@ class Person
         return $this->active;
     }
 
-    public function setActive(bool $active): static
+    public function setActive(?bool $active): static
     {
         $this->active = $active;
         return $this;
@@ -319,7 +319,7 @@ class Person
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\AuditFinding;
 use App\Entity\ChangeRequest;
+use App\Entity\CorrectiveAction;
+use App\Form\SectionMapInterface;
+use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
@@ -13,7 +17,7 @@ use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
-class ChangeRequestType extends AbstractType
+final class ChangeRequestType extends AbstractType implements SectionMapInterface
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -75,8 +79,13 @@ class ChangeRequestType extends AbstractType
                 'required' => true,
                     'choice_translation_domain' => 'change_requests',
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix, Sprint Y.5) ──
+            // Owned by `change_request_lifecycle`. ISO 27001 A.8.32 —
+            // 4-eyes auf `approve`, `implement`, `close`. Transitions via
+            // LifecycleService::transition() only.
             ->add('status', ChoiceType::class, [
                 'label' => 'change_request.field.status',
+                'help' => 'change_request.help.status_readonly',
                 'choices' => [
                     'change_request.status.draft' => 'draft',
                     'change_request.status.submitted' => 'submitted',
@@ -89,8 +98,38 @@ class ChangeRequestType extends AbstractType
                     'change_request.status.closed' => 'closed',
                     'change_request.status.cancelled' => 'cancelled',
                 ],
-                'required' => true,
-                    'choice_translation_domain' => 'change_requests',
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
+                'choice_translation_domain' => 'change_requests',
+            ])
+            ->add('clauseReference', TextType::class, [
+                'label' => 'change_request.field.clause_reference',
+                'required' => false,
+                'attr' => ['maxlength' => 100, 'placeholder' => 'change_request.placeholder.clause_reference'],
+                'help' => 'change_request.help.clause_reference',
+            ])
+            // Junior-ISB-Audit C4-05 — Lineage to upstream artefacts
+            // (AuditFinding / CorrectiveAction). ISO 27001 Cl. 10.1 —
+            // continuous-improvement traceability without parsing the
+            // free-text justification.
+            ->add('relatedFinding', EntityType::class, [
+                'label' => 'change_request.field.related_finding',
+                'class' => AuditFinding::class,
+                'choice_label' => fn(AuditFinding $f): string => ($f->getFindingNumber() ?? '#' . $f->getId()) . ' — ' . ($f->getTitle() ?? ''),
+                'placeholder' => 'change_request.placeholder.related_finding',
+                'required' => false,
+                'help' => 'change_request.help.related_finding',
+            ])
+            ->add('relatedCorrectiveAction', EntityType::class, [
+                'label' => 'change_request.field.related_corrective_action',
+                'class' => CorrectiveAction::class,
+                'choice_label' => fn(CorrectiveAction $c): string => '#' . $c->getId() . ' — ' . ($c->getTitle() ?? ''),
+                'placeholder' => 'change_request.placeholder.related_corrective_action',
+                'required' => false,
+                'help' => 'change_request.help.related_corrective_action',
             ])
             ->add('ismsImpact', TextareaType::class, [
                 'label' => 'change_request.field.isms_impact',
@@ -178,6 +217,64 @@ class ChangeRequestType extends AbstractType
                 'attr' => ['rows' => 2],
             ])
         ;
+    }
+
+    /**
+     * S4 Foundation P-2 SectionPolicy — ISO 27001 A.8.32 · ITIL Change Management.
+     * Sections: overview · details · impact_assessment · approval · implementation · verification · audit_metadata
+     *
+     * @return array<string, list<string>>
+     */
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview' => [
+                'changeNumber',
+                'title',
+                'changeType',
+                'description',
+                'justification',
+            ],
+            'details' => [
+                'requestedBy',
+                'requestedDate',
+                'priority',
+                'status',
+                'clauseReference',
+            ],
+            // Junior-ISB-Audit C4-05 — upstream-lineage section so the
+            // ISB can wire a ChangeRequest back to the AuditFinding /
+            // CorrectiveAction that triggered it (ISO 27001 Cl. 10.1).
+            'lineage' => [
+                'relatedFinding',
+                'relatedCorrectiveAction',
+            ],
+            'impact_assessment' => [
+                'ismsImpact',
+                'riskAssessment',
+            ],
+            'approval' => [
+                'approvedBy',
+                'approvedDate',
+                'approvalComments',
+            ],
+            'implementation' => [
+                'implementationPlan',
+                'rollbackPlan',
+                'testingRequirements',
+                'plannedImplementationDate',
+                'actualImplementationDate',
+                'implementedBy',
+                'implementationNotes',
+            ],
+            'verification' => [
+                'verifiedBy',
+                'verifiedDate',
+                'verificationResults',
+                'closedDate',
+                'closureNotes',
+            ],
+        ];
     }
 
     public function configureOptions(OptionsResolver $resolver): void

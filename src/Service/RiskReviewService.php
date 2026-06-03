@@ -10,6 +10,7 @@ use DateTimeInterface;
 use App\Entity\Risk;
 use App\Entity\Tenant;
 use App\Repository\RiskRepository;
+use App\Risk\RiskMatrixThresholds;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 
@@ -25,7 +26,7 @@ use Psr\Log\LoggerInterface;
  * - Overdue review tracking
  * - Review interval enforcement
  */
-class RiskReviewService
+final class RiskReviewService
 {
     public function __construct(
         private readonly RiskRepository $riskRepository,
@@ -135,27 +136,16 @@ class RiskReviewService
     }
 
     /**
-     * Determine risk level based on risk score
-     * Uses centralized thresholds from RiskMatrixService
+     * Determine risk level based on risk score.
+     * Delegates to the SSoT {@see RiskMatrixThresholds::classify()}.
      *
      * @return string 'critical'|'high'|'medium'|'low'
      */
     private function getRiskLevel(Risk $risk): string
     {
-        $riskScore = ($risk->getProbability() ?? 1) * ($risk->getImpact() ?? 1);
-        // Use the same thresholds as RiskMatrixService for consistency
-        if ($riskScore >= 20) {
-            return 'critical';
-        }
-        if ($riskScore >= 12) {
-            return 'high';
-        }
+        $score = ($risk->getProbability() ?? 1) * ($risk->getImpact() ?? 1);
 
-        // Use the same thresholds as RiskMatrixService for consistency
-        if ($riskScore >= 6) {
-            return 'medium';
-        }
-        return 'low';
+        return RiskMatrixThresholds::classify($score);
     }
 
     /**

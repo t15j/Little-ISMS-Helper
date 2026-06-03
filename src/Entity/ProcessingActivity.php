@@ -6,6 +6,8 @@ namespace App\Entity;
 
 use DateTimeInterface;
 use DateTimeImmutable;
+use App\Enum\ProcessingActivityStatus;
+use App\Lifecycle\LifecycleRegistry;
 use App\Repository\ProcessingActivityRepository;
 use App\Service\OwnerResolver;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -13,6 +15,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * CRITICAL-06: DSGVO Art. 30 - Verzeichnis von Verarbeitungstätigkeiten
@@ -187,14 +190,21 @@ class ProcessingActivity
     // ============================================================================
 
     /**
-     * General retention period description (e.g., "3 years after contract end")
+     * Justification / reason for the retention duration (free-text).
+     *
+     * Junior-ISB-Audit-2026-05-22 C2-02: dedup with semantic split — `retentionPeriodDays`
+     * is the canonical structured value (numeric days), while this column captures the
+     * qualitative justification (e.g. "HGB §257 - 10 Jahre", "Vertragsdauer + 3 Jahre").
+     * DB column kept (`retention_period`) to preserve data; only labels/help renamed.
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Assert\NotBlank]
     private ?string $retentionPeriod = null;
 
     /**
-     * Retention period in days (optional, for automated deletion)
+     * Retention period in days (canonical structured value for automated deletion).
+     *
+     * Junior-ISB-Audit-2026-05-22 C2-02: canonical numeric retention duration.
      */
     #[ORM\Column(nullable: true)]
     private ?int $retentionPeriodDays = null;
@@ -210,18 +220,42 @@ class ProcessingActivity
     // ============================================================================
 
     /**
-     * General description of technical and organizational measures (Art. 32 GDPR)
+     * Qualitative description of technical and organizational measures (Art. 32 GDPR).
+     *
+     * Junior-ISB-Audit-2026-05-22 C2-03: dedup with semantic split (qualitative vs structured).
+     * This free-text field holds the qualitative narrative — for the structured machine-readable
+     * evidence linked to ISO 27001 controls, see {@see $implementedControls}. DSGVO Art. 32
+     * demands evidence; either form counts (see {@see validateTomOrControlsPresent}).
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $technicalOrganizationalMeasures = null;
 
     /**
-     * Reference to implemented controls (ISO 27001 controls)
-     * ManyToMany relationship to Control entity
+     * Structured evidence: ISO 27001 controls implemented for this processing (M:N).
+     *
+     * Junior-ISB-Audit-2026-05-22 C2-03: structured nachweis (vs the qualitative TOM narrative).
      */
     #[ORM\ManyToMany(targetEntity: Control::class)]
     #[ORM\JoinTable(name: 'processing_activity_control')]
     private Collection $implementedControls;
+
+    /**
+     * V3 W2-Bug3 — Linked Assets (M:N).
+     *
+     * Used by the DPIA-Auto-Suggestion listener (W2-H5): when any
+     * linked Asset has `dataClassification` ∈ {confidential,
+     * restricted}, the processing activity is treated as high-risk
+     * and a DPIA skeleton is auto-generated.
+     *
+     * Owning side; the inverse lives on {@see Asset::$processingActivities}.
+     *
+     * @var Collection<int, Asset>
+     */
+    #[ORM\ManyToMany(targetEntity: Asset::class, inversedBy: 'processingActivities')]
+    #[ORM\JoinTable(name: 'processing_activity_asset')]
+    #[ORM\JoinColumn(name: 'processing_activity_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'asset_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private Collection $assets;
 
     /**
      * Consents for this processing activity (Art. 6(1)(a) GDPR)
@@ -277,10 +311,25 @@ class ProcessingActivity
     // ============================================================================
 
     /**
-     * Department/Unit responsible for this processing activity
+     * Department/Unit responsible for this processing activity (LEGACY freetext).
+     *
+     * @deprecated since 2026-05-25 (S18 B3) — use {@see self::$responsibleDepartmentEntity}.
+     *             Kept for zero-data-loss migration; remove in follow-up sprint once
+     *             backfill is complete.
      */
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $responsibleDepartment = null;
+
+    /**
+     * Structured FK to Department master-data (S18 B3).
+     *
+     * Replaces freetext $responsibleDepartment. The legacy field above stays
+     * populated until the org-data-import in a later sprint promotes all
+     * freetext values to Department rows.
+     */
+    #[ORM\ManyToOne(targetEntity: Department::class)]
+    #[ORM\JoinColumn(name: 'responsible_department_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Department $responsibleDepartmentEntity = null;
 
     /**
      * Contact person for this processing activity (legacy User slot).
@@ -346,9 +395,30 @@ class ProcessingActivity
     /**
      * List of processors involved (name, contact, description)
      * JSON array of objects: [{"name": "...", "contact": "...", "description": "...", "contract_date": "..."}]
+     *
+     * Sprint-2 P-7 Wave-2: kept for legacy / free-text capture, but the
+     * canonical AVV link is via {@see ProcessingActivity::$processorSuppliers}.
      */
     #[ORM\Column(type: Types::JSON, nullable: true)]
     private ?array $processors = null;
+
+    /**
+     * Sprint-2 P-7 Wave-2 / P0-15 — structured ProcessingActivity ↔ Supplier
+     * link for Auftragsverarbeiter (Art. 28 GDPR). Replaces the JSON
+     * `processors` blob with a real FK so the supplier register and the
+     * AVV register stay in sync.
+     *
+     * Owning side; no inverse on Supplier (Suppliers are referenced from
+     * many sides — adding inverse collections per usage would explode the
+     * entity surface).
+     *
+     * @var Collection<int, Supplier>
+     */
+    #[ORM\ManyToMany(targetEntity: Supplier::class)]
+    #[ORM\JoinTable(name: 'processing_activity_processor_supplier')]
+    #[ORM\JoinColumn(name: 'processing_activity_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'supplier_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private Collection $processorSuppliers;
 
     // ============================================================================
     // Joint Controllers (Art. 26 GDPR)
@@ -423,10 +493,17 @@ class ProcessingActivity
     // ============================================================================
 
     /**
-     * Status of this record: draft, active, archived
+     * Status of this record (canonical 5-stage lifecycle).
+     *
+     * S3 P-4: migrated from legacy 3-stage (draft / active / archived) to
+     * canonical 5-stage (draft → in_review → approved → published → archived).
+     * Legacy `active` values were UPDATEd to `published` by the consolidated
+     * data-migration (Version20260518150000_vvt_document_canonical_lifecycle).
+     *
+     * @see LifecycleRegistry::STANDARD_5_STAGE
      */
     #[ORM\Column(length: 20, options: ['default' => 'draft'])]
-    #[Assert\Choice(choices: ['draft', 'active', 'archived'])]
+    #[Assert\Choice(choices: LifecycleRegistry::STANDARD_5_STAGE)]
     private string $status = 'draft';
 
     /**
@@ -467,12 +544,22 @@ class ProcessingActivity
     #[ORM\JoinColumn(nullable: true)]
     private ?User $updatedBy = null;
 
+    /**
+     * Optimistic locking version — Lifecycle X.1.
+     * Prevents concurrent status-transition conflicts (409 response).
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
     public function __construct()
     {
         $this->implementedControls = new ArrayCollection();
+        $this->assets = new ArrayCollection();
         $this->consents = new ArrayCollection();
         $this->contactDeputyPersons = new ArrayCollection();
         $this->dataProtectionOfficerDeputyPersons = new ArrayCollection();
+        $this->processorSuppliers = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
         $this->updatedAt = new DateTimeImmutable();
     }
@@ -573,7 +660,7 @@ class ProcessingActivity
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -788,12 +875,36 @@ class ProcessingActivity
         return $this;
     }
 
+    /**
+     * V3 W2-Bug3 — Linked Assets (M:N).
+     *
+     * @return Collection<int, Asset>
+     */
+    public function getAssets(): Collection
+    {
+        return $this->assets;
+    }
+
+    public function addAsset(Asset $asset): static
+    {
+        if (!$this->assets->contains($asset)) {
+            $this->assets->add($asset);
+        }
+        return $this;
+    }
+
+    public function removeAsset(Asset $asset): static
+    {
+        $this->assets->removeElement($asset);
+        return $this;
+    }
+
     public function getLegalBasis(): ?string
     {
         return $this->legalBasis;
     }
 
-    public function setLegalBasis(string $legalBasis): static
+    public function setLegalBasis(?string $legalBasis): static
     {
         $this->legalBasis = $legalBasis;
         return $this;
@@ -829,6 +940,17 @@ class ProcessingActivity
     public function setResponsibleDepartment(?string $responsibleDepartment): static
     {
         $this->responsibleDepartment = $responsibleDepartment;
+        return $this;
+    }
+
+    public function getResponsibleDepartmentEntity(): ?Department
+    {
+        return $this->responsibleDepartmentEntity;
+    }
+
+    public function setResponsibleDepartmentEntity(?Department $department): static
+    {
+        $this->responsibleDepartmentEntity = $department;
         return $this;
     }
 
@@ -992,6 +1114,28 @@ class ProcessingActivity
         return $this;
     }
 
+    /**
+     * @return Collection<int, Supplier>
+     */
+    public function getProcessorSuppliers(): Collection
+    {
+        return $this->processorSuppliers;
+    }
+
+    public function addProcessorSupplier(Supplier $supplier): static
+    {
+        if (!$this->processorSuppliers->contains($supplier)) {
+            $this->processorSuppliers->add($supplier);
+        }
+        return $this;
+    }
+
+    public function removeProcessorSupplier(Supplier $supplier): static
+    {
+        $this->processorSuppliers->removeElement($supplier);
+        return $this;
+    }
+
     public function getIsJointController(): bool
     {
         return $this->isJointController;
@@ -1096,10 +1240,18 @@ class ProcessingActivity
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(ProcessingActivityStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum
+        // while existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ProcessingActivityStatus
+    {
+        return ProcessingActivityStatus::from($this->status);
     }
 
     public function getStartDate(): ?DateTimeInterface
@@ -1151,7 +1303,7 @@ class ProcessingActivity
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -1162,7 +1314,7 @@ class ProcessingActivity
         return $this->updatedAt;
     }
 
-    public function setUpdatedAt(DateTimeInterface $updatedAt): static
+    public function setUpdatedAt(?DateTimeInterface $updatedAt): static
     {
         $this->updatedAt = $updatedAt;
         return $this;
@@ -1188,6 +1340,11 @@ class ProcessingActivity
     {
         $this->updatedBy = $user;
         return $this;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     /**
@@ -1248,5 +1405,53 @@ class ProcessingActivity
                 && $c->isVerifiedByDpo()
                 && !$c->isRevoked()
         )->count();
+    }
+
+    // -------------------------------------------------------------------------
+    // Cross-Field Validators (Junior-ISB-Audit-2026-05-22 C2-03)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 C2-03: DSGVO Art. 32 evidence requirement.
+     *
+     * At least ONE of the two TOM evidence forms must be present:
+     *   - {@see $technicalOrganizationalMeasures}    (qualitative, ≥ 50 chars)
+     *   - {@see $implementedControls}                (structured M:N to ISO 27001 controls, ≥ 1)
+     *
+     * Both forms are valid evidence; the activity is non-compliant only when NEITHER is supplied.
+     * Closes the same hole at API Platform / Service-layer write paths that bypass the FormType.
+     */
+    #[Assert\Callback]
+    public function validateTomOrControlsPresent(ExecutionContextInterface $context): void
+    {
+        $tomLength = $this->technicalOrganizationalMeasures !== null
+            ? mb_strlen(trim($this->technicalOrganizationalMeasures))
+            : 0;
+        $controlsCount = $this->implementedControls->count();
+
+        if ($tomLength < 50 && $controlsCount < 1) {
+            $context->buildViolation('processing_activity.validation.tom_or_controls_required')
+                ->atPath('technicalOrganizationalMeasures')
+                ->addViolation();
+        }
+    }
+
+    /**
+     * CS-P0 #12.2 — GDPR Art. 28(1) AVV gate.
+     *
+     * When `involvesProcessors=true`, at least one Auftragsverarbeiter must be
+     * named via the structured `processorSuppliers` M2M. Without that link the
+     * VVT-record is non-defensible against the GDPR Art. 30(1)(d) recipients
+     * disclosure duty: the audit can only know WHO processes the data if it
+     * is a typed link, not a free-text mention.
+     */
+    #[Assert\Callback]
+    public function validateProcessorSuppliers(ExecutionContextInterface $context): void
+    {
+        if ($this->involvesProcessors && $this->processorSuppliers->isEmpty()) {
+            $context->buildViolation('processing_activity.validation.processor_suppliers_required')
+                ->atPath('processorSuppliers')
+                ->addViolation();
+        }
     }
 }

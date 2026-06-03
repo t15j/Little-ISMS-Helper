@@ -1,31 +1,36 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'scheduled_reports' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ report.name }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid py-4">
+    {# M-4 — module-gating: Scheduled Reports (depends on report_builder) #}
+    {% if not is_module_active('scheduled_reports') %}
+        {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+        {{ _fa_alert.render({
+            variant: 'info',
+            icon: 'nav-shield-alert',
+            body: 'common.module_not_active'|trans({'%module%': 'Scheduled Reports'}, 'messages')
+        }) }}
+    {% else %}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.reports'|trans({}, 'nav'), path: 'app_reports_index' },
-            { label: 'scheduled_report.title'|trans({}, 'scheduled_reports'), path: 'app_scheduled_report_index' },
+            { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_index') },
+            { label: 'scheduled_report.title'|trans({}, 'scheduled_reports'), url: path('app_scheduled_report_index') },
             { label: report.name }
         ]
     } %}
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2 mb-0">
-            <i class="fa-icon fa-icon--nav-calendar-check" aria-hidden="true"></i> {{ report.name }}
-        </h1>
-        <div class="btn-group">
-            <a href="{{ path('app_scheduled_report_edit', {id: report.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'scheduled_report.action.edit'|trans({}, 'scheduled_reports') }}
-            </a>
-            <a href="{{ path('app_scheduled_report_preview', {id: report.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i> {{ 'scheduled_report.action.preview'|trans({}, 'scheduled_reports') }}
-            </a>
-        </div>
-    </div>
+    {{ _fa_page_header.render({
+        badge:    { icon: 'nav-calendar-check', label: 'scheduled_report.title'|trans({}, 'scheduled_reports') },
+        title:    report.name,
+        actions: [
+            { label: 'scheduled_report.action.edit'|trans({}, 'scheduled_reports'),    variant: 'ghost', icon: 'ui-edit', href: path('app_scheduled_report_edit',    {id: report.id}) },
+            { label: 'scheduled_report.action.preview'|trans({}, 'scheduled_reports'), variant: 'ghost', icon: 'ui-eye',    href: path('app_scheduled_report_preview', {id: report.id}) }
+        ]
+    }) }}
 
     <div class="row">
         {# Main Info #}
@@ -51,9 +56,9 @@
                         <div class="col-md-6 mb-3">
                             <strong>{{ 'scheduled_report.form.format'|trans({}, 'scheduled_reports') }}:</strong><br>
                             {% if report.format == 'pdf' %}
-                            {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'bi-file-pdf', content: 'PDF' } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'nav-file-pdf', content: 'PDF' } %}
                             {% else %}
-                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-file-excel', content: 'Excel' } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'nav-file-earmark-spreadsheet', content: 'Excel' } %}
                             {% endif %}
                         </div>
                         <div class="col-md-6 mb-3">
@@ -92,7 +97,7 @@
                 {% block card_header %}
                     <div class="card-header">
                         <h3 class="h5 mb-0">
-                            <i class="bi bi-envelope" aria-hidden="true"></i> {{ 'scheduled_report.recipients.title'|trans({}, 'scheduled_reports') }}
+                            <i class="fa-icon fa-icon--ui-send" aria-hidden="true"></i> {{ 'scheduled_report.recipients.title'|trans({}, 'scheduled_reports') }}
                         </h3>
                     </div>
                 {% endblock %}
@@ -150,11 +155,16 @@
             {# Status Card #}
             {% embed '_components/_card.html.twig' with { 'class': 'shadow-sm mb-4 ' ~ (report.active ? 'border-success' : 'border-secondary') } %}
                 {% block card_header %}
-                    <div class="card-header {% if report.active %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <h3 class="h5 mb-0">
-                            <i class="bi bi-{% if report.active %}check-circle{% else %}pause-circle{% endif %}" aria-hidden="true"></i>
+                            <i class="fa-icon fa-icon--{% if report.active %}ui-check{% else %}pause{% endif %}" aria-hidden="true"></i>
                             {{ 'scheduled_report.status.label'|trans({}, 'scheduled_reports') }}
                         </h3>
+                        {% if report.active %}
+                            <span class="fa-status-pill fa-status-pill--success">{{ 'scheduled_report.status.active'|trans({}, 'scheduled_reports') }}</span>
+                        {% else %}
+                            <span class="fa-status-pill fa-status-pill--neutral">{{ 'scheduled_report.status.inactive'|trans({}, 'scheduled_reports') }}</span>
+                        {% endif %}
                     </div>
                 {% endblock %}
                 {% block card_body %}
@@ -183,9 +193,9 @@
                             <input type="hidden" name="_token" value="{{ csrf_token('toggle' ~ report.id) }}">
                             <button type="submit" class="fa-cyber-btn {% if report.active %}fa-cyber-btn--danger{% else %}fa-cyber-btn--success{% endif %}">
                                 {% if report.active %}
-                                <i class="bi bi-pause-circle" aria-hidden="true"></i> {{ 'scheduled_report.action.deactivate'|trans({}, 'scheduled_reports') }}
+                                <i class="fa-icon fa-icon--status-pending" aria-hidden="true"></i> {{ 'scheduled_report.action.deactivate'|trans({}, 'scheduled_reports') }}
                                 {% else %}
-                                <i class="bi bi-play-circle" aria-hidden="true"></i> {{ 'scheduled_report.action.activate'|trans({}, 'scheduled_reports') }}
+                                <i class="fa-icon fa-icon--status-info" aria-hidden="true"></i> {{ 'scheduled_report.action.activate'|trans({}, 'scheduled_reports') }}
                                 {% endif %}
                             </button>
                         </form>
@@ -211,7 +221,11 @@
                         {% if is_granted('ROLE_ADMIN') %}
                         <form action="{{ path('app_scheduled_report_trigger', {id: report.id}) }}" method="post">
                             <input type="hidden" name="_token" value="{{ csrf_token('trigger' ~ report.id) }}">
-                            <button type="submit" class="fa-cyber-btn fa-cyber-btn--warning w-100" onclick="return confirm('{{ 'scheduled_report.confirm.trigger'|trans({}, 'scheduled_reports') }}')">
+                            <button type="submit" class="fa-cyber-btn fa-cyber-btn--warning w-100"
+                                    data-controller="ui-actions"
+                                    data-action="click->ui-actions#confirm"
+                                    data-ui-actions-message-param="{{ 'scheduled_report.confirm.trigger'|trans({}, 'scheduled_reports') }}"
+                                    data-ui-actions-tone-param="warn">
                                 <i class="fa-icon fa-icon--ui-send" aria-hidden="true"></i> {{ 'scheduled_report.action.trigger'|trans({}, 'scheduled_reports') }}
                             </button>
                         </form>
@@ -221,7 +235,11 @@
 
                         <form action="{{ path('app_scheduled_report_delete', {id: report.id}) }}" method="post">
                             <input type="hidden" name="_token" value="{{ csrf_token('delete' ~ report.id) }}">
-                            <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger w-100" onclick="return confirm('{{ 'scheduled_report.confirm.delete'|trans({}, 'scheduled_reports') }}')">
+                            <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger w-100"
+                                    data-controller="ui-actions"
+                                    data-action="click->ui-actions#confirm"
+                                    data-ui-actions-message-param="{{ 'scheduled_report.confirm.delete'|trans({}, 'scheduled_reports') }}"
+                                    data-ui-actions-tone-param="danger">
                                 <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i> {{ 'scheduled_report.action.delete'|trans({}, 'scheduled_reports') }}
                             </button>
                         </form>
@@ -255,5 +273,6 @@
             {% endembed %}
         </div>
     </div>
+    {% endif %} {# /M-4 scheduled_reports module gate #}
 </div>
 {% endblock %}

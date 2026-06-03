@@ -37,6 +37,7 @@
 {% block admin_content %}
 {% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
 {% include '_components/_breadcrumb.html.twig' with {
     breadcrumbs: [
         { label: 'nav.admin'|trans({}, 'nav'), url: path('admin_dashboard') },
@@ -45,14 +46,26 @@
 } %}
 
 {{ _fa_page_header.render({
-    badge: { icon: 'journal-text', label: 'audit_log.page.title'|trans({}, 'audit_log') },
+    badge: { icon: 'nav-journal-text', label: 'audit_log.page.title'|trans({}, 'audit_log') },
     title: 'audit_log.page.title'|trans({}, 'audit_log'),
     subtitle: 'audit_log.page.subtitle'|trans({}, 'audit_log'),
     actions: [
-        { label: 'audit_log.filter.statistics'|trans({}, 'audit_log'), href: path('app_audit_log_statistics'), variant: 'ghost', icon: 'graph-up' }
+        { label: 'audit_log.filter.statistics'|trans({}, 'audit_log'), href: path('app_audit_log_statistics'), variant: 'ghost', icon: 'nav-bar-chart' }
     ]
 }) }}
 <main class="fa-aurora-surface">
+
+{# V3 W2-M8 / UF-3: HMAC-Chain Verify button — Auditor's "manipulationssicher?" answer #}
+<div class="d-flex justify-content-end mb-3">
+    <form method="post" action="{{ path('app_audit_log_verify') }}" class="d-inline"
+          onsubmit="this.querySelector('button').disabled = true;">
+        <input type="hidden" name="_token" value="{{ csrf_token('audit_log_verify') }}">
+        <button type="submit" class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm">
+            <i class="fa-icon fa-icon--compliance-shield"></i>
+            HMAC-Chain verifizieren
+        </button>
+    </form>
+</div>
 
 {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info' } } %}
     {% block alert_body %}
@@ -89,7 +102,7 @@
         <div class="d-grid grid-responsive-200 gap-1 mb-md">
             <div>
                 <label for="entityType">{{ 'audit_log.filter.entity_type'|trans({}, 'audit_log') }}:</label>
-                <select name="entityType" id="entityType" class="form-control">
+                <select name="entityType" id="entityType" class="form-control fa-cyber-input__field">
                     <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                     {% for entityType in entityTypes %}
                     <option value="{{ entityType }}" {% if filters.entityType|default('') == entityType %}selected{% endif %}>
@@ -101,7 +114,7 @@
 
             <div>
                 <label for="action">{{ 'audit_log.filter.action'|trans({}, 'audit_log') }}:</label>
-                <select name="action" id="action" class="form-control">
+                <select name="action" id="action" class="form-control fa-cyber-input__field">
                     <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                     {% for action in actions %}
                     <option value="{{ action }}" {% if filters.action|default('') == action %}selected{% endif %}>
@@ -112,18 +125,29 @@
             </div>
 
             <div>
-                <label for="userName">{{ 'audit_log.filter.user'|trans({}, 'audit_log') }}:</label>
-                <input type="text" name="userName" id="userName" value="{{ filters.userName ?? '' }}" class="form-control">
+                {{ _fa_cyber.text('userName', {
+                    id: 'userName',
+                    label: 'audit_log.filter.user'|trans({}, 'audit_log'),
+                    value: filters.userName ?? ''
+                }) }}
             </div>
 
             <div>
-                <label for="dateFrom">{{ 'audit_log.filter.date_from'|trans({}, 'audit_log') }}:</label>
-                <input type="date" name="dateFrom" id="dateFrom" value="{{ filters.dateFrom ?? '' }}" class="form-control">
+                {{ _fa_cyber.text('dateFrom', {
+                    id: 'dateFrom',
+                    type: 'date',
+                    label: 'audit_log.filter.date_from'|trans({}, 'audit_log'),
+                    value: filters.dateFrom ?? ''
+                }) }}
             </div>
 
             <div>
-                <label for="dateTo">{{ 'audit_log.filter.date_to'|trans({}, 'audit_log') }}:</label>
-                <input type="date" name="dateTo" id="dateTo" value="{{ filters.dateTo ?? '' }}" class="form-control">
+                {{ _fa_cyber.text('dateTo', {
+                    id: 'dateTo',
+                    type: 'date',
+                    label: 'audit_log.filter.date_to'|trans({}, 'audit_log'),
+                    value: filters.dateTo ?? ''
+                }) }}
             </div>
         </div>
 
@@ -145,6 +169,8 @@
 <div class="mt-2">
     <h2>{{ 'audit_log.section.entries'|trans({}, 'audit_log') }}</h2>
 
+    {% import '_components/_fa_audit_row.html.twig' as _fa_audit_row %}
+
     {# Tab Navigation #}
     <ul class="nav nav-tabs mt-md" role="tablist">
         <li class="nav-item" role="presentation">
@@ -153,7 +179,7 @@
                     data-bs-target="#table-view"
                     type="button"
                     role="tab">
-                <i class="bi bi-table" aria-hidden="true"></i> {{ 'audit_log.section.table'|trans({}, 'audit_log') }}
+                <i class="fa-icon fa-icon--nav-grid" aria-hidden="true"></i> {{ 'audit_log.section.table'|trans({}, 'audit_log') }}
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -165,68 +191,53 @@
                 <i class="fa-icon fa-icon--nav-calendar-check" aria-hidden="true"></i> {{ 'audit_log.section.timeline'|trans({}, 'audit_log') }}
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link"
+                    data-bs-toggle="tab"
+                    data-bs-target="#compact-view"
+                    type="button"
+                    role="tab">
+                <i class="fa-icon fa-icon--ui-list" aria-hidden="true"></i> {{ 'audit_log.section.compact'|trans({}, 'audit_log') }}
+            </button>
+        </li>
     </ul>
 
     {# Tab Content #}
     <div class="tab-content mt-md">
-        {# Table View #}
+        {# Table View — fa-audit-feed (CRUD change-log per #480 canonical pattern) #}
         <div class="tab-pane fade show active" id="table-view" role="tabpanel">
-            {% embed '_components/_table.html.twig' with {
-                'class': 'table-full'
-            } %}
-                {% block table_head %}
-                    <tr>
-                        <th scope="col" class="table-cell text-left">{{ 'audit_log.table.timestamp'|trans({}, 'audit_log') }}</th>
-                        <th scope="col" class="table-cell text-left">{{ 'audit_log.table.action'|trans({}, 'audit_log') }}</th>
-                        <th scope="col" class="table-cell text-left">{{ 'audit_log.table.entity'|trans({}, 'audit_log') }}</th>
-                        <th scope="col" class="table-cell text-left">{{ 'audit_log.table.user'|trans({}, 'audit_log') }}</th>
-                        <th scope="col" class="table-cell text-left">{{ 'audit_log.table.description'|trans({}, 'audit_log') }}</th>
-                        <th scope="col" class="table-cell text-left">{{ 'audit_log.table.details'|trans({}, 'audit_log') }}</th>
-                    </tr>
-                {% endblock %}
-                {% block table_body %}
-                    {% for log in auditLogs %}
-                    {# Calculate age for fairy styling #}
-                    {% set ageMinutes = (date().timestamp - log.createdAt.timestamp) / 60 %}
-                    {% set isFresh = ageMinutes < 5 %}
-                    {% set isRecent = ageMinutes >= 5 and ageMinutes < 30 %}
-                    <tr{% if isFresh %} class="fairy-fresh-entry"{% endif %}>
-                        <td class="table-cell small">
-                            <span{% if isFresh %} class="fairy-timestamp-fresh"{% elseif isRecent %} class="fairy-timestamp-recent"{% endif %}>
-                                {{ log.createdAt|date('d.m.Y H:i:s') }}
-                            </span>
-                        </td>
-                        <td class="table-cell">
-                            <span class="badge badge-{{ log.action }}">{{ log.action|capitalize }}</span>
-                        </td>
-                        <td class="table-cell">
-                            {{ log.entityType }}
-                            {% if log.entityId %}
-                                <a href="{{ path('app_audit_log_entity', {entityType: log.entityType, entityId: log.entityId}) }}"
-                                   class="link-primary">
-                                    (#{{ log.entityId }})
-                                </a>
-                            {% endif %}
-                        </td>
-                        <td class="table-cell">
-                            <a href="{{ path('app_audit_log_user', {userName: log.userName}) }}"
-                               class="link-primary">
-                                {{ log.userName }}
-                            </a>
-                        </td>
-                        <td class="table-cell small">
-                            {{ log.description|default('-') }}
-                        </td>
-                        <td class="table-cell">
-                            <a href="{{ path('app_audit_log_detail', {id: log.id}) }}"
-                               class="link-primary">
-                                {{ 'audit_log.table.view_details'|trans({}, 'audit_log') }}
-                            </a>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                {% endblock %}
-            {% endembed %}
+            <div class="fa-audit-feed">
+                {% for log in auditLogs %}
+                    {%- set sev = log.action in ['delete', 'force_delete'] ? 'danger'
+                        : (log.action in ['error', 'failed'] ? 'danger'
+                        : (log.action in ['update', 'login_failed'] ? 'warning'
+                        : 'info')) -%}
+                    {{ _fa_audit_row.render({
+                        ts:     log.createdAt|date('Y-m-d H:i:s'),
+                        sev:    sev,
+                        actor:  log.userName|default('system'),
+                        action: log.action,
+                        target: log.entityType ~ (log.entityId ? '#' ~ log.entityId : ''),
+                        pill:   log.description|default('')|slice(0, 60),
+                        hash:   log.id|default('')|slice(0, 12)
+                    }) }}
+                    {# Actor + entity + detail links per row #}
+                    <div class="small ps-1 pb-1 d-flex gap-3">
+                        <a href="{{ path('app_audit_log_user', {userName: log.userName}) }}" class="link-primary">
+                            <i class="fa-icon fa-icon--nav-users" aria-hidden="true"></i>
+                            {{ log.userName }}
+                        </a>
+                        {% if log.entityId %}
+                        <a href="{{ path('app_audit_log_entity', {entityType: log.entityType, entityId: log.entityId}) }}" class="link-primary">
+                            {{ log.entityType }} #{{ log.entityId }}
+                        </a>
+                        {% endif %}
+                        <a href="{{ path('app_audit_log_detail', {id: log.id}) }}" class="link-primary">
+                            {{ 'audit_log.table.view_details'|trans({}, 'audit_log') }}
+                        </a>
+                    </div>
+                {% endfor %}
+            </div>
         </div>
 
         {# Timeline View #}
@@ -234,6 +245,24 @@
             {% include '_components/_audit_timeline.html.twig' with {
                 auditLogs: auditLogs
             } %}
+        </div>
+
+        {# Compact View — tamper-evident log line per entry, mono-typed #}
+        <div class="tab-pane fade" id="compact-view" role="tabpanel">
+            {% for log in auditLogs %}
+                {%- set sev = log.action in ['delete', 'force_delete'] ? 'danger'
+                    : (log.action in ['update', 'login_failed'] ? 'warning'
+                    : (log.action in ['create', 'login', 'export', 'import'] ? 'info'
+                    : 'info')) -%}
+                {{ _fa_audit_row.render({
+                    ts: log.createdAt|date('H:i:s.') ~ (log.createdAt|date('u')|slice(0, 3)),
+                    sev: sev,
+                    actor: log.userName|default('system'),
+                    action: log.action,
+                    target: log.entityType ~ (log.entityId ? '#' ~ log.entityId : ''),
+                    hash: log.id|default('')
+                }) }}
+            {% endfor %}
         </div>
     </div>
 

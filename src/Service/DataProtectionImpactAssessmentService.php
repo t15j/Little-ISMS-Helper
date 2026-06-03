@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use RuntimeException;
 use DateTime;
 use DateTimeInterface;
 use App\Entity\DataProtectionImpactAssessment;
 use App\Entity\ProcessingActivity;
 use App\Entity\User;
+use App\Enum\DpiaStatus;
+use App\Exception\Workflow\InvalidStatusTransitionException;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Repository\DataProtectionImpactAssessmentRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -20,7 +22,7 @@ use Symfony\Bundle\SecurityBundle\Security;
  * Service for managing DPIAs (Datenschutz-Folgenabschätzung) per GDPR Art. 35.
  * Provides CRUD operations, workflow management, validation, and compliance reporting.
  */
-class DataProtectionImpactAssessmentService
+final class DataProtectionImpactAssessmentService
 {
     public function __construct(
         private readonly DataProtectionImpactAssessmentRepository $dataProtectionImpactAssessmentRepository,
@@ -28,7 +30,8 @@ class DataProtectionImpactAssessmentService
         private readonly TenantContext $tenantContext,
         private readonly Security $security,
         private readonly AuditLogger $auditLogger,
-        private readonly WorkflowAutoProgressionService $workflowAutoProgressionService
+        private readonly WorkflowAutoProgressionService $workflowAutoProgressionService,
+        private readonly LifecycleTransitionInterface $lifecycleService,
     ) {}
 
     // ============================================================================
@@ -257,16 +260,21 @@ class DataProtectionImpactAssessmentService
      */
     public function submitForReview(DataProtectionImpactAssessment $dataProtectionImpactAssessment): DataProtectionImpactAssessment
     {
-        if ($dataProtectionImpactAssessment->getStatus() !== 'draft') {
-            throw new RuntimeException('Only draft DPIAs can be submitted for review');
+        if ($dataProtectionImpactAssessment->getStatus() !== DpiaStatus::Draft->value) {
+            throw new InvalidStatusTransitionException(
+                (string) $dataProtectionImpactAssessment->getStatus(),
+                DpiaStatus::InReview->value,
+                DataProtectionImpactAssessment::class,
+                'Only draft DPIAs can be submitted for review',
+            );
         }
 
         if (!$dataProtectionImpactAssessment->isComplete()) {
-            throw new RuntimeException('DPIA must be complete before submission');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('DPIA must be complete before submission', 'incomplete');
         }
 
-        $dataProtectionImpactAssessment->setStatus('in_review');
         $this->entityManager->flush();
+        $this->lifecycleService->transition($dataProtectionImpactAssessment, 'dpia_lifecycle', 'submit');
 
         $this->auditLogger->logCustom(
             'dpia.submitted_for_review',
@@ -286,11 +294,15 @@ class DataProtectionImpactAssessmentService
      */
     public function approve(DataProtectionImpactAssessment $dataProtectionImpactAssessment, User $user, ?string $comments = null): DataProtectionImpactAssessment
     {
-        if ($dataProtectionImpactAssessment->getStatus() !== 'in_review') {
-            throw new RuntimeException('Only DPIAs in review can be approved');
+        if ($dataProtectionImpactAssessment->getStatus() !== DpiaStatus::InReview->value) {
+            throw new InvalidStatusTransitionException(
+                (string) $dataProtectionImpactAssessment->getStatus(),
+                DpiaStatus::Approved->value,
+                DataProtectionImpactAssessment::class,
+                'Only DPIAs in review can be approved',
+            );
         }
 
-        $dataProtectionImpactAssessment->setStatus('approved');
         $dataProtectionImpactAssessment->setApprover($user);
         $dataProtectionImpactAssessment->setApprovalDate(new DateTime());
         $dataProtectionImpactAssessment->setApprovalComments($comments);
@@ -303,6 +315,7 @@ class DataProtectionImpactAssessmentService
         }
 
         $this->entityManager->flush();
+        $this->lifecycleService->transition($dataProtectionImpactAssessment, 'dpia_lifecycle', 'approve', $user);
 
         $this->auditLogger->logCustom(
             'dpia.approved',
@@ -330,15 +343,20 @@ class DataProtectionImpactAssessmentService
      */
     public function reject(DataProtectionImpactAssessment $dataProtectionImpactAssessment, User $user, string $reason): DataProtectionImpactAssessment
     {
-        if ($dataProtectionImpactAssessment->getStatus() !== 'in_review') {
-            throw new RuntimeException('Only DPIAs in review can be rejected');
+        if ($dataProtectionImpactAssessment->getStatus() !== DpiaStatus::InReview->value) {
+            throw new InvalidStatusTransitionException(
+                (string) $dataProtectionImpactAssessment->getStatus(),
+                DpiaStatus::Rejected->value,
+                DataProtectionImpactAssessment::class,
+                'Only DPIAs in review can be rejected',
+            );
         }
 
-        $dataProtectionImpactAssessment->setStatus('rejected');
         $dataProtectionImpactAssessment->setApprover($user);
         $dataProtectionImpactAssessment->setRejectionReason($reason);
 
         $this->entityManager->flush();
+        $this->lifecycleService->transition($dataProtectionImpactAssessment, 'dpia_lifecycle', 'reject', $user, $reason);
 
         $this->auditLogger->logCustom(
             'dpia.rejected',
@@ -359,15 +377,20 @@ class DataProtectionImpactAssessmentService
      */
     public function requestRevision(DataProtectionImpactAssessment $dataProtectionImpactAssessment, string $reason): DataProtectionImpactAssessment
     {
-        if (!in_array($dataProtectionImpactAssessment->getStatus(), ['in_review', 'approved'])) {
-            throw new RuntimeException('DPIA must be in review or approved to request revision');
+        if (!in_array($dataProtectionImpactAssessment->getStatus(), [DpiaStatus::InReview->value, DpiaStatus::Approved->value], true)) {
+            throw new InvalidStatusTransitionException(
+                (string) $dataProtectionImpactAssessment->getStatus(),
+                DpiaStatus::RequiresRevision->value,
+                DataProtectionImpactAssessment::class,
+                'DPIA must be in review or approved to request revision',
+            );
         }
 
-        $dataProtectionImpactAssessment->setStatus('requires_revision');
         $dataProtectionImpactAssessment->setRejectionReason($reason);
         $dataProtectionImpactAssessment->setReviewRequired(true);
 
         $this->entityManager->flush();
+        $this->lifecycleService->transition($dataProtectionImpactAssessment, 'dpia_lifecycle', 'request_revision', null, $reason);
 
         $this->auditLogger->logCustom(
             'dpia.revision_requested',
@@ -387,14 +410,19 @@ class DataProtectionImpactAssessmentService
      */
     public function reopen(DataProtectionImpactAssessment $dataProtectionImpactAssessment): DataProtectionImpactAssessment
     {
-        if ($dataProtectionImpactAssessment->getStatus() !== 'requires_revision') {
-            throw new RuntimeException('Only DPIAs requiring revision can be reopened');
+        if ($dataProtectionImpactAssessment->getStatus() !== DpiaStatus::RequiresRevision->value) {
+            throw new InvalidStatusTransitionException(
+                (string) $dataProtectionImpactAssessment->getStatus(),
+                DpiaStatus::Draft->value,
+                DataProtectionImpactAssessment::class,
+                'Only DPIAs requiring revision can be reopened',
+            );
         }
 
-        $dataProtectionImpactAssessment->setStatus('draft');
         $dataProtectionImpactAssessment->setRejectionReason(null);
 
         $this->entityManager->flush();
+        $this->lifecycleService->transition($dataProtectionImpactAssessment, 'dpia_lifecycle', 'resubmit');
 
         $this->auditLogger->logCustom(
             'dpia.reopened',
@@ -599,7 +627,7 @@ class DataProtectionImpactAssessmentService
         }
 
         // Art. 35(4) - DPO consultation warning
-        if ($dataProtectionImpactAssessment->getStatus() === 'in_review' && !$dataProtectionImpactAssessment->getDpoConsultationDate()) {
+        if ($dataProtectionImpactAssessment->getStatus() === DpiaStatus::InReview->value && !$dataProtectionImpactAssessment->getDpoConsultationDate()) {
             $errors[] = 'DPO should be consulted before approval (Art. 35(4))';
         }
 
@@ -613,7 +641,7 @@ class DataProtectionImpactAssessmentService
             $errors[] = 'Residual risk assessment is required after defining mitigation measures';
         }
 
-        if (!$dataProtectionImpactAssessment->isResidualRiskAcceptable() && $dataProtectionImpactAssessment->getStatus() === 'approved') {
+        if (!$dataProtectionImpactAssessment->isResidualRiskAcceptable() && $dataProtectionImpactAssessment->getStatus() === DpiaStatus::Approved->value) {
             $errors[] = 'Cannot approve DPIA with high/critical residual risk without supervisory consultation (Art. 36)';
         }
 
@@ -659,7 +687,7 @@ class DataProtectionImpactAssessmentService
         $completenessScore = ($completeCount / $totalCount) * 100;
 
         // Approval: approved DPIAs / total DPIAs
-        $approvedCount = count(array_filter($all, fn($dpia): bool => $dpia->getStatus() === 'approved'));
+        $approvedCount = count(array_filter($all, fn($dpia): bool => $dpia->getStatus() === DpiaStatus::Approved->value));
         $approvalScore = ($approvedCount / $totalCount) * 100;
 
         // Review compliance: DPIAs not overdue for review
@@ -747,8 +775,8 @@ class DataProtectionImpactAssessmentService
             $clone->addImplementedControl($implementedControl);
         }
 
-        // Set as draft
-        $clone->setStatus('draft');
+        // Set as draft — 'draft' is the workflow initial_marking; no transition needed for a new entity
+        $clone->setStatus(DpiaStatus::Draft); // @phpstan-ignore lifecycle.directSetStatus (initial state on new pre-persist clone; Symfony Workflow will take over after persist)
         $clone->setConductor($user);
         $clone->setCreatedBy($user);
         $clone->setUpdatedBy($user);

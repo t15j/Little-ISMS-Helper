@@ -1,5 +1,6 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'scheduled_reports' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'scheduled_report.edit.title'|trans({}, 'scheduled_reports') }} - {{ report.name }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
 
@@ -7,23 +8,17 @@
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.reports'|trans({}, 'nav'), path: 'app_reports_index' },
-            { label: 'scheduled_report.title'|trans({}, 'scheduled_reports'), path: 'app_scheduled_report_index' },
-            { label: report.name, path: 'app_scheduled_report_show', params: {id: report.id} },
+            { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_index') },
+            { label: 'scheduled_report.title'|trans({}, 'scheduled_reports'), url: path('app_scheduled_report_index') },
+            { label: report.name, url: path('app_scheduled_report_show', {id: report.id}) },
             { label: 'scheduled_report.edit.title'|trans({}, 'scheduled_reports') }
         ]
     } %}
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2 mb-0">
-            <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'scheduled_report.edit.title'|trans({}, 'scheduled_reports') }}
-        </h1>
-        {% include '_components/_badge.html.twig' with {
-            variant: report.active ? 'success' : 'secondary',
-            size: 'lg',
-            content: report.active ? 'scheduled_report.status.active'|trans({}, 'scheduled_reports') : 'scheduled_report.status.inactive'|trans({}, 'scheduled_reports')
-        } %}
-    </div>
+    {{ _fa_page_header.render({
+    title: ('scheduled_report.edit.title'|trans({}, 'scheduled_reports')),
+    badge: { icon: 'ui-edit', label: '' }
+}) }}
 
     {% embed '_components/_card.html.twig' with { 'class': 'shadow-sm' } %}
         {% block card_header %}
@@ -76,7 +71,7 @@
             <hr>
 
             <h4 class="h6 mb-3">
-                <i class="bi bi-file-earmark" aria-hidden="true"></i> {{ 'scheduled_report.form.output_settings'|trans({}, 'scheduled_reports') }}
+                <i class="fa-icon fa-icon--nav-document" aria-hidden="true"></i> {{ 'scheduled_report.form.output_settings'|trans({}, 'scheduled_reports') }}
             </h4>
 
             <div class="row">
@@ -91,7 +86,7 @@
             <hr>
 
             <h4 class="h6 mb-3">
-                <i class="bi bi-envelope" aria-hidden="true"></i> {{ 'scheduled_report.form.delivery_settings'|trans({}, 'scheduled_reports') }}
+                <i class="fa-icon fa-icon--ui-send" aria-hidden="true"></i> {{ 'scheduled_report.form.delivery_settings'|trans({}, 'scheduled_reports') }}
             </h4>
 
             <div class="row">

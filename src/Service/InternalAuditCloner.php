@@ -7,6 +7,7 @@ namespace App\Service;
 use App\Entity\ComplianceFramework;
 use App\Entity\InternalAudit;
 use App\Entity\Tenant;
+use App\Enum\InternalAuditStatus;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -95,7 +96,7 @@ final class InternalAuditCloner
 
         // Primary compliance framework relation — method name is
         // `setScopedFramework` in the current entity.
-        $primaryFramework = $source->getComplianceFramework();
+        $primaryFramework = $source->getScopedFramework();
         if ($primaryFramework instanceof ComplianceFramework
             && method_exists($clone, 'setScopedFramework')
         ) {
@@ -121,7 +122,7 @@ final class InternalAuditCloner
 
         $clone->setPlannedDate($plannedDate ?? $source->getPlannedDate() ?? new DateTimeImmutable());
         if (method_exists($clone, 'setStatus')) {
-            $clone->setStatus('planned');
+            $clone->setStatus(InternalAuditStatus::Planned); // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist InternalAudit clone; 'planned' is the internal_audit_lifecycle initial_marking)
         }
 
         $this->entityManager->persist($clone);

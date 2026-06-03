@@ -1,4 +1,6 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_alert.html.twig' as _fa_alert %}
 
 {% block title %}{{ 'corrective_action.page.new'|trans({}, 'audits') }}{% endblock %}
 
@@ -11,17 +13,45 @@
             { label: 'corrective_action.page.new'|trans({}, 'audits') }
         ]
     } %}
-    <h1 class="h3 mb-4">{{ 'corrective_action.page.new'|trans({}, 'audits') }}</h1>
+    {{ _fa_page_header.render({
+        title: 'corrective_action.page.new'|trans({}, 'audits'),
+        badge: { icon: 'plus', label: '' }
+    }) }}
+
+    {# S3 P0-30 — Info-Banner wenn aus unwirksamer Vorgänger-CAPA vorbefüllt. #}
+    {% if previousCapa is defined and previousCapa %}
+        {{ _fa_alert.render({
+            variant: 'info',
+            title: 'corrective_action.new.followup_banner.title'|trans({}, 'audits'),
+            body: 'corrective_action.new.followup_banner.body'|trans({
+                '%id%': previousCapa.id,
+                '%title%': previousCapa.title
+            }, 'audits')
+        }) }}
+    {% endif %}
+
+    {# Empty-state: a corrective action requires a finding to act on. Without any
+       finding the required finding-select is empty and the form can't be
+       submitted — guide the user to create a finding first. #}
+    {% if form.finding.vars.choices|length == 0 %}
+        {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
+        {{ _fa_empty_state.render({
+            icon: 'nav-list-check',
+            title: 'corrective_action.empty.no_finding.title'|trans({}, 'audits'),
+            text: 'corrective_action.empty.no_finding.text'|trans({}, 'audits'),
+            actions: [
+                { label: 'corrective_action.empty.no_finding.cta'|trans({}, 'audits'), variant: 'primary', icon: 'plus', href: path('app_audit_finding_new', {_locale: app.request.locale}) },
+                { label: 'corrective_action.empty.no_finding.back'|trans({}, 'audits'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_corrective_action_index', {_locale: app.request.locale}) }
+            ]
+        }) }}
+    {% else %}
     {% if finding %}
         <p class="text-muted mb-3">
             {{ 'corrective_action.message.for_finding'|trans({}, 'audits') }}:
-            <a href="{{ path('app_audit_finding_show', {id: finding.id}) }}">{{ finding.(findingNumber ?? ('#' ~ finding.id)) }} — {{ finding.title }}</a>
+            <a href="{{ path('app_audit_finding_show', {id: finding.id}) }}">{{ finding.findingNumber ?? ('#' ~ finding.id) }} — {{ finding.title }}</a>
         </p>
     {% endif %}
-    {% embed '_components/_card.html.twig' %}
-        {% block card_body %}
-            {% include 'corrective_action/_form.html.twig' with {form: form} %}
-        {% endblock %}
-    {% endembed %}
+    {% include 'corrective_action/_form.html.twig' with {form: form} %}
+    {% endif %}
 </div>
 {% endblock %}

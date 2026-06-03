@@ -16,6 +16,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsCsrfTokenValid;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
@@ -25,6 +26,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * Manages evidence document uploads and linkage to Controls,
  * ComplianceRequirements, and RiskTreatmentPlans for ISO 27001 audit preparation.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/evidence', name: 'app_evidence_')]
 #[IsGranted('ROLE_USER')]
 class EvidenceController extends AbstractController
@@ -41,7 +43,7 @@ class EvidenceController extends AbstractController
     /**
      * Evidence dashboard: coverage stats, recent uploads, gap overview.
      */
-    #[Route('', name: 'index')]
+    #[Route('', name: 'index', methods: ['GET'])]
     public function index(): Response
     {
         $user = $this->security->getUser();
@@ -87,7 +89,7 @@ class EvidenceController extends AbstractController
 
         if (!$file) {
             $this->addFlash('error', $this->translator->trans('evidence.error.no_file', [], 'evidence'));
-            return $this->redirectBack($request, $entityType, $entityId);
+            return $this->redirectBack($request);
         }
 
         if (!$entityType || !$entityId) {
@@ -120,19 +122,16 @@ class EvidenceController extends AbstractController
             $this->addFlash('error', $e->getMessage());
         }
 
-        return $this->redirectBack($request, $entityType, $entityId);
+        return $this->redirectBack($request);
     }
 
     /**
      * Link an existing document to an entity (AJAX).
      */
     #[Route('/link', name: 'link', methods: ['POST'])]
+    #[IsCsrfTokenValid('evidence_link')]
     public function link(Request $request): JsonResponse
     {
-        if (!$this->isCsrfTokenValid('evidence_link', $request->request->get('_token'))) {
-            return new JsonResponse(['error' => 'Invalid CSRF token'], Response::HTTP_FORBIDDEN);
-        }
-
         $documentId = (int) $request->request->get('document_id');
         $entityType = $request->request->get('entity_type');
         $entityId = (int) $request->request->get('entity_id');
@@ -154,12 +153,9 @@ class EvidenceController extends AbstractController
      * Unlink a document from an entity (AJAX).
      */
     #[Route('/unlink', name: 'unlink', methods: ['POST'])]
+    #[IsCsrfTokenValid('evidence_unlink')]
     public function unlink(Request $request): JsonResponse
     {
-        if (!$this->isCsrfTokenValid('evidence_unlink', $request->request->get('_token'))) {
-            return new JsonResponse(['error' => 'Invalid CSRF token'], Response::HTTP_FORBIDDEN);
-        }
-
         $documentId = (int) $request->request->get('document_id');
         $entityType = $request->request->get('entity_type');
         $entityId = (int) $request->request->get('entity_id');
@@ -180,7 +176,7 @@ class EvidenceController extends AbstractController
     /**
      * Evidence coverage report page.
      */
-    #[Route('/coverage', name: 'coverage')]
+    #[Route('/coverage', name: 'coverage', methods: ['GET'])]
     public function coverage(): Response
     {
         $user = $this->security->getUser();
@@ -202,7 +198,7 @@ class EvidenceController extends AbstractController
     /**
      * Redirect back to the entity show page or evidence index.
      */
-    private function redirectBack(Request $request, ?string $entityType, ?int $entityId): Response
+    private function redirectBack(Request $request): Response
     {
         $referer = $request->headers->get('referer');
         if ($referer) {

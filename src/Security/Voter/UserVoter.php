@@ -9,6 +9,7 @@ use App\Service\InitialAdminService;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\Vote;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
+use Symfony\Component\Security\Core\Role\RoleHierarchyInterface;
 
 /**
  * User Voter
@@ -36,10 +37,11 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  * Multi-tenancy:
  * - Users can only view/edit users in their tenant
  */
-class UserVoter extends Voter
+final class UserVoter extends Voter
 {
     public function __construct(
-        private readonly InitialAdminService $initialAdminService
+        private readonly InitialAdminService $initialAdminService,
+        private readonly RoleHierarchyInterface $roleHierarchy,
     ) {
     }
     public const string VIEW = 'user.view';
@@ -89,7 +91,8 @@ class UserVoter extends Voter
         }
 
         // Admins can do everything
-        if (in_array('ROLE_ADMIN', $user->getRoles())) {
+        $reachableRoles = $this->roleHierarchy->getReachableRoleNames($user->getRoles());
+        if (in_array('ROLE_ADMIN', $reachableRoles, true)) {
             return true;
         }
 

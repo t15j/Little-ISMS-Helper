@@ -1,10 +1,10 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'dora' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
-
 {% block title %}{{ 'dora.dashboard.title'|trans }}{% endblock %}
 
 {% block body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
 <div class="container-fluid py-4">
     {# Header #}
     <div class="row mb-4">
@@ -17,11 +17,15 @@
                     <p class="text-muted mb-0">{{ 'dora.dashboard.subtitle'|trans }}</p>
                 </div>
                 <div class="d-flex gap-2">
-                    <a href="{{ path('app_dora_register_export_csv') }}"
-                       class="fa-cyber-btn fa-cyber-btn--ghost"
-                       aria-label="{{ 'dora.register_export.aria'|trans }}">
-                        <i class="fa-icon fa-icon--nav-download me-1" aria-hidden="true"></i>{{ 'dora.register_export.button'|trans }}
-                    </a>
+                    {# Async DORA ROI export — POST form so CSRF token is validated #}
+                    <form method="post" action="{{ path('app_dora_register_export_csv_dispatch') }}" data-turbo="false" class="d-inline">
+                        <input type="hidden" name="_token" value="{{ csrf_token('dora_register_export_dispatch') }}">
+                        <button type="submit"
+                                class="fa-cyber-btn fa-cyber-btn--ghost"
+                                aria-label="{{ 'dora.register_export.aria'|trans }}">
+                            <i class="fa-icon fa-icon--nav-download me-1" aria-hidden="true"></i>{{ 'dora.register_export.button'|trans }}
+                        </button>
+                    </form>
                     <a href="{{ path('app_compliance_wizard_assess', {wizard: 'dora'}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
                         <i class="fa-icon fa-icon--ui-copy me-1" aria-hidden="true"></i>{{ 'dora.run_wizard'|trans }}
                     </a>
@@ -35,22 +39,16 @@
         <div class="col-12">
             {% embed '_components/_card.html.twig' with { 'class': 'border-' ~ (overall_score.status == 'compliant' ? 'success' : (overall_score.status == 'partial' ? 'warning' : 'danger')) } %}
                 {% block card_body %}
+                    {% trans_default_domain 'dora' %}
+                    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="text-center py-4">
                         <h2 class="h4 mb-3">{{ 'dora.dashboard.overall_compliance'|trans }}</h2>
                         <div class="display-1 fw-bold text-{{ overall_score.status == 'compliant' ? 'success' : (overall_score.status == 'partial' ? 'warning' : 'danger') }}">
                             {{ overall_score.score }}%
                         </div>
-                        <div class="progress mt-3 mx-auto" style="height: 20px; max-width: 600px;">
-                            <div class="progress-bar bg-{{ overall_score.status == 'compliant' ? 'success' : (overall_score.status == 'partial' ? 'warning' : 'danger') }}"
-                                 role="progressbar"
-                                 style="width: {{ overall_score.score }}%"
-                                 aria-valuenow="{{ overall_score.score }}"
-                                 aria-valuemin="0"
-                                 aria-valuemax="100">
-                            </div>
-                        </div>
+                        {{ _fa_progress.render({ value: overall_score.score, tone: overall_score.status == 'compliant' ? 'success' : (overall_score.status == 'partial' ? 'warning' : 'danger'), class: 'mt-3 mx-auto' }) }}
                         <p class="mt-3 mb-0">
-                            {% include '_components/_badge.html.twig' with { variant: overall_score.status == 'compliant' ? 'success' : (overall_score.status == 'partial' ? 'warning' : (overall_score.status == 'in_progress' ? 'info' : 'danger')), class: 'fs-6', content: ('dora.status.' ~ overall_score.status)|trans } %}
+                            {% include '_components/_badge.html.twig' with { variant: overall_score.status == 'compliant' ? 'success' : (overall_score.status == 'partial' ? 'warning' : (overall_score.status == 'in_progress' ? 'info' : 'danger')), class: 'fa-status-pill--lg', content: ('dora.status.' ~ overall_score.status)|trans } %}
                         </p>
                     </div>
                 {% endblock %}
@@ -64,6 +62,7 @@
         <div class="col-md-3">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100 border-' ~ (score >= 80 ? 'success' : (score >= 60 ? 'warning' : 'danger')) } %}
                 {% block card_body %}
+                    {% trans_default_domain 'dora' %}
                     <div class="text-center">
                         <div class="h6 text-muted mb-2">
                             {% if pillar == 'ict_risk' %}
@@ -92,14 +91,17 @@
         <div class="col-lg-6">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100' } %}
                 {% block card_header %}
-                    <div class="card-header bg-primary bg-opacity-10">
+                    {% trans_default_domain 'dora' %}
+                    <div class="card-header">
                         <h3 class="card-title h5 mb-0">
-                            <i class="fa-icon fa-icon--nav-shield-alert me-2" aria-hidden="true"></i>{{ 'dora.pillar.ict_risk'|trans }}
+                            <i class="fa-icon fa-icon--nav-shield-alert text-primary me-2" aria-hidden="true"></i>{{ 'dora.pillar.ict_risk'|trans }}
                         </h3>
-                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '5-16'}) }}</small>
+                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '5-16'}, 'dora') }}</small>
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% trans_default_domain 'dora' %}
+                    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="row g-3">
                         <div class="col-6">
                             <div class="border rounded p-3 text-center">
@@ -134,16 +136,12 @@
                     <div class="row">
                         <div class="col-6">
                             <small class="text-muted d-block">{{ 'dora.metric.asset_classification'|trans }}</small>
-                            <div class="progress progress-h-8">
-                                <div class="progress-bar bg-{{ ict_risk.asset_classification_rate >= 80 ? 'success' : 'warning' }}" style="width: {{ ict_risk.asset_classification_rate }}%"></div>
-                            </div>
+                            {{ _fa_progress.render({ value: ict_risk.asset_classification_rate, tone: ict_risk.asset_classification_rate >= 80 ? 'success' : 'warning' }) }}
                             <small>{{ ict_risk.asset_classification_rate }}%</small>
                         </div>
                         <div class="col-6">
                             <small class="text-muted d-block">{{ 'dora.metric.control_implementation'|trans }}</small>
-                            <div class="progress progress-h-8">
-                                <div class="progress-bar bg-{{ ict_risk.control_implementation_rate >= 80 ? 'success' : 'warning' }}" style="width: {{ ict_risk.control_implementation_rate }}%"></div>
-                            </div>
+                            {{ _fa_progress.render({ value: ict_risk.control_implementation_rate, tone: ict_risk.control_implementation_rate >= 80 ? 'success' : 'warning' }) }}
                             <small>{{ ict_risk.control_implementation_rate }}%</small>
                         </div>
                     </div>
@@ -155,14 +153,16 @@
         <div class="col-lg-6">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100' } %}
                 {% block card_header %}
-                    <div class="card-header bg-warning bg-opacity-10">
+                    {% trans_default_domain 'dora' %}
+                    <div class="card-header">
                         <h3 class="card-title h5 mb-0">
-                            <i class="fa-icon fa-icon--status-warning me-2" aria-hidden="true"></i>{{ 'dora.pillar.incidents'|trans }}
+                            <i class="fa-icon fa-icon--status-warning text-warning me-2" aria-hidden="true"></i>{{ 'dora.pillar.incidents'|trans }}
                         </h3>
-                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '17-23'}) }}</small>
+                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '17-23'}, 'dora') }}</small>
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% trans_default_domain 'dora' %}
                     {% import '_components/_fa_alert.html.twig' as _fa_alert %}
                     <div class="row g-3">
                         <div class="col-6">
@@ -207,14 +207,16 @@
         <div class="col-lg-6">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100' } %}
                 {% block card_header %}
-                    <div class="card-header bg-info bg-opacity-10">
+                    {% trans_default_domain 'dora' %}
+                    <div class="card-header">
                         <h3 class="card-title h5 mb-0">
-                            <i class="fa-icon fa-icon--ui-copy me-2" aria-hidden="true"></i>{{ 'dora.pillar.testing'|trans }}
+                            <i class="fa-icon fa-icon--ui-copy text-info me-2" aria-hidden="true"></i>{{ 'dora.pillar.testing'|trans }}
                         </h3>
-                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '24-27'}) }}</small>
+                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '24-27'}, 'dora') }}</small>
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% trans_default_domain 'dora' %}
                     {% import '_components/_fa_alert.html.twig' as _fa_alert %}
                     <div class="row g-3">
                         <div class="col-6">
@@ -255,14 +257,17 @@
         <div class="col-lg-6">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100' } %}
                 {% block card_header %}
-                    <div class="card-header bg-secondary bg-opacity-10">
+                    {% trans_default_domain 'dora' %}
+                    <div class="card-header">
                         <h3 class="card-title h5 mb-0">
-                            <i class="fa-icon fa-icon--nav-building me-2" aria-hidden="true"></i>{{ 'dora.pillar.third_party'|trans }}
+                            <i class="fa-icon fa-icon--nav-building text-muted me-2" aria-hidden="true"></i>{{ 'dora.pillar.third_party'|trans }}
                         </h3>
-                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '28-44'}) }}</small>
+                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '28-44'}, 'dora') }}</small>
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% trans_default_domain 'dora' %}
+                    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="row g-3">
                         <div class="col-6">
                             <div class="border rounded p-3 text-center">
@@ -305,9 +310,7 @@
                         </div>
                         <div class="col-6">
                             <small class="text-muted">{{ 'dora.metric.exit_strategies'|trans }}</small>
-                            <div class="progress progress-h-8">
-                                <div class="progress-bar bg-{{ third_party.exit_strategy_rate >= 80 ? 'success' : 'warning' }}" style="width: {{ third_party.exit_strategy_rate }}%"></div>
-                            </div>
+                            {{ _fa_progress.render({ value: third_party.exit_strategy_rate, tone: third_party.exit_strategy_rate >= 80 ? 'success' : 'warning' }) }}
                             <small>{{ third_party.exit_strategy_rate }}%</small>
                         </div>
                     </div>
@@ -322,14 +325,17 @@
         <div class="col-12">
             {% embed '_components/_card.html.twig' %}
                 {% block card_header %}
-                    <div class="card-header bg-success bg-opacity-10">
+                    {% trans_default_domain 'dora' %}
+                    <div class="card-header">
                         <h3 class="card-title h5 mb-0">
-                            <i class="bi bi-share me-2" aria-hidden="true"></i>{{ 'dora.pillar.information_sharing'|trans }}
+                            <i class="fa-icon me-2 fa-icon--util-external-link text-success" aria-hidden="true"></i>{{ 'dora.pillar.information_sharing'|trans }}
                         </h3>
-                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '45'}) }}</small>
+                        <small class="text-muted">{{ 'dora.articles'|trans({'%articles%': '45'}, 'dora') }}</small>
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% trans_default_domain 'dora' %}
+                    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="row align-items-center">
                         <div class="col-md-4 text-center">
                             <div class="display-4 text-{{ information_sharing.implementation_rate >= 80 ? 'success' : 'warning' }}">
@@ -339,11 +345,7 @@
                         </div>
                         <div class="col-md-8">
                             <p class="mb-2">{{ 'dora.information_sharing_desc'|trans }}</p>
-                            <div class="progress progress-h-10">
-                                <div class="progress-bar bg-{{ information_sharing.implementation_rate >= 80 ? 'success' : 'warning' }}"
-                                     style="width: {{ information_sharing.implementation_rate }}%">
-                                </div>
-                            </div>
+                            {{ _fa_progress.render({ value: information_sharing.implementation_rate, tone: information_sharing.implementation_rate >= 80 ? 'success' : 'warning' }) }}
                             <small class="text-muted">
                                 {{ information_sharing.controls_implemented }} / {{ information_sharing.controls_total }} {{ 'dora.controls_implemented'|trans }}
                             </small>
@@ -360,13 +362,15 @@
         <div class="col-12">
             {% embed '_components/_card.html.twig' %}
                 {% block card_header %}
+                    {% trans_default_domain 'dora' %}
                     <div class="card-header">
                         <h3 class="card-title h5 mb-0">
-                            <i class="bi bi-lightning me-2" aria-hidden="true"></i>{{ 'dora.quick_actions'|trans }}
+                            <i class="fa-icon me-2 fa-icon--threat" aria-hidden="true"></i>{{ 'dora.quick_actions'|trans }}
                         </h3>
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% trans_default_domain 'dora' %}
                     <div class="row g-3">
                         <div class="col-md-3">
                             <a href="{{ path('app_risk_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost w-100">

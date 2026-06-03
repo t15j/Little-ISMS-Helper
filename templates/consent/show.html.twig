@@ -1,10 +1,15 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_status_chip.html.twig' as _fa_status_chip %}
+{% import '_components/_lifecycle_actions.html.twig' as _lifecycle_actions %}
+{% import '_components/_lifecycle_history_tab.html.twig' as _lifecycle_history %}
 {% trans_default_domain 'consent' %}
 
 {% block title %}{{ consent.dataSubjectIdentifier }} - {{ 'consent.header.title'|trans({}, 'consent') }}{% endblock %}
 
 {% block body %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 <div class="container">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
@@ -13,42 +18,52 @@
         ]
     } %}
 
-    <div class="page-header">
-        <h1>
-            <i class="bi bi-hand-thumbs-up" aria-hidden="true"></i>
-            {{ consent.dataSubjectIdentifier }}
-        </h1>
-        <div class="actions">
-            {% if is_granted('ROLE_USER') and (consent.status == 'pending_verification' or consent.status == 'active') %}
-            <a href="{{ path('app_consent_edit', {id: consent.id}) }}" class="fa-cyber-btn fa-cyber-btn--primary">
-                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'common.edit'|trans({}, 'messages') }}
-            </a>
-            {% endif %}
+    {% set hint = alva_hint(consent) %}
+    {% if hint %}{{ _fa_alva_hint.render(hint) }}{% endif %}
+
+    {% set _show_actions = [] %}
+    {% if is_granted('ROLE_USER') and (consent.status == 'pending_verification' or consent.status == 'active') %}
+        {% set _show_actions = _show_actions|merge([{ label: 'common.edit'|trans({}, 'messages'), variant: 'primary', icon: 'ui-edit', href: path('app_consent_edit', {id: consent.id}) }]) %}
+    {% endif %}
+    {% set _show_actions = _show_actions|merge([{ label: 'common.back_to_list'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_consent_index') }]) %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'ui-check', label: 'consent.header.title'|trans({}, 'consent') },
+        title: consent.dataSubjectIdentifier,
+        actions: _show_actions
+    }) }}
+
+    {# Modal-triggers (verify/revoke) and POST-delete kept below header (cannot be expressed via _fa_page_header GET-only actions) #}
+    {% set _has_secondary_actions = (is_granted('ROLE_DPO') and not consent.verifiedBy) or consent.status == 'active' or is_granted('ROLE_ADMIN') %}
+    {% if _has_secondary_actions %}
+        <div class="d-flex justify-content-end gap-2 mb-3">
             {% if is_granted('ROLE_DPO') and not consent.verifiedBy %}
-            <button class="fa-cyber-btn fa-cyber-btn--success" data-bs-toggle="modal" data-bs-target="#verifyModal">
-                <i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i> {{ 'consent.action.verify'|trans({}, 'consent') }}
-            </button>
+                <button class="fa-cyber-btn fa-cyber-btn--success" data-controller="fa-modal-dispatcher" data-action="click->fa-modal-dispatcher#open" data-fa-modal-id="verifyModal">
+                    <i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i> {{ 'consent.action.verify'|trans({}, 'consent') }}
+                </button>
             {% endif %}
             {% if consent.status == 'active' %}
-            <button class="fa-cyber-btn fa-cyber-btn--warning" data-bs-toggle="modal" data-bs-target="#revokeModal">
-                <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ 'consent.action.document_revocation'|trans({}, 'consent') }}
-            </button>
+                <button class="fa-cyber-btn fa-cyber-btn--warning" data-controller="fa-modal-dispatcher" data-action="click->fa-modal-dispatcher#open" data-fa-modal-id="revokeModal">
+                    <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ 'consent.action.document_revocation'|trans({}, 'consent') }}
+                </button>
             {% endif %}
             {% if is_granted('ROLE_ADMIN') %}
-            <form method="post" action="{{ path('app_consent_delete', {id: consent.id}) }}" class="d-inline"
-                  data-controller="ui-actions"
-                  data-action="submit->ui-actions#confirm"
-                  data-ui-actions-message-param="{{ 'consent.delete.confirm'|trans({}, 'consent') }}">
-                <input type="hidden" name="_token" value="{{ csrf_token('delete' ~ consent.id) }}">
-                <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger">
-                    <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i> {{ 'common.delete'|trans({}, 'messages') }}
-                </button>
-            </form>
+                <form method="post" action="{{ path('app_consent_delete', {id: consent.id}) }}" class="d-inline"
+                      data-controller="ui-actions"
+                      data-action="submit->ui-actions#confirm"
+                      data-ui-actions-message-param="{{ 'consent.delete.confirm'|trans({}, 'consent') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('delete' ~ consent.id) }}">
+                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger">
+                        <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i> {{ 'common.delete'|trans({}, 'messages') }}
+                    </button>
+                </form>
             {% endif %}
-            <a href="{{ path('app_consent_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> {{ 'common.back_to_list'|trans({}, 'messages') }}
-            </a>
         </div>
+    {% endif %}
+
+    {# Lifecycle X.3b — status chip + transition dropdown #}
+    <div class="d-flex align-items-center gap-2 mb-3" data-testid="lifecycle-toolbar">
+        {{ _fa_status_chip.render({ entity_class: 'App\\Entity\\Consent', status_key: consent.status }) }}
+        {{ _lifecycle_actions.dropdown(consent, 'consent', 'consent_lifecycle') }}
     </div>
 
     {# Status Badges #}
@@ -59,14 +74,14 @@
             'revoked': 'danger'
         }[consent.status] ?? 'secondary' %}
 
-        {% include '_components/_badge.html.twig' with { variant: statusBadgeClass, class: 'me-2 fs-6 px-3 py-2', content: ('consent.status.' ~ consent.status)|trans({}, 'consent') } %}
+        {% include '_components/_badge.html.twig' with { variant: statusBadgeClass, class: 'me-2 fa-status-pill--lg', content: ('consent.status.' ~ consent.status)|trans({}, 'consent') } %}
 
         {% if consent.verifiedBy %}
-        {% include '_components/_badge.html.twig' with { variant: 'info', icon: 'bi-check-circle', class: 'me-2 fs-6 px-3 py-2', content: 'consent.verified'|trans({}, 'consent') } %}
+        {% include '_components/_badge.html.twig' with { variant: 'info', icon: 'status-ok', class: 'me-2 fa-status-pill--lg', content: 'consent.verified'|trans({}, 'consent') } %}
         {% endif %}
 
         {% if consent.revokedAt %}
-        {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'bi-x-circle', class: 'fs-6 px-3 py-2', content: 'consent.revoked'|trans({}, 'consent') } %}
+        {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'status-critical', class: 'fa-status-pill--lg', content: 'consent.revoked'|trans({}, 'consent') } %}
         {% endif %}
     </div>
 
@@ -183,7 +198,7 @@
         {% block card_header %}
             <div class="card-header bg-body-secondary">
                 <h2 class="mb-0">
-                    <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>
+                    <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i>
                     {{ 'consent.section.proof_documentation'|trans({}, 'consent') }}
                 </h2>
             </div>
@@ -199,7 +214,7 @@
                 </span>
             </div>
             {% else %}
-            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-info-circle', class: 'mb-0' } } %}
+            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-info', class: 'mb-0' } } %}
                 {% block alert_body %}{{ 'consent.no_proof_document'|trans({}, 'consent') }}{% endblock %}
             {% endembed %}
             {% endif %}
@@ -274,7 +289,7 @@
         {% block card_header %}
             <div class="card-header bg-body-secondary">
                 <h2 class="mb-0">
-                    <i class="bi bi-sticky" aria-hidden="true"></i>
+                    <i class="fa-icon fa-icon--ui-flag" aria-hidden="true"></i>
                     {{ 'consent.section.notes'|trans({}, 'consent') }}
                 </h2>
             </div>
@@ -324,56 +339,64 @@
     {% endembed %}
 </div>
 
-{# Verify Modal #}
-<div class="modal fade" id="verifyModal" tabindex="-1" aria-labelledby="verifyModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title h5" id="verifyModalLabel">{{ 'consent.action.verify'|trans({}, 'consent') }}</h3>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ 'common.close'|trans({}, 'messages') }}"></button>
+{# Verify Modal — fa-modal--confirm/success #}
+<div class="fa-modal fa-modal--confirm fa-modal--success" id="verifyModal"
+     data-controller="fa-modal" data-fa-modal-mode-value="confirm" data-fa-modal-tone-value="success"
+     role="alertdialog" aria-modal="true" aria-labelledby="verifyModalLabel" aria-hidden="true">
+    <div class="fa-modal__backdrop" data-fa-modal-target="backdrop" data-action="click->fa-modal#backdropClick" aria-hidden="true"></div>
+    <div class="fa-modal__container" data-fa-modal-target="dialog">
+        <header class="fa-modal__header">
+            <span class="fa-modal__icon" aria-hidden="true"><i class="fa-icon fa-icon--status-ok"></i></span>
+            <div class="fa-modal__heading">
+                <h2 class="fa-modal__title" id="verifyModalLabel">{{ 'consent.action.verify'|trans({}, 'consent') }}</h2>
             </div>
-            <form method="post" action="{{ path('app_consent_verify', {id: consent.id}) }}">
-                <input type="hidden" name="_token" value="{{ csrf_token('verify' ~ consent.id) }}">
-                <div class="modal-body">
-                    <p>{{ 'consent.verify.confirmation'|trans({}, 'consent') }}</p>
-                    <p class="text-muted small">{{ 'consent.verify.hint'|trans({}, 'consent') }}</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="fa-cyber-btn fa-cyber-btn--ghost" data-bs-dismiss="modal">{{ 'common.cancel'|trans({}, 'messages') }}</button>
-                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--success">
-                        <i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i> {{ 'consent.action.verify'|trans({}, 'consent') }}
-                    </button>
-                </div>
-            </form>
-        </div>
+            <button type="button" class="fa-modal__close" data-action="fa-modal#cancel" aria-label="{{ 'common.close'|trans({}, 'messages') }}"><i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i></button>
+        </header>
+        <form method="post" action="{{ path('app_consent_verify', {id: consent.id}) }}" data-fa-modal-target="form">
+            <input type="hidden" name="_token" value="{{ csrf_token('verify' ~ consent.id) }}">
+            <div class="fa-modal__body">
+                <p>{{ 'consent.verify.confirmation'|trans({}, 'consent') }}</p>
+                <p class="text-muted small">{{ 'consent.verify.hint'|trans({}, 'consent') }}</p>
+            </div>
+            <footer class="fa-modal__footer">
+                <button type="button" class="fa-cyber-btn fa-cyber-btn--ghost" data-action="fa-modal#cancel">{{ 'common.cancel'|trans({}, 'messages') }}</button>
+                <button type="submit" class="fa-cyber-btn fa-cyber-btn--success">
+                    <i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i> {{ 'consent.action.verify'|trans({}, 'consent') }}
+                </button>
+            </footer>
+        </form>
     </div>
 </div>
 
-{# Revoke Modal #}
-<div class="modal fade" id="revokeModal" tabindex="-1" aria-labelledby="revokeModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title h5" id="revokeModalLabel">{{ 'consent.action.document_revocation'|trans({}, 'consent') }}</h4>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ 'common.close'|trans({}, 'messages') }}"></button>
+{# Revoke Modal — fa-modal--confirm/danger #}
+<div class="fa-modal fa-modal--confirm fa-modal--danger" id="revokeModal"
+     data-controller="fa-modal" data-fa-modal-mode-value="confirm" data-fa-modal-tone-value="danger"
+     role="alertdialog" aria-modal="true" aria-labelledby="revokeModalLabel" aria-hidden="true">
+    <div class="fa-modal__backdrop" data-fa-modal-target="backdrop" data-action="click->fa-modal#backdropClick" aria-hidden="true"></div>
+    <div class="fa-modal__container" data-fa-modal-target="dialog">
+        <header class="fa-modal__header">
+            <span class="fa-modal__icon" aria-hidden="true"><i class="fa-icon fa-icon--status-warning"></i></span>
+            <div class="fa-modal__heading">
+                <h2 class="fa-modal__title" id="revokeModalLabel">{{ 'consent.action.document_revocation'|trans({}, 'consent') }}</h2>
             </div>
-            <form method="post" action="{{ path('app_consent_revoke', {id: consent.id}) }}">
-                <input type="hidden" name="_token" value="{{ csrf_token('revoke' ~ consent.id) }}">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="revocationReason" class="form-label">{{ 'consent.field.revocation_reason'|trans({}, 'consent') }}</label>
-                        <textarea class="form-control" id="revocationReason" name="revocationReason" rows="3" required></textarea>
-                    </div>
-                    <p class="text-muted small">{{ 'consent.revoke.hint'|trans({}, 'consent') }}</p>
+            <button type="button" class="fa-modal__close" data-action="fa-modal#cancel" aria-label="{{ 'common.close'|trans({}, 'messages') }}"><i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i></button>
+        </header>
+        <form method="post" action="{{ path('app_consent_revoke', {id: consent.id}) }}" data-fa-modal-target="form">
+            <input type="hidden" name="_token" value="{{ csrf_token('revoke' ~ consent.id) }}">
+            <div class="fa-modal__body">
+                <div class="mb-3">
+                    <label for="revocationReason" class="form-label">{{ 'consent.field.revocation_reason'|trans({}, 'consent') }}</label>
+                    <textarea class="form-control fa-cyber-input__field" id="revocationReason" name="revocationReason" rows="3" required></textarea>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="fa-cyber-btn fa-cyber-btn--ghost" data-bs-dismiss="modal">{{ 'common.cancel'|trans({}, 'messages') }}</button>
-                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger">
-                        <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ 'consent.action.document_revocation'|trans({}, 'consent') }}
-                    </button>
-                </div>
-            </form>
-        </div>
+                <p class="text-muted small">{{ 'consent.revoke.hint'|trans({}, 'consent') }}</p>
+            </div>
+            <footer class="fa-modal__footer">
+                <button type="button" class="fa-cyber-btn fa-cyber-btn--ghost" data-action="fa-modal#cancel">{{ 'common.cancel'|trans({}, 'messages') }}</button>
+                <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger">
+                    <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ 'consent.action.document_revocation'|trans({}, 'consent') }}
+                </button>
+            </footer>
+        </form>
     </div>
 </div>
 
@@ -403,5 +426,8 @@
     background-color: var(--surface-2) !important;
 }
 </style>
+
+{# Lifecycle X.3b — transition history tab #}
+{{ _lifecycle_history.history('consent', consent.id) }}
 
 {% endblock %}

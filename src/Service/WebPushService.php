@@ -17,7 +17,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * Handles sending push notifications to subscribed PWA clients.
  * Uses the Web Push API with VAPID authentication.
  */
-class WebPushService
+final class WebPushService
 {
     private const VAPID_SUBJECT = 'mailto:admin@little-isms-helper.local';
 
@@ -198,7 +198,7 @@ class WebPushService
             $jwt = $this->createVapidJwt($endpoint, $keys['privateKey']);
 
             // Encrypt payload (simplified - in production use proper Web Push encryption)
-            $encryptedPayload = $this->encryptPayload($payload, $userPublicKey, $userAuthToken);
+            $encryptedPayload = $this->encryptPayload($payload, $userPublicKey);
 
             // Send to push service
             $ch = curl_init($endpoint);
@@ -266,7 +266,7 @@ class WebPushService
      * Encrypt payload using Web Push encryption
      * Simplified implementation - in production use minishlink/web-push
      */
-    private function encryptPayload(string $payload, string $userPublicKey, string $authToken): array
+    private function encryptPayload(string $payload, string $userPublicKey): array
     {
         // This is a simplified placeholder
         // Real implementation requires ECDH key exchange and proper AES-128-GCM encryption

@@ -32,6 +32,7 @@ class WorkflowControllerTest extends WebTestCase
     private ?Tenant $testTenant = null;
     private ?User $testUser = null;
     private ?User $adminUser = null;
+    private ?User $managerUser = null;
     private ?Workflow $testWorkflow = null;
     private ?WorkflowInstance $testInstance = null;
 
@@ -96,6 +97,17 @@ class WorkflowControllerTest extends WebTestCase
             }
         }
 
+        if ($this->managerUser) {
+            try {
+                $user = $this->entityManager->find(User::class, $this->managerUser->getId());
+                if ($user) {
+                    $this->entityManager->remove($user);
+                }
+            } catch (\Exception $e) {
+                // Ignore
+            }
+        }
+
         // Clean up tenant
         if ($this->testTenant) {
             try {
@@ -149,6 +161,17 @@ class WorkflowControllerTest extends WebTestCase
         $this->adminUser->setIsActive(true);
         $this->entityManager->persist($this->adminUser);
 
+        // Create manager user with ROLE_MANAGER (ISB persona — ROLE_CISO, ROLE_COMPLIANCE_MANAGER inherit this)
+        $this->managerUser = new User();
+        $this->managerUser->setEmail('manager_' . $uniqueId . '@example.com');
+        $this->managerUser->setFirstName('ISB');
+        $this->managerUser->setLastName('Manager');
+        $this->managerUser->setRoles(['ROLE_MANAGER']);
+        $this->managerUser->setPassword('hashed_password');
+        $this->managerUser->setTenant($this->testTenant);
+        $this->managerUser->setIsActive(true);
+        $this->entityManager->persist($this->managerUser);
+
         // Create test workflow
         $this->testWorkflow = new Workflow();
         $this->testWorkflow->setTenant($this->testTenant);
@@ -191,7 +214,7 @@ class WorkflowControllerTest extends WebTestCase
     #[Test]
     public function testIndexRequiresAuthentication(): void
     {
-        $this->client->request('GET', '/en/workflow/');
+        $this->client->request('GET', '/en/workflow');
 
         $this->assertResponseRedirects();
     }
@@ -201,7 +224,7 @@ class WorkflowControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $this->client->request('GET', '/en/workflow/');
+        $this->client->request('GET', '/en/workflow');
 
         $this->assertResponseIsSuccessful();
         $this->assertSelectorExists('html');
@@ -212,7 +235,7 @@ class WorkflowControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $this->client->request('GET', '/en/workflow/');
+        $this->client->request('GET', '/en/workflow');
 
         $this->assertResponseIsSuccessful();
     }
@@ -220,13 +243,26 @@ class WorkflowControllerTest extends WebTestCase
     // ========== DEFINITIONS ACTION TESTS ==========
 
     #[Test]
-    public function testDefinitionsRequiresAdminRole(): void
+    public function testDefinitionsRequiresAtLeastManagerRole(): void
     {
+        // ROLE_USER (read-only) must be blocked — definition list is ISB-level
         $this->loginAsUser($this->testUser);
 
         $this->client->request('GET', '/en/workflow/definitions');
 
         $this->assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
+    }
+
+    #[Test]
+    public function testDefinitionsShowsWorkflowsForManager(): void
+    {
+        // ROLE_MANAGER (ISB persona) must have access
+        $this->loginAsUser($this->managerUser);
+
+        $this->client->request('GET', '/en/workflow/definitions');
+
+        // Y.4: /workflow/definitions now redirects to /admin/workflows
+        $this->assertResponseRedirects();
     }
 
     #[Test]
@@ -236,8 +272,8 @@ class WorkflowControllerTest extends WebTestCase
 
         $this->client->request('GET', '/en/workflow/definitions');
 
-        $this->assertResponseIsSuccessful();
-        $this->assertSelectorExists('html');
+        // Y.4: /workflow/definitions now redirects to /admin/workflows
+        $this->assertResponseRedirects();
     }
 
     // ========== PENDING APPROVALS TESTS ==========
@@ -388,6 +424,39 @@ class WorkflowControllerTest extends WebTestCase
         $this->assertResponseRedirects();
     }
 
+    // ========== INSTANCE CLARIFY TESTS ==========
+    // Persona-Walkthrough Risk-Owner-Business (Task #124, KRITISCH).
+
+    #[Test]
+    public function testClarifyInstanceRequiresAuthentication(): void
+    {
+        $this->client->request('POST', '/en/workflow/instance/' . $this->testInstance->getId() . '/clarify');
+
+        $this->assertResponseRedirects();
+    }
+
+    #[Test]
+    public function testClarifyInstanceRequiresQuestion(): void
+    {
+        $this->loginAsUser($this->testUser);
+
+        // Initialize session via GET so CSRF token can be issued.
+        $this->client->request('GET', '/en/workflow/instance/' . $this->testInstance->getId());
+
+        $session = $this->client->getRequest()->getSession();
+        $tokenGenerator = new \Symfony\Component\Security\Csrf\TokenGenerator\UriSafeTokenGenerator();
+        $tokenValue = $tokenGenerator->generateToken();
+        $session->set('_csrf/clarify' . $this->testInstance->getId(), $tokenValue);
+
+        $this->client->request('POST', '/en/workflow/instance/' . $this->testInstance->getId() . '/clarify', [
+            '_token'   => $tokenValue,
+            'question' => '', // empty question must be rejected
+        ]);
+
+        // Should redirect with error flash about missing question.
+        $this->assertResponseRedirects();
+    }
+
     // ========== INSTANCE CANCEL TESTS ==========
 
     #[Test]
@@ -416,13 +485,24 @@ class WorkflowControllerTest extends WebTestCase
     // ========== DEFINITION SHOW TESTS ==========
 
     #[Test]
-    public function testShowDefinitionRequiresAdminRole(): void
+    public function testShowDefinitionRequiresAtLeastManagerRole(): void
     {
         $this->loginAsUser($this->testUser);
 
         $this->client->request('GET', '/en/workflow/definition/' . $this->testWorkflow->getId());
 
         $this->assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
+    }
+
+    #[Test]
+    public function testShowDefinitionDisplaysWorkflowForManager(): void
+    {
+        // ISB persona (ROLE_MANAGER) must be able to view a definition
+        $this->loginAsUser($this->managerUser);
+
+        $this->client->request('GET', '/en/workflow/definition/' . $this->testWorkflow->getId());
+
+        $this->assertResponseIsSuccessful();
     }
 
     #[Test]
@@ -436,57 +516,25 @@ class WorkflowControllerTest extends WebTestCase
     }
 
     // ========== DEFINITION NEW TESTS ==========
-
-    #[Test]
-    public function testNewDefinitionRequiresAdminRole(): void
-    {
-        $this->loginAsUser($this->testUser);
-
-        $this->client->request('GET', '/en/workflow/definition/new');
-
-        $this->assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
-    }
-
-    #[Test]
-    public function testNewDefinitionDisplaysForm(): void
-    {
-        $this->loginAsUser($this->adminUser);
-
-        $this->client->request('GET', '/en/workflow/definition/new');
-
-        $this->assertResponseIsSuccessful();
-        $this->assertSelectorExists('form');
-    }
-
     // ========== DEFINITION EDIT TESTS ==========
-
-    #[Test]
-    public function testEditDefinitionRequiresAdminRole(): void
-    {
-        $this->loginAsUser($this->testUser);
-
-        $this->client->request('GET', '/en/workflow/definition/' . $this->testWorkflow->getId() . '/edit');
-
-        $this->assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
-    }
-
-    #[Test]
-    public function testEditDefinitionDisplaysForm(): void
-    {
-        $this->loginAsUser($this->adminUser);
-
-        $this->client->request('GET', '/en/workflow/definition/' . $this->testWorkflow->getId() . '/edit');
-
-        $this->assertResponseIsSuccessful();
-        $this->assertSelectorExists('form');
-    }
-
     // ========== DEFINITION DELETE TESTS ==========
 
     #[Test]
     public function testDeleteDefinitionRequiresAdminRole(): void
     {
+        // ROLE_USER must be blocked from destructive delete
         $this->loginAsUser($this->testUser);
+
+        $this->client->request('POST', '/en/workflow/definition/' . $this->testWorkflow->getId() . '/delete');
+
+        $this->assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
+    }
+
+    #[Test]
+    public function testDeleteDefinitionBlocksManagerRole(): void
+    {
+        // Intentional: delete is ROLE_ADMIN only (irreversible cascade). ROLE_MANAGER uses toggleDefinition to deactivate.
+        $this->loginAsUser($this->managerUser);
 
         $this->client->request('POST', '/en/workflow/definition/' . $this->testWorkflow->getId() . '/delete');
 
@@ -514,7 +562,7 @@ class WorkflowControllerTest extends WebTestCase
     // ========== DEFINITION TOGGLE TESTS ==========
 
     #[Test]
-    public function testToggleDefinitionRequiresAdminRole(): void
+    public function testToggleDefinitionBlocksUnprivilegedUser(): void
     {
         $this->loginAsUser($this->testUser);
 
@@ -580,7 +628,7 @@ class WorkflowControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $this->client->request('GET', '/en/workflow/start/Risk/1');
+        $this->client->request('POST', '/en/workflow/start/Risk/1');
 
         $this->assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
     }
@@ -590,31 +638,12 @@ class WorkflowControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->adminUser);
 
-        $this->client->request('GET', '/en/workflow/start/Risk/999?workflow=test');
+        $this->client->request('POST', '/en/workflow/start/Risk/999?workflow=test');
 
         // Should redirect (either to new instance or with error)
         $this->assertResponseRedirects();
     }
 
     // ========== BUILDER TESTS ==========
-
-    #[Test]
-    public function testBuilderRequiresAdminRole(): void
-    {
-        $this->loginAsUser($this->testUser);
-
-        $this->client->request('GET', '/en/workflow/definition/' . $this->testWorkflow->getId() . '/builder');
-
-        $this->assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
-    }
-
-    #[Test]
-    public function testBuilderDisplaysForAdmin(): void
-    {
-        $this->loginAsUser($this->adminUser);
-
-        $this->client->request('GET', '/en/workflow/definition/' . $this->testWorkflow->getId() . '/builder');
-
-        $this->assertResponseIsSuccessful();
-    }
+    // Y.4: builder + edit removed — see /admin/workflows for tenant overrides instead.
 }

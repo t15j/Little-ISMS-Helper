@@ -1,10 +1,16 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% trans_default_domain 'assets' %}
+{% import '_components/_status_pill.html.twig' as pill %}
+{% import '_components/_fa_status_chip.html.twig' as _fa_status_chip %}
+{% import '_components/_lifecycle_actions.html.twig' as _lifecycle_actions %}
+{% import '_components/_lifecycle_history_tab.html.twig' as _lifecycle_history %}
 
 {% block title %}{{ asset.name }}{% endblock %}
 
 {% block body %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 <div class="container">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
@@ -13,26 +19,40 @@
         ]
     } %}
 
-    <div class="page-header">
-        <h1>
-            {{ asset.name }}
-            {% if isInherited is defined and isInherited %}
-                {% include '_components/_badge.html.twig' with { variant: 'info', class: 'ms-2', icon: 'bi-building', content: 'corporate.inherited'|trans({}, 'messages') } %}
-            {% endif %}
-        </h1>
-        <div class="actions">
-            {% if canEdit is defined and canEdit %}
-                <a href="{{ path('app_asset_edit', {id: asset.id}) }}" class="fa-cyber-btn fa-cyber-btn--primary"><i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'common.edit'|trans({}, 'messages') }}</a>
-            {% else %}
+    {% set hint = alva_hint(asset) %}
+    {% if hint %}{{ _fa_alva_hint.render(hint) }}{% endif %}
+
+    {% set _show_actions = [] %}
+    {% if canEdit is defined and canEdit %}
+        {% set _show_actions = _show_actions|merge([{ label: 'common.edit'|trans({}, 'messages'), variant: 'primary', icon: 'ui-edit', href: path('app_asset_edit', {id: asset.id}) }]) %}
+    {% endif %}
+    {% set _show_actions = _show_actions|merge([
+        { label: 'asset.action.bcm_insights'|trans({}, 'asset'), variant: 'ghost', href: path('app_asset_bcm_insights', {id: asset.id}) },
+        { label: 'asset.action.qr_label'|trans({}, 'asset'), variant: 'ghost', icon: 'ui-key', href: path('app_asset_qr_label', {id: asset.id}), attrs: { 'data-turbo': 'false', title: 'asset.action.print_qr_label'|trans({}, 'asset') } },
+        { label: 'common.back_to_list'|trans({}, 'messages'), variant: 'ghost', href: path('app_asset_index') }
+    ]) %}
+    {{ _fa_page_header.render({
+        badge: (isInherited is defined and isInherited) ? { icon: 'nav-building', label: 'corporate.inherited'|trans({}, 'messages') } : null,
+        title: asset.name,
+        actions: _show_actions
+    }) }}
+
+    {# Inline POST-delete and disabled-edit kept below header (cannot be expressed via _fa_page_header GET-only actions) #}
+    {% if (canEdit is defined and not canEdit) or (is_granted('ROLE_ADMIN') and (canEdit is not defined or canEdit)) or is_granted('ROLE_USER') %}
+        <div class="d-flex justify-content-end gap-2 mb-3">
+            {% if canEdit is defined and not canEdit %}
                 <button class="fa-cyber-btn fa-cyber-btn--primary" disabled title="{{ 'corporate.inheritance.cannot_edit_inherited'|trans({}, 'messages') }}">
                     <i class="fa-icon fa-icon--ui-lock" aria-hidden="true"></i> {{ 'common.edit'|trans({}, 'messages') }}
                 </button>
             {% endif %}
-            <a href="{{ path('app_asset_bcm_insights', {id: asset.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">{{ 'asset.action.bcm_insights'|trans({}, 'asset') }}</a>
-            <a href="{{ path('app_asset_qr_label', {id: asset.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" title="{{ 'asset.action.print_qr_label'|trans({}, 'asset') }}" data-turbo="false">
-                <i class="bi bi-qr-code" aria-hidden="true"></i> {{ 'asset.action.qr_label'|trans({}, 'asset') }}
-            </a>
-            <a href="{{ path('app_asset_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">{{ 'common.back_to_list'|trans({}, 'messages') }}</a>
+            {% if is_granted('ROLE_USER') %}
+                <form method="post" action="{{ path('app_asset_clone', {id: asset.id}) }}" class="d-inline" data-turbo="false">
+                    <input type="hidden" name="_token" value="{{ csrf_token('clone_asset_' ~ asset.id) }}">
+                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--success" title="{{ 'common.clone.help'|trans({}, 'messages') }}">
+                        <i class="fa-icon fa-icon--ui-copy" aria-hidden="true"></i> {{ 'common.clone.label'|trans({}, 'messages') }}
+                    </button>
+                </form>
+            {% endif %}
             {% if is_granted('ROLE_ADMIN') and (canEdit is not defined or canEdit) %}
                 <form method="post" action="{{ path('app_asset_delete', {id: asset.id}) }}" class="d-inline"
                       data-controller="ui-actions"
@@ -43,6 +63,12 @@
                 </form>
             {% endif %}
         </div>
+    {% endif %}
+
+    {# Lifecycle X.3 — status chip + transition dropdown (asset_lifecycle: 7 places, 9 transitions) #}
+    <div class="d-flex align-items-center gap-2 mb-3" data-testid="lifecycle-toolbar">
+        {{ _fa_status_chip.render({ entity_class: 'App\\Entity\\Asset', status_key: asset.status }) }}
+        {{ _lifecycle_actions.dropdown(asset, 'asset', 'asset_lifecycle') }}
     </div>
 
     {% if isInherited is defined and isInherited %}
@@ -53,21 +79,34 @@
 
     {% embed '_components/_card.html.twig' %}
         {% block card_header %}
+            {% import '_components/_status_pill.html.twig' as pill %}
             <div class="card-header">
                 <h2>{{ 'asset.details.title'|trans({}, 'asset') }}</h2>
-                <span class="{{ badge_status(asset.status) }}">{{ asset.status|upper }}</span>
+                {{ pill.render(asset.status|upper, pill_tone_status(asset.status)) }}
             </div>
         {% endblock %}
         {% block card_body %}
+            {% import '_components/_status_pill.html.twig' as pill %}
             {# Phase 8H.1: standardised via _detail_group component #}
             {% include '_components/_detail_group.html.twig' with {
                 items: [
-                    { label: 'asset.label.type'|trans({}, 'asset'), value: asset.assetType },
+                    { label: 'asset.label.type'|trans({}, 'asset'), value: asset.typeDisplay },
                     { label: 'asset.label.owner'|trans({}, 'asset'), value: asset.effectiveOwner, dataReuse: true },
                     { label: 'asset.label.location'|trans({}, 'asset'), value: asset.location },
                     { label: 'asset.label.status'|trans({}, 'asset'), value: asset.status|upper }
                 ]
             } only %}
+
+            {% if is_module_active('nis2_dora') and asset.isDoraRelevant %}
+                <div class="detail-section">
+                    {% include '_components/_badge.html.twig' with {
+                        variant: 'warning',
+                        icon: 'nav-building',
+                        content: 'DORA Art. 28'
+                    } %}
+                    <small class="text-muted ms-2">{{ 'asset.help.is_dora_relevant'|trans({}, 'asset') }}</small>
+                </div>
+            {% endif %}
 
             {% if asset.description %}
                 <div class="detail-section">
@@ -76,7 +115,8 @@
                 </div>
             {% endif %}
 
-            {% if asset.isAiAgent %}
+            {# M-4 — module-gating: AI Governance (EU AI Act + ISO 42001) #}
+            {% if is_module_active('ai_governance') and asset.isAiAgent %}
                 <div class="detail-section">
                     <h3>
                         <i class="fa-icon fa-icon--nav-robot" aria-hidden="true"></i>
@@ -85,39 +125,39 @@
                     <p class="small text-muted">
                         <em>Quelle: Peddi (2026) MRIS v1.5. Lizenz: CC BY 4.0.</em>
                     </p>
-                    <table class="table table-sm">
-                        <tbody>
-                            <tr>
-                                <th scope="row" style="width: 30%;">Risikoklasse <small class="text-muted">(AI Act Art. 6)</small></th>
-                                <td>
+                    {% embed '_components/_fa_table.html.twig' with { compact: true, hover: false } %}
+                        {% block table_body %}
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell" style="width: 30%;">{{ 'asset.ai_agent.show.classification'|trans({}, 'asset') }} <small class="text-muted">(AI Act Art. 6)</small></th>
+                                <td class="fa-table__cell">
                                     {% if asset.aiAgentClassification %}
                                         <code>{{ asset.aiAgentClassification }}</code>
-                                    {% else %}<span class="text-warning">— nicht klassifiziert —</span>{% endif %}
+                                    {% else %}<span class="text-warning">{{ 'asset.ai_agent.show.classification_unclassified'|trans({}, 'asset') }}</span>{% endif %}
                                 </td>
                             </tr>
-                            <tr>
-                                <th scope="row">Anbieter <small class="text-muted">(Art. 16)</small></th>
-                                <td>{{ asset.aiAgentProvider|default('—') }}</td>
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell">{{ 'asset.ai_agent.show.provider'|trans({}, 'asset') }} <small class="text-muted">(Art. 16)</small></th>
+                                <td class="fa-table__cell">{{ asset.aiAgentProvider|default('—') }}</td>
                             </tr>
-                            <tr>
-                                <th scope="row">Modell-Version <small class="text-muted">(ISO 42001)</small></th>
-                                <td><code>{{ asset.aiAgentModelVersion|default('—') }}</code></td>
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell">{{ 'asset.ai_agent.show.model_version'|trans({}, 'asset') }} <small class="text-muted">(ISO 42001)</small></th>
+                                <td class="fa-table__cell"><code>{{ asset.aiAgentModelVersion|default('—') }}</code></td>
                             </tr>
-                            <tr>
-                                <th scope="row">Zweckbestimmung <small class="text-muted">(Art. 11)</small></th>
-                                <td>{{ asset.aiAgentPurpose|default('—')|nl2br }}</td>
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell">{{ 'asset.ai_agent.show.purpose'|trans({}, 'asset') }} <small class="text-muted">(Art. 11)</small></th>
+                                <td class="fa-table__cell">{{ asset.aiAgentPurpose|default('—')|nl2br }}</td>
                             </tr>
-                            <tr>
-                                <th scope="row">Datengovernance <small class="text-muted">(Art. 10)</small></th>
-                                <td>{{ asset.aiAgentDataSources|default('—')|nl2br }}</td>
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell">{{ 'asset.ai_agent.show.data_sources'|trans({}, 'asset') }} <small class="text-muted">(Art. 10)</small></th>
+                                <td class="fa-table__cell">{{ asset.aiAgentDataSources|default('—')|nl2br }}</td>
                             </tr>
-                            <tr>
-                                <th scope="row">Human Oversight <small class="text-muted">(Art. 14)</small></th>
-                                <td>{{ asset.aiAgentOversightMechanism|default('—') }}</td>
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell">{{ 'asset.ai_agent.show.oversight'|trans({}, 'asset') }} <small class="text-muted">(Art. 14)</small></th>
+                                <td class="fa-table__cell">{{ asset.aiAgentOversightMechanism|default('—') }}</td>
                             </tr>
-                            <tr>
-                                <th scope="row">Capability-Scope <small class="text-muted">(MHC-13)</small></th>
-                                <td>
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell">{{ 'asset.ai_agent.show.capability_scope'|trans({}, 'asset') }} <small class="text-muted">(MHC-13)</small></th>
+                                <td class="fa-table__cell">
                                     {% if asset.aiAgentCapabilityScope is not empty %}
                                         {% for cap in asset.aiAgentCapabilityScope %}
                                             <code class="me-1">{{ cap }}</code>
@@ -125,17 +165,17 @@
                                     {% else %}—{% endif %}
                                 </td>
                             </tr>
-                            <tr>
-                                <th scope="row">Bedrohungsmodell-Doc <small class="text-muted">(Art. 9 + MHC-13)</small></th>
-                                <td>
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell">{{ 'asset.ai_agent.show.threat_model_doc'|trans({}, 'asset') }} <small class="text-muted">(Art. 9 + MHC-13)</small></th>
+                                <td class="fa-table__cell">
                                     {% if asset.aiAgentThreatModelDocId %}
-                                        <a href="{{ path('app_document_show', {id: asset.aiAgentThreatModelDocId}) }}">Dokument #{{ asset.aiAgentThreatModelDocId }}</a>
-                                    {% else %}<span class="text-warning">— nicht hinterlegt —</span>{% endif %}
+                                        <a href="{{ path('app_document_show', {id: asset.aiAgentThreatModelDocId}) }}">{{ 'asset.ai_agent.show.threat_model_link'|trans({'%id%': asset.aiAgentThreatModelDocId}, 'asset') }}</a>
+                                    {% else %}<span class="text-warning">{{ 'asset.ai_agent.show.threat_model_missing'|trans({}, 'asset') }}</span>{% endif %}
                                 </td>
                             </tr>
-                            <tr>
-                                <th scope="row">Extension-Allowlist <small class="text-muted">(MHC-13)</small></th>
-                                <td>
+                            <tr class="fa-table__row">
+                                <th scope="row" class="fa-table__cell">{{ 'asset.ai_agent.show.extension_allowlist'|trans({}, 'asset') }} <small class="text-muted">(MHC-13)</small></th>
+                                <td class="fa-table__cell">
                                     {% if asset.aiAgentExtensionAllowlist is not empty %}
                                         {% for ext in asset.aiAgentExtensionAllowlist %}
                                             <code class="me-1">{{ ext }}</code>
@@ -143,8 +183,8 @@
                                     {% else %}—{% endif %}
                                 </td>
                             </tr>
-                        </tbody>
-                    </table>
+                        {% endblock %}
+                    {% endembed %}
                 </div>
 
                 {# DPIA-Status für Hochrisiko-AI-Agents (DSGVO Art. 35 + AI Act Art. 9). #}
@@ -156,30 +196,30 @@
                             {{ 'mris.ai_agent.dpia.section_title'|trans({}, 'mris') }}
                         </h3>
                         {% if linkedDpias|length > 0 %}
-                            <table class="table table-sm">
-                                <thead>
+                            {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                                {% block table_head %}
                                     <tr>
-                                        <th scope="col">{{ 'mris.ai_agent.dpia.col_title'|trans({}, 'mris') }}</th>
-                                        <th scope="col">{{ 'mris.ai_agent.dpia.col_status'|trans({}, 'mris') }}</th>
-                                        <th scope="col">{{ 'mris.ai_agent.dpia.col_link'|trans({}, 'mris') }}</th>
+                                        <th scope="col" class="fa-table__th">{{ 'mris.ai_agent.dpia.col_title'|trans({}, 'mris') }}</th>
+                                        <th scope="col" class="fa-table__th">{{ 'mris.ai_agent.dpia.col_status'|trans({}, 'mris') }}</th>
+                                        <th scope="col" class="fa-table__th fa-table__th--actions">{{ 'mris.ai_agent.dpia.col_link'|trans({}, 'mris') }}</th>
                                     </tr>
-                                </thead>
-                                <tbody>
+                                {% endblock %}
+                                {% block table_body %}
                                     {% for dpia in linkedDpias %}
-                                        <tr>
-                                            <td>{{ dpia.referenceNumber }} — {{ dpia.title }}</td>
-                                            <td><code>{{ dpia.status }}</code></td>
-                                            <td>
-                                                <a href="{{ path('app_dpia_show', {id: dpia.id}) }}">
+                                        <tr class="fa-table__row">
+                                            <td class="fa-table__cell">{{ dpia.referenceNumber }} — {{ dpia.title }}</td>
+                                            <td class="fa-table__cell"><code>{{ dpia.status }}</code></td>
+                                            <td class="fa-table__cell fa-table__cell--actions">
+                                                <a href="{{ path('app_dpia_show', {id: dpia.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm">
                                                     {{ 'mris.ai_agent.dpia.open'|trans({}, 'mris') }}
                                                 </a>
                                             </td>
                                         </tr>
                                     {% endfor %}
-                                </tbody>
-                            </table>
+                                {% endblock %}
+                            {% endembed %}
                         {% else %}
-                            <div class="alert alert-warning" role="alert">
+                            <div class="fa-alert fa-alert--warning" role="alert">
                                 <i class="fa-icon fa-icon--status-warning me-1" aria-hidden="true"></i>
                                 {{ 'mris.ai_agent.dpia.warning_missing'|trans({}, 'mris') }}
                                 <div class="mt-2">
@@ -201,9 +241,7 @@
                     { label: 'asset.label.acquisition_value'|trans({}, 'asset'), value: asset.acquisitionValue ? asset.acquisitionValue ~ ' EUR' : 'N/A' },
                     { label: 'asset.label.current_value'|trans({}, 'asset'), value: asset.currentValue ? asset.currentValue ~ ' EUR' : 'N/A' }
                 ] %}
-                {% if asset.monetaryValue %}
-                    {% set valuationItems = valuationItems|merge([{ label: 'asset.label.monetary_value'|trans({}, 'asset'), value: asset.monetaryValue ~ ' EUR' }]) %}
-                {% endif %}
+                {# Junior-ISB-Audit S14+ #15: monetaryValue column dropped. acquisitionValue + currentValue are canonical. #}
                 {% set valuationItems = valuationItems|merge([
                     { label: 'asset.label.total_value'|trans({}, 'asset'), value: asset.totalValue ~ ' EUR', dataReuse: true },
                     { label: 'asset.label.risks'|trans({}, 'asset'), raw: true, dataReuse: true, value: asset.risks|length > 0
@@ -221,9 +259,7 @@
                             <div class="detail-item">
                                 <span class="label">{{ 'asset.label.data_classification'|trans({}, 'asset') }}</span>
                                 <span class="value">
-                                    <span class="{{ badge_classification(asset.dataClassification) }}">
-                                        {{ ('asset.classification.' ~ asset.dataClassification)|trans({}, 'asset')|upper }}
-                                    </span>
+                                    {{ pill.render(('asset.classification.' ~ asset.dataClassification)|trans({}, 'asset')|upper, pill_tone_classification(asset.dataClassification)) }}
                                 </span>
                             </div>
                         {% endif %}
@@ -238,7 +274,7 @@
             {% endif %}
 
             <div class="detail-section">
-                <h3>{{ 'asset.section.cia_triad'|trans({}, 'asset') }}<a href="{{ path('app_help_glossary') }}#glossary-cia" class="text-muted ms-1" title="{{ 'common.glossary_link'|trans({}, 'messages') }}" data-bs-toggle="tooltip"><i class="bi bi-question-circle" aria-hidden="true" style="font-size: 0.75rem;"></i></a></h3>
+                <h3>{{ 'asset.section.cia_triad'|trans({}, 'asset') }}<a href="{{ path('app_help_glossary') }}#glossary-cia" class="text-muted ms-1" title="{{ 'common.glossary_link'|trans({}, 'messages') }}" data-bs-toggle="tooltip"><i class="fa-icon fa-icon--ui-help fa-icon--16" aria-hidden="true"></i></a></h3>
                 <div class="cia-values">
                     <div class="cia-item">
                         <span class="label">{{ 'asset.label.confidentiality'|trans({}, 'asset') }}</span>
@@ -279,31 +315,31 @@
                         {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'warning', icon: 'status-warning' } } %}
                             {% block alert_body %}{{ 'asset.inherited_protection.warning'|trans({}, 'asset') }}{% endblock %}
                         {% endembed %}
-                        <table class="table table-sm">
-                            <thead>
+                        {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                            {% block table_head %}
                                 <tr>
-                                    <th scope="col">{{ 'asset.inherited_protection.dimension'|trans({}, 'asset') }}</th>
-                                    <th scope="col">{{ 'asset.inherited_protection.own'|trans({}, 'asset') }}</th>
-                                    <th scope="col">{{ 'asset.inherited_protection.inherited'|trans({}, 'asset') }}</th>
-                                    <th scope="col">{{ 'asset.inherited_protection.driven_by'|trans({}, 'asset') }}</th>
+                                    <th scope="col" class="fa-table__th">{{ 'asset.inherited_protection.dimension'|trans({}, 'asset') }}</th>
+                                    <th scope="col" class="fa-table__th">{{ 'asset.inherited_protection.own'|trans({}, 'asset') }}</th>
+                                    <th scope="col" class="fa-table__th">{{ 'asset.inherited_protection.inherited'|trans({}, 'asset') }}</th>
+                                    <th scope="col" class="fa-table__th">{{ 'asset.inherited_protection.driven_by'|trans({}, 'asset') }}</th>
                                 </tr>
-                            </thead>
-                            <tbody>
+                            {% endblock %}
+                            {% block table_body %}
                                 {% for dim in ['confidentiality', 'integrity', 'availability'] %}
                                     {% set own = {confidentiality: ownC, integrity: ownI, availability: ownA}[dim] %}
                                     {% set inherited = attribute(inheritedProtection, dim) %}
                                     {% set driver = inheritedProtection.drivenBy[dim] %}
-                                    <tr>
-                                        <td>{{ ('asset.field.' ~ dim)|trans({}, 'asset') }}</td>
-                                        <td>{{ own }}/5</td>
-                                        <td>
+                                    <tr class="fa-table__row">
+                                        <td class="fa-table__cell">{{ ('asset.field.' ~ dim)|trans({}, 'asset') }}</td>
+                                        <td class="fa-table__cell">{{ own }}/5</td>
+                                        <td class="fa-table__cell">
                                             {% if inherited > own %}
-                                                <span class="badge bg-warning-subtle text-warning fa-status-pill fa-status-pill--warning">{{ inherited }}/5 ↑</span>
+                                                <span class="fa-status-pill fa-status-pill--warning">{{ inherited }}/5 ↑</span>
                                             {% else %}
                                                 {{ inherited }}/5
                                             {% endif %}
                                         </td>
-                                        <td>
+                                        <td class="fa-table__cell">
                                             {% if driver and driver.id != asset.id %}
                                                 <a href="{{ path('app_asset_show', {id: driver.id}) }}">{{ driver.name }}</a>
                                             {% else %}
@@ -312,10 +348,67 @@
                                         </td>
                                     </tr>
                                 {% endfor %}
-                            </tbody>
-                        </table>
+                            {% endblock %}
+                        {% endembed %}
                     </div>
                 {% endif %}
+            {% endif %}
+
+            {# Bucket-6 RT_05: Asset-dependency-graph tree-renderer.
+               Walks asset.dependsOn (legacy ManyToMany) and decorates with
+               enriched-edge metadata when available via assetDependencyEdges
+               (keyed by upstream asset id). Feeds the DORA RoI XBRL export. #}
+            {% if asset.dependsOn|length > 0 %}
+                <div class="detail-section">
+                    <h3>
+                        <i class="fa-icon fa-icon--nav-process" aria-hidden="true"></i>
+                        {{ 'asset.dependency.section.title'|trans({}, 'asset') }}
+                    </h3>
+                    <p class="text-muted small mb-3">
+                        {{ 'asset.dependency.section.subtitle'|trans({}, 'asset') }}
+                    </p>
+                    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                        {% block table_head %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">{{ 'asset.dependency.section.column.target'|trans({}, 'asset') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'asset.dependency.section.column.type'|trans({}, 'asset') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'asset.dependency.section.column.criticality_impact'|trans({}, 'asset') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'asset.dependency.section.column.notes'|trans({}, 'asset') }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
+                            {% for upstream in asset.dependsOn %}
+                                {% set edge = (assetDependencyEdges is defined and assetDependencyEdges[upstream.id] is defined) ? assetDependencyEdges[upstream.id] : null %}
+                                {% set typeValue = edge ? edge.dependencyType.value : 'requires' %}
+                                {% set impactValue = edge ? edge.criticalityImpact.value : 'cascade' %}
+                                <tr class="fa-table__row">
+                                    <td class="fa-table__cell">
+                                        <a href="{{ path('app_asset_show', {id: upstream.id}) }}">{{ upstream.name }}</a>
+                                    </td>
+                                    <td class="fa-table__cell">
+                                        <span class="fa-status-pill fa-status-pill--neutral">
+                                            {{ ('asset.dependency.type.' ~ typeValue)|trans({}, 'asset') }}
+                                        </span>
+                                    </td>
+                                    <td class="fa-table__cell">
+                                        <span class="fa-status-pill {% if impactValue == 'cascade' %}fa-status-pill--danger{% elseif impactValue == 'partial' %}fa-status-pill--warning{% else %}fa-status-pill--success{% endif %}">
+                                            {{ ('asset.dependency.criticality_impact.' ~ impactValue)|trans({}, 'asset') }}
+                                        </span>
+                                    </td>
+                                    <td class="fa-table__cell">
+                                        {% if edge and edge.notes %}
+                                            {{ edge.notes }}
+                                        {% elseif not edge %}
+                                            <span class="text-muted small">{{ 'asset.dependency.section.default_classification'|trans({}, 'asset') }}</span>
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% endblock %}
+                    {% endembed %}
+                </div>
             {% endif %}
 
             {% if asset.handlingInstructions %}
@@ -449,9 +542,7 @@
                         {% for control in asset.protectingControls %}
                             <div class="control-item">
                                 {% include '_components/_iso_reference_label.html.twig' with { control: control, code_class: 'fw-bold' } only %}
-                                <span class="{{ badge_status(control.implementationStatus) }}">
-                                    {{ control.implementationStatus|upper }}
-                                </span>
+                                {{ pill.render(control.implementationStatus|upper, pill_tone_status(control.implementationStatus)) }}
                                 <small>({{ control.implementationPercentage }}%)</small>
                             </div>
                         {% endfor %}
@@ -467,10 +558,27 @@
                         {% for risk in asset.risks %}
                             <div class="risk-item">
                                 <strong>{{ risk.title }}</strong>
-                                <span class="{{ badge_score(risk.inherentRiskLevel, 16, 9) }}">
-                                    {{ 'asset.risk_item.risk_level'|trans({'%value%': risk.inherentRiskLevel}, 'asset') }}
-                                </span>
+                                {{ pill.render('asset.risk_item.risk_level'|trans({'%value%': risk.inherentRiskLevel}, 'asset'), pill_tone_score(risk.inherentRiskLevel, 16, 9)) }}
                                 <small>{{ 'asset.risk_item.status'|trans({'%value%': (risk.status ? risk.status.value : '')|upper}, 'asset') }}</small>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+
+            {# V3 W2-Bug3: Linked Processing Activities (M:N inverse) — privacy module (GDPR Art. 30 RoPA) #}
+            {% if is_module_active('privacy') and asset.processingActivities is defined and asset.processingActivities|length > 0 %}
+                <div class="detail-section">
+                    <h3>{{ 'asset.section.processing_activities'|trans({}, 'asset') }} ({{ asset.processingActivities|length }})</h3>
+                    <div class="processing-activities-list">
+                        {% for activity in asset.processingActivities %}
+                            <div class="processing-activity-item">
+                                <a href="{{ path('app_processing_activity_show', {id: activity.id}) }}">
+                                    <strong>{{ activity.name }}</strong>
+                                </a>
+                                {% if activity.legalBasis %}
+                                    <small class="text-muted">{{ activity.legalBasis }}</small>
+                                {% endif %}
                             </div>
                         {% endfor %}
                     </div>
@@ -485,9 +593,7 @@
                         {% for incident in asset.incidents %}
                             <div class="incident-item">
                                 <strong>{{ incident.title }}</strong>
-                                <span class="{{ badge_severity(incident.severity) }}">
-                                    {{ incident.severity ? incident.severity.value|upper : '' }}
-                                </span>
+                                {{ pill.render(incident.severity ? incident.severity.value|upper : '', pill_tone_severity(incident.severity)) }}
                                 <small>{{ incident.detectedAt|date('Y-m-d') }}</small>
                             </div>
                         {% endfor %}
@@ -499,34 +605,15 @@
             {% if auditLogs is defined and auditLogs|length > 0 %}
                 <div class="detail-section">
                     <h3>{{ 'asset.section.history'|trans({}, 'asset') }} ({{ totalAuditLogs }} {{ 'audit_log.entries'|trans({}, 'audit_log') }})</h3>
-                    <div class="audit-log-list">
+                    <div class="fa-audit-feed">
                         {% for log in auditLogs %}
-                            <div class="audit-log-item">
-                                <div class="audit-log-header">
-                                    <span class="{{ badge_action(log.action) }}">
-                                        {{ log.action|upper }}
-                                    </span>
-                                    <small class="text-muted">{{ log.createdAt|date('Y-m-d H:i:s') }}</small>
-                                </div>
-                                <div class="audit-log-details">
-                                    <strong>{{ log.userName }}</strong>
-                                    {% set oldValues = log.oldValuesArray %}
-                                    {% set newValues = log.newValuesArray %}
-                                    {% if newValues %}
-                                        <div class="audit-log-changes">
-                                            {% for field, newValue in newValues %}
-                                                <div class="change-item">
-                                                    <span class="field-name">{{ field }}:</span>
-                                                    {% if oldValues and oldValues[field] is defined %}
-                                                        <span class="old-value">{{ oldValues[field] }}</span>
-                                                        <i class="fa-icon fa-icon--util-arrow-right" aria-hidden="true"></i>
-                                                    {% endif %}
-                                                    <span class="new-value">{{ newValue }}</span>
-                                                </div>
-                                            {% endfor %}
-                                        </div>
-                                    {% endif %}
-                                </div>
+                            <div class="fa-audit-row{% if log.isSealed is defined and log.isSealed %} fa-audit-row--sealed{% endif %}">
+                                <span class="fa-audit-row__ts">{{ log.createdAt|date('Y-m-d H:i:s') }}</span>
+                                <span class="fa-audit-row__sev fa-audit-row__sev--{% if log.action in ['create', 'read'] %}info{% elseif log.action == 'update' %}warning{% elseif log.action in ['error', 'failed'] %}danger{% else %}critical{% endif %}"></span>
+                                <span class="fa-audit-row__actor">{{ log.userName|default('System') }}</span>
+                                <span class="fa-audit-row__action">{{ log.action|upper }}</span>
+                                <span class="fa-audit-row__target">{{ log.entityType|default('Asset') }}#{{ log.entityId|default('') }}</span>
+                                <span class="fa-audit-row__hash">{{ log.hash is defined ? log.hash|slice(0,12) : '' }}</span>
                             </div>
                         {% endfor %}
                     </div>
@@ -541,6 +628,25 @@
             {% endif %}
         {% endblock %}
     {% endembed %}
+
+    {# V3 B6 / EF-4: Inverse-Coverage Impact-Analyse #}
+    {% include '_components/_impact_coverage.html.twig' with {
+        impact: impact_coverage|default({total: 0, frameworks: []}),
+        entity_label: 'asset'
+    } %}
+
+    {# V4 LB-4: Comment-Thread adoption (C7 macro). #}
+    {% include '_components/_isms_comment_thread.html.twig' with {
+        comments: comments|default([]),
+        entityType: 'Asset',
+        entityId: asset.id,
+        showForm: canEdit is not defined or canEdit,
+        formAction: path('app_comment_post', {entityType: 'Asset', entityId: asset.id}),
+        csrfToken: csrf_token('isms-comment')
+    } only %}
+
+    {# Lifecycle X.3 — transition history tab #}
+    {{ _lifecycle_history.history('asset', asset.id) }}
 </div>
 
 <style>
@@ -573,42 +679,7 @@
     gap: 0.5rem;
 }
 /* Badge styles now handled by BadgeExtension helper functions */
-/* Audit Log Styles */
-.audit-log-list { display: flex; flex-direction: column; gap: 0.75rem; }
-.audit-log-item {
-    padding: 1rem;
-    background: var(--bs-tertiary-bg);
-    color: var(--bs-body-color);
-    border-left: 3px solid var(--accent);
-    border-radius: 4px;
-}
-.audit-log-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-}
-.audit-log-details { margin-top: 0.5rem; }
-.audit-log-changes {
-    margin-top: 0.5rem;
-    padding-left: 1rem;
-    font-size: 0.875rem;
-}
-.change-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0.25rem 0;
-}
-.field-name { font-weight: bold; color: var(--bs-secondary-color); }
-.old-value {
-    text-decoration: line-through;
-    color: var(--danger);
-}
-.new-value {
-    color: var(--success);
-    font-weight: 500;
-}
+/* Audit log styles: .fa-audit-feed / .fa-audit-row — handled centrally in fairy-aurora-components.css */
 /* .badge-action-* removed: dead code. */
 
 /* Protection Analysis Styles */

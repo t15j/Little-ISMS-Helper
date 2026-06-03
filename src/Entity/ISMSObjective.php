@@ -14,6 +14,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use App\Enum\ISMSObjectiveStatus;
 use App\Repository\ISMSObjectiveRepository;
 use App\State\TenantAwareStateProcessor;
 use Doctrine\DBAL\Types\Types;
@@ -75,6 +76,31 @@ class ISMSObjective
     #[Groups(['isms_objective:read', 'isms_objective:write'])]
     private ?string $unit = null;
 
+    /**
+     * ISO 27001 §6.2.b — wer fuer Messung verantwortlich ist.
+     * Often overlaps with responsiblePerson but kept separate to allow
+     * "objective owner" vs "data steward" split (audit findings W3).
+     */
+    #[ORM\Column(length: 100, nullable: true)]
+    #[Groups(['isms_objective:read', 'isms_objective:write'])]
+    private ?string $responsibleForMeasurement = null;
+
+    /**
+     * ISO 27001 §6.2.b — wann gemessen wird.
+     */
+    #[ORM\Column(length: 32, nullable: true)]
+    #[Assert\Choice(choices: ['daily', 'weekly', 'monthly', 'quarterly', 'biannually', 'annually', 'on_event'])]
+    #[Groups(['isms_objective:read', 'isms_objective:write'])]
+    private ?string $measurementFrequency = null;
+
+    /**
+     * ISO 27001 §6.2.b — wie gemessen wird (z.B. "Auswertung Audit-Logs",
+     * "KPI aus Dashboard", "Manuelles Review im Quartals-Meeting").
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['isms_objective:read', 'isms_objective:write'])]
+    private ?string $measurementMethod = null;
+
     #[ORM\Column(length: 100)]
     #[Groups(['isms_objective:read', 'isms_objective:write'])]
     #[Assert\NotBlank]
@@ -111,6 +137,14 @@ class ISMSObjective
     #[ORM\JoinColumn(nullable: true)]
     private ?Tenant $tenant = null;
 
+    /**
+     * Optimistic locking version — Lifecycle X.1.
+     * Prevents concurrent status-transition conflicts (409 response).
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
 public function __construct()
     {
         $this->createdAt = new DateTimeImmutable();
@@ -126,7 +160,7 @@ public function __construct()
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -137,7 +171,7 @@ public function __construct()
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -148,7 +182,7 @@ public function __construct()
         return $this->category;
     }
 
-    public function setCategory(string $category): static
+    public function setCategory(?string $category): static
     {
         $this->category = $category;
         return $this;
@@ -203,7 +237,7 @@ public function __construct()
         return $this->responsiblePerson;
     }
 
-    public function setResponsiblePerson(string $responsiblePerson): static
+    public function setResponsiblePerson(?string $responsiblePerson): static
     {
         $this->responsiblePerson = $responsiblePerson;
         return $this;
@@ -214,7 +248,7 @@ public function __construct()
         return $this->targetDate;
     }
 
-    public function setTargetDate(DateTimeInterface $targetDate): static
+    public function setTargetDate(?DateTimeInterface $targetDate): static
     {
         $this->targetDate = $targetDate;
         return $this;
@@ -225,10 +259,18 @@ public function __construct()
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(ISMSObjectiveStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?ISMSObjectiveStatus
+    {
+        return $this->status !== null ? ISMSObjectiveStatus::tryFrom($this->status) : null;
     }
 
     public function getProgressNotes(): ?string
@@ -258,7 +300,7 @@ public function __construct()
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -293,5 +335,43 @@ public function __construct()
     {
         $this->tenant = $tenant;
         return $this;
+    }
+
+    public function getResponsibleForMeasurement(): ?string
+    {
+        return $this->responsibleForMeasurement;
+    }
+
+    public function setResponsibleForMeasurement(?string $responsibleForMeasurement): static
+    {
+        $this->responsibleForMeasurement = $responsibleForMeasurement;
+        return $this;
+    }
+
+    public function getMeasurementFrequency(): ?string
+    {
+        return $this->measurementFrequency;
+    }
+
+    public function setMeasurementFrequency(?string $measurementFrequency): static
+    {
+        $this->measurementFrequency = $measurementFrequency;
+        return $this;
+    }
+
+    public function getMeasurementMethod(): ?string
+    {
+        return $this->measurementMethod;
+    }
+
+    public function setMeasurementMethod(?string $measurementMethod): static
+    {
+        $this->measurementMethod = $measurementMethod;
+        return $this;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

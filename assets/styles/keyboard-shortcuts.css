@@ -14,7 +14,7 @@
     background: var(--surface);
     color: var(--primary-strong);
     border: 1px solid var(--border);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 6px rgb(0, 0, 0, 0.08); /* design-spec: singular kbd key subtle lift */
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -23,13 +23,13 @@
     transition: border-color var(--t-fast, 0.15s) var(--ease-out, ease-out),
                 box-shadow var(--t-fast, 0.15s) var(--ease-out, ease-out),
                 color var(--t-fast, 0.15s) var(--ease-out, ease-out);
-    z-index: calc(var(--alva-z, 9500) - 10);
+    z-index: calc(var(--alva-z) - 10);
 }
 .keyboard-shortcuts-trigger:hover,
 .keyboard-shortcuts-trigger:focus-visible {
     color: var(--primary);
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-tint), 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 0 0 3px var(--primary-tint), 0 2px 8px rgb(0, 0, 0, 0.1); /* design-spec: kbd focus ring composite */
     outline: none;
 }
 
@@ -47,26 +47,26 @@ body:has(.fa-alva-dock--pos-bottom-left) .keyboard-shortcuts-trigger {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0);
+    background: rgb(0, 0, 0, 0); /* design-spec: transparent reset for keyboard overlay start state */
     display: none;
     align-items: center;
     justify-content: center;
     padding: 24px;
-    z-index: 9998;
+    z-index: var(--z-overlay);
     transition: background 0.2s ease;
 }
 
 .keyboard-shortcuts-modal.keyboard-shortcuts-open {
     display: flex;
-    background: rgba(15, 23, 42, 0.8);
+    background: rgb(15, 23, 42, 0.8);
     backdrop-filter: blur(8px);
 }
 
 /* Container - Cyberpunk Fairy */
 .keyboard-shortcuts-container {
     background: var(--surface);
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 40px var(--primary-glow);
+    border-radius: var(--r-xl);
+    box-shadow: 0 20px 60px rgb(0, 0, 0, 0.4), 0 0 40px var(--primary-glow); /* design-spec: keyboard shortcuts overlay premium shadow with glow */
     border: 2px solid var(--primary);
     width: 900px;
     max-width: 90vw;
@@ -112,7 +112,7 @@ body:has(.fa-alva-dock--pos-bottom-left) .keyboard-shortcuts-trigger {
     border: none;
     width: 32px;
     height: 32px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -151,7 +151,7 @@ body:has(.fa-alva-dock--pos-bottom-left) .keyboard-shortcuts-trigger {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--fg-3);
-    margin: 0 0 16px 0;
+    margin: 0 0 16px;
 }
 
 .keyboard-shortcuts-category dl {
@@ -189,8 +189,8 @@ body:has(.fa-alva-dock--pos-bottom-left) .keyboard-shortcuts-trigger {
 kbd {
     background: linear-gradient(to bottom, var(--surface), var(--bg));
     border: 1px solid var(--border);
-    border-radius: 4px;
-    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.1);
+    border-radius: var(--r-sm);
+    box-shadow: 0 2px 0 rgb(0, 0, 0, 0.1); /* design-spec: keycap underside press effect */
     padding: 4px 8px;
     font-size: 12px;
     font-weight: 600;
@@ -237,7 +237,7 @@ kbd {
 
 .keyboard-shortcuts-content::-webkit-scrollbar-thumb {
     background: var(--border);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
 }
 
 .keyboard-shortcuts-content::-webkit-scrollbar-thumb:hover {

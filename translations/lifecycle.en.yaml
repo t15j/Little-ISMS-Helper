@@ -1,0 +1,242 @@
+lifecycle:
+    # Workflow descriptions
+    workflow_desc:
+        asset_lifecycle: 'Asset lifecycle from commissioning to disposal. 4-eyes principle on disposal.'
+        audit_finding_lifecycle: 'Audit finding processing (open → in_progress → resolved → verified → closed).'
+        consent_lifecycle: 'GDPR consent lifecycle (pending_verification → active → withdrawn → expired).'
+        corrective_action_lifecycle: 'CAPA action status (planned → in_progress → implemented → verified → closed).'
+        data_breach_lifecycle: 'Data breach per GDPR Art. 33/34 (reported → under_assessment → notified → resolved).'
+        data_subject_request_lifecycle: 'GDPR data subject request (pending → identity_verified → in_progress → completed/rejected).'
+        document_lifecycle: 'Document lifecycle (draft → in_review → approved → published → archived). Canonical 5-stage.'
+        dpia_lifecycle: 'Data Protection Impact Assessment (draft → in_review → approved/requires_revision → published).'
+        incident_lifecycle: 'Security incident per ISO 27001 (reported → triaged → investigating → contained → resolved → closed).'
+        internal_audit_lifecycle: 'Internal audit (planned → in_progress/conducted → reported → approved → closed).'
+        isms_objective_lifecycle: 'ISMS objective per ISO 27001 Cl. 6.2 (planned → in_progress → achieved/delayed/cancelled).'
+        policy_template_lifecycle: 'Policy template lifecycle with isActive-sync on publish/archive.'
+        processing_activity_lifecycle: 'Processing activity per GDPR Art. 30 — gated by privacy module.'
+        risk_lifecycle: 'Risk per ISO 27005 (identified → assessed → treated → accepted → reviewed → closed).'
+        vulnerability_lifecycle: 'Vulnerability (discovered → triaged → in_remediation → resolved → verified).'
+        workflow_instance_lifecycle: 'Workflow instance approval chain (pending → in_progress → approved/rejected/cancelled).'
+
+    status_desc:
+        draft: 'Draft — being prepared, not yet submitted for review.'
+        in_review: 'In Review — awaiting reviewer decision.'
+        approved: 'Approved — ready for publication, not yet active.'
+        published: 'Published — active and visible tenant-wide.'
+        archived: 'Archived — inactive, readable for audit purposes.'
+        active: 'Active — in use.'
+        inactive: 'Inactive — paused, can be reactivated.'
+        pending: 'Pending — awaiting action or verification.'
+        cancelled: 'Cancelled — terminal, no follow-up.'
+        rejected: 'Rejected — back to draft or revision needed.'
+        accepted: 'Accepted — confirmed, no treatment needed.'
+        requires_revision: 'Revision Required — reviewer flagged issues.'
+        planned: 'Planned — scheduled, not started.'
+        completed: 'Completed — task/measure finished.'
+        verified: 'Verified — confirmed by second reviewer.'
+        in_use: 'In Use — asset actively with end user.'
+        returned: 'Returned — asset in inventory, not in use.'
+        retired: 'Retired — asset decommissioned.'
+        disposed: 'Disposed — asset removed from inventory.'
+        identified: 'Identified — risk recognised, not assessed.'
+        assessed: 'Assessed — likelihood + impact captured.'
+        treated: 'Treated — risk treatment plan implemented.'
+        reported: 'Reported — initial notification received.'
+        triaged: 'Triaged — severity classified.'
+        investigating: 'Investigating — root cause analysis underway.'
+        contained: 'Contained — damage limited.'
+        resolved: 'Resolved — back to normal.'
+        closed: 'Closed — terminal, lessons-learned documented.'
+        identity_verified: 'Identity Verified per GDPR Art. 12 (6).'
+        pending_verification: 'Pending Verification — DPO must check.'
+        withdrawn: 'Withdrawn — consent revoked.'
+        expired: 'Expired — retention period exceeded.'
+        discovered: 'Discovered — new, not prioritised.'
+        in_remediation: 'In Remediation — patch/mitigation in progress.'
+        achieved: 'Achieved — objective met.'
+        delayed: 'Delayed — deadline missed.'
+
+    transition_desc:
+        document_lifecycle:
+            submit_for_review: 'Submit draft for review — requires mandatory fields complete.'
+            approve: 'Reviewer approves — ready for publication. 4-eyes recommended.'
+            reject: 'Reviewer rejects — back to draft. Reason required.'
+            publish: 'Publish — becomes tenant-wide active and visible.'
+            archive: 'Archive — inactive but readable.'
+            republish: 'Republish — bring archived version back active.'
+        asset_lifecycle:
+            commission: 'Commission — asset becomes actively used.'
+            return: 'Return — temporarily out of use.'
+            retire: 'Retire — asset decommissioned.'
+            dispose: 'Dispose — final step, 4-eyes required.'
+        _generic:
+            submit: 'Submit — advance status forward.'
+            approve: 'Approve — grant release.'
+            reject: 'Reject — back to previous status.'
+            cancel: 'Cancel — stop workflow.'
+            archive: 'Archive — mark inactive.'
+
+    # Standard 5-stage flow (CLAUDE.md canonical matrix)
+    draft: Draft
+    in_review: 'In Review'
+    approved: Approved
+    published: Published
+    archived: Archived
+
+    # General / shared states
+    deleted: Deleted
+    pending: Pending
+    cancelled: Cancelled
+    active: Active
+    inactive: Inactive
+    rejected: Rejected
+    accepted: Accepted
+    requires_revision: 'Requires Revision'
+    planned: Planned
+    completed: Completed
+    verified: Verified
+    open: Open
+    closed: Closed
+    resolved: Resolved
+    reported: Reported
+    received: Received
+    identified: Identified
+    assessed: Assessed
+    monitored: Monitored
+    treated: Treated
+    revoked: Revoked
+    expired: Expired
+
+    # AuditFinding / CorrectiveAction discovery-style lifecycle
+    in_progress: 'In Progress'
+
+    # ISMSObjective lifecycle places
+    not_started: 'Not Started'
+    achieved: Achieved
+    delayed: Delayed
+
+    # Incident lifecycle places
+    in_investigation: 'In Investigation'
+    contained: Contained
+    eradicated: Eradicated
+    recovered: Recovered
+
+    # Data Breach / GDPR lifecycle places
+    under_assessment: 'Under Assessment'
+    authority_notified: 'Authority Notified'
+    subjects_notified: 'Data Subjects Notified'
+
+    # Risk lifecycle places
+    in_treatment: 'In Treatment'
+
+    # Control / Corrective Action lifecycle places
+    verified_effective: 'Verified Effective'
+    verified_ineffective: 'Verified Ineffective'
+
+    # Vulnerability lifecycle places
+    in_triage: 'In Triage'
+    in_remediation: 'In Remediation'
+    mitigated: Mitigated
+
+    # Data Subject Request lifecycle places
+    pending_verification: 'Pending Verification'
+
+    # Asset lifecycle places
+    in_use: 'In Use'
+    returned: Returned
+    retired: Retired
+    disposed: Disposed
+
+    tooltip:
+        next: 'Next steps'
+
+    actions:
+        label: Actions
+        change_status: 'Change status'
+        submit_for_review: 'Submit for review'
+        approve: Approve
+        publish: Publish
+        archive: Archive
+        unarchive: Re-publish
+        return_to_draft: 'Return to draft'
+
+    # Transition names (workflow YAML metadata)
+    transition:
+        submit_for_review: 'Submit for Review'
+        approve: Approve
+        request_changes: 'Request Changes'
+        publish: Publish
+        archive: Archive
+        restore: Restore
+        activate: Activate
+        deactivate: Deactivate
+        reactivate: Reactivate
+        start: Start
+        achieve: 'Mark as Achieved'
+        mark_achieved: 'Mark Achieved'
+        mark_delayed: 'Mark Delayed'
+        cancel: Cancel
+        reopen: Reopen
+        reject: Reject
+        accept: Accept
+        request_revision: 'Request Revision'
+        resubmit: Resubmit
+        submit: Submit
+        complete: Complete
+        close: Close
+        resolve: Resolve
+        report: Report
+        rework: Rework
+        # Incident transitions
+        start_investigation: 'Start Investigation'
+        contain: Contain
+        eradicate: Eradicate
+        recover: Recover
+        false_positive: 'Mark False Positive'
+        # Data Breach / GDPR transitions
+        assess: Assess
+        notify_authority: 'Notify Authority'
+        notify_subjects: 'Notify Subjects'
+        # Risk transitions
+        treat: Treat
+        complete_treatment: 'Complete Treatment'
+        monitor: Monitor
+        # Control / Corrective Action transitions
+        verify_effective: 'Verify Effective'
+        verify_ineffective: 'Verify Ineffective'
+        verify: Verify
+        # Vulnerability transitions
+        triage: Triage
+        remediate: Remediate
+        mitigate: Mitigate
+        regression: 'Mark Regression'
+        # Data Subject Request transitions
+        process: Process
+        # Asset transitions
+        assign_to_person: 'Assign to Person'
+        return_from_person: 'Return from Person'
+        restore_to_active: 'Restore to Active'
+        retire_from_active: 'Retire from Active'
+        retire_from_inactive: 'Retire from Inactive'
+        dispose: Dispose
+        revoke: Revoke
+        expire: Expire
+        # Objective transitions
+        cancel_in_progress: 'Cancel In Progress'
+        # Retry
+        retry: Retry
+
+    history:
+        title: 'Status history'
+        loading: 'Loading...'
+        empty: 'No transitions recorded yet.'
+        row: '%user% %from% → %to%: %reason%'
+
+    confirm:
+        reason_required: 'Please provide a reason'
+
+    field:
+        status: Status
+
+    errors:
+        invalid_transition: 'Invalid status transition from "%from%" to "%to%". Allowed next states: %allowed%.'

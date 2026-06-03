@@ -10,26 +10,26 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0);
+    background: rgb(0, 0, 0, 0); /* design-spec: transparent reset for animation start state */
     display: none;
     align-items: flex-start;
     justify-content: center;
     padding-top: 15vh;
-    z-index: 9999;
+    z-index: var(--z-command);
     transition: background 0.2s ease;
 }
 
 .command-palette-modal.command-palette-open {
     display: flex;
-    background: rgba(15, 23, 42, 0.8);
+    background: rgb(15, 23, 42, 0.8);
     backdrop-filter: blur(8px);
 }
 
 /* Container */
 .command-palette-container {
     background: var(--surface);
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 40px var(--primary-glow);
+    border-radius: var(--r-xl);
+    box-shadow: 0 20px 60px rgb(0, 0, 0, 0.4), 0 0 40px var(--primary-glow); /* design-spec: command-palette premium overlay with glow */
     border: 2px solid var(--primary);
     width: 640px;
     max-width: 90vw;
@@ -53,7 +53,7 @@
 }
 
 @keyframes float {
-    0%, 100% { transform: translateY(0px); }
+    0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-8px); }
 }
 
@@ -95,7 +95,7 @@
 .command-palette-hint {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     padding: 4px 8px;
     font-size: 11px;
     font-weight: 600;
@@ -135,7 +135,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 12px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     cursor: pointer;
     transition: all 0.15s ease;
     margin-bottom: 2px;
@@ -237,7 +237,7 @@
 .command-palette-shortcuts kbd {
     background: linear-gradient(135deg, var(--primary-tint), var(--accent-tint));
     border: 1px solid var(--primary);
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     padding: 2px 6px;
     font-size: 11px;
     font-weight: 600;
@@ -263,7 +263,7 @@
 
 .command-palette-results::-webkit-scrollbar-thumb {
     background: var(--border);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
 }
 
 .command-palette-results::-webkit-scrollbar-thumb:hover {

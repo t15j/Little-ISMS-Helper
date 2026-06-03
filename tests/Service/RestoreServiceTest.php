@@ -22,6 +22,7 @@ use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
+use App\Exception\InvalidArgument\InvalidArgumentException as AppInvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
 
 #[AllowMockObjectsWithoutExpectations]
@@ -189,7 +190,7 @@ class RestoreServiceTest extends TestCase
     #[Test]
     public function testRestoreFromBackupWithInvalidDataThrowsException(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(AppInvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid backup');
 
         $backup = [
@@ -1022,7 +1023,7 @@ class RestoreServiceTest extends TestCase
         // Tamper the data after computing the hash.
         $backup['data']['User'][0]['email'] = 'evil@hacker.com';
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(\App\Exception\Io\IoException::class);
         $this->expectExceptionMessageMatches('/sha256 mismatch/');
 
         $this->service->restoreFromBackup($backup);
@@ -1325,7 +1326,7 @@ class RestoreServiceTest extends TestCase
             'data' => $data,
         ];
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(\App\Exception\Io\IoException::class);
         $this->expectExceptionMessageMatches('/sha256 mismatch/');
 
         $this->service->restoreFromBackup($backup, [
@@ -1392,6 +1393,105 @@ class RestoreServiceTest extends TestCase
         $failure = array_values($systemSettingsFailures)[0];
         $this->assertSame(42, $failure['row_id'],
             'Failure record must include the row ID of the failing SystemSettings row');
+    }
+
+    /**
+     * Phase 5 — validateBackup() rejects cross-tenant restore attempts by
+     * non-SUPER callers with AccessDeniedException.
+     *
+     * Backup was created for tenant_scope = [1].
+     * Caller scope is Tenant 2 (id=2) with no subsidiaries.
+     * → AccessDeniedException must be thrown.
+     */
+    #[Test]
+    public function testValidateBackupRejectsCrossTenantAttempt(): void
+    {
+        $backup = [
+            'metadata' => [
+                'version'      => '2.0',
+                'tenant_scope' => [1],  // backup for tenant 1
+            ],
+            'data' => [],
+        ];
+
+        $tenant2 = $this->createMock(Tenant::class);
+        $tenant2->method('getId')->willReturn(2);
+        $tenant2->method('getAllSubsidiaries')->willReturn([]);
+
+        $this->expectException(\Symfony\Component\Security\Core\Exception\AccessDeniedException::class);
+        $this->expectExceptionMessage('Cross-tenant restore denied');
+
+        $this->service->validateBackup($backup, $tenant2);
+    }
+
+    /**
+     * Phase 5 — validateBackup() allows restore when caller scope intersects
+     * with backup's recorded tenant_scope (own-tenant restore).
+     */
+    #[Test]
+    public function testValidateBackupAllowsOwnTenantRestore(): void
+    {
+        $backup = [
+            'metadata' => [
+                'version'      => '2.0',
+                'tenant_scope' => [1],
+            ],
+            'data' => [],
+        ];
+
+        $tenant1 = $this->createMock(Tenant::class);
+        $tenant1->method('getId')->willReturn(1);
+        $tenant1->method('getAllSubsidiaries')->willReturn([]);
+
+        $result = $this->service->validateBackup($backup, $tenant1);
+
+        $this->assertTrue($result['valid'],
+            'Own-tenant restore must pass validation when scopes overlap');
+    }
+
+    /**
+     * Phase 5 — validateBackup() rejects restore of a backup without
+     * recorded tenant_scope (legacy / global) by non-SUPER callers.
+     */
+    #[Test]
+    public function testValidateBackupRejectsLegacyBackupForNonSuper(): void
+    {
+        $backup = [
+            'metadata' => [
+                'version' => '1.0',
+                // No tenant_scope key (legacy)
+            ],
+            'data' => [],
+        ];
+
+        $tenant1 = $this->createMock(Tenant::class);
+        $tenant1->method('getId')->willReturn(1);
+        $tenant1->method('getAllSubsidiaries')->willReturn([]);
+
+        $this->expectException(\Symfony\Component\Security\Core\Exception\AccessDeniedException::class);
+        $this->expectExceptionMessage('legacy/global backup');
+
+        $this->service->validateBackup($backup, $tenant1);
+    }
+
+    /**
+     * Phase 5 — SUPER_ADMIN (callerScope=null) bypasses the cross-tenant check.
+     */
+    #[Test]
+    public function testValidateBackupSuperAdminBypassesScopeCheck(): void
+    {
+        $backup = [
+            'metadata' => [
+                'version'      => '2.0',
+                'tenant_scope' => [99],  // foreign tenant
+            ],
+            'data' => [],
+        ];
+
+        $result = $this->service->validateBackup($backup, null);
+
+        $this->assertTrue($result['valid'],
+            'SUPER_ADMIN (null scope) must bypass tenant-scope rejection');
     }
 }
 

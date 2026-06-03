@@ -1,4 +1,14 @@
 compliance:
+    auto_mapping:
+        success: 'Erfolgreich %count% neue Mappings zwischen %framework1% und %framework2% erstellt!'
+        skipped_suffix: '(%count% bereits vorhanden, übersprungen)'
+        error: 'Fehler beim Erstellen der Mappings: %reason%'
+    heatmap:
+        title: 'Compliance-Heatmap'
+        caption: 'Heatmap: Framework × Control-Cluster-Erfüllung'
+        col_framework: 'Framework'
+        col_cluster: 'Control-Cluster'
+        no_data: 'Bisher keine Mapping-Daten für die Heatmap verfügbar.'
     iso9001_bridge:
         prefix: 'Für 9001-Praktiker:'
         more: 'volle Brücke 9001 ↔ 27001 →'
@@ -101,6 +111,7 @@ compliance:
         target_requirements: Zielanforderungen
         mapping_strength: Zuordnungsstärke
         mapped: Zugeordnet
+        fulfillment: 'Erfüllungsgrad'
     option:
         select_framework: 'Framework wählen…'
         all_frameworks: 'Alle Frameworks'
@@ -150,6 +161,12 @@ compliance:
     successfully_loaded: 'Framework erfolgreich geladen'
     load_failed: 'Fehler beim Laden des Frameworks'
     error: Fehler
+    # Generic flash-message keys (Controllers via LocalizedFlashTrait)
+    flash:
+        error:
+            invalid_csrf: 'Ungültiges CSRF-Token.'
+            select_two_frameworks: 'Bitte wählen Sie zwei Frameworks zum Vergleich aus.'
+            framework_not_found: 'Ein oder beide Frameworks wurden nicht gefunden.'
     deleting: 'Wird gelöscht...'
     successfully_deleted: 'Framework erfolgreich gelöscht'
     delete_failed: 'Fehler beim Löschen des Frameworks'
@@ -164,6 +181,77 @@ compliance:
         confirm_question: 'Möchten Sie wirklich fortfahren?'
         second_confirm: 'Sind Sie sicher? Framework wird unwiderruflich gelöscht!'
     mapping:
+        filter:
+            search: 'Suche'
+            search_ph: 'Quelle/Ziel-ID oder Framework…'
+            source_fw: 'Quell-Framework'
+            target_fw: 'Ziel-Framework'
+            type: 'Typ'
+            confidence: 'Confidence'
+            status: 'Review-Status'
+            all: 'Alle'
+            reset: 'Zurücksetzen'
+            no_results: 'Keine Mappings entsprechen den Filtern.'
+        col:
+            relationship: 'Beziehung'
+            mqs: 'MQS'
+            provenance: 'Herkunft'
+            rationale: 'Begründung'
+            mqs_breakdown: 'MQS-Aufschlüsselung'
+            lifecycle: 'Lifecycle'
+        bulk:
+            status_change:
+                label: 'Status setzen'
+                target:
+                    draft: 'Entwurf'
+                    review: 'In Prüfung'
+                    approved: 'Freigegeben'
+                    published: 'Veröffentlicht'
+                    deprecated: 'Veraltet'
+            approve: 'Freigeben'
+            success: '%count% Mapping(s) aktualisiert.'
+            partial: '%changed% aktualisiert, %rejected% abgelehnt.'
+            error: 'Fehler beim Aktualisieren der Mappings.'
+            no_ids: 'Keine Mappings ausgewählt.'
+            invalid_status: 'Ungültiger Zielstatus.'
+        detail:
+            rationale_empty: '(Keine Begründung hinterlegt)'
+            mqs_na: 'n/a'
+            provenance_link: 'Quelle öffnen'
+        tour:
+            start: 'Mapping-Tour starten'
+        # Beziehungstyp-Erklärungen (Glossar-Tooltip + Mapping-Detailseite)
+        rel_type:
+            equivalent:
+                label: 'equivalent'
+                def: 'Beide Anforderungen meinen praktisch dasselbe — eins zu eins. Erfüllen Sie die eine, ist die andere ebenfalls erfüllt. Beispiel: ISO 27001 A.5.1 ↔ NIS2 „Risikomanagement-Politik". 9001-Analogie: identischer Normpunkt in zwei Regelwerken.'
+            subset:
+                label: 'subset'
+                def: 'Die Quelle ist ein Teil der breiteren Ziel-Anforderung. Sie erfüllt das Ziel nur teilweise — es bleiben weitere Punkte offen. Beispiel: „Passwort-Policy" (subset) deckt nur einen Teil von „Zugriffssteuerung" (Ziel) ab.'
+            superset:
+                label: 'superset'
+                def: 'Die Quelle ist umfassender als das Ziel und deckt es vollständig mit ab — plus mehr. Wer die Quelle erfüllt, erfüllt das engere Ziel automatisch. Umgekehrt gilt das nicht.'
+            partial_overlap:
+                label: 'partial_overlap'
+                def: 'Quelle und Ziel überschneiden sich nur in einem Teilbereich; jede hat eigene Aspekte, die die andere nicht abdeckt. Hier zählt die Erfüllung nur anteilig — prüfen Sie die Lücke.'
+            related:
+                label: 'related'
+                def: 'Inhaltlich verwandt, aber nicht deckungsgleich. Nützlich als Kontext-Verweis, taugt aber nicht als direkter Erfüllungs-Nachweis. 9001-Analogie: ein „siehe auch"-Querverweis.'
+        # Glossar-Definitionen für Tooltips
+        gloss:
+            confidence: 'Confidence sagt: „Wie sicher ist die inhaltliche Aussage des Mappings?" Hoch = die beiden Anforderungen passen mit großer Sicherheit zusammen. Sie sagt NICHTS über die Beleg-Qualität — dafür ist der MQS zuständig.'
+            mqs: 'Der Mapping-Qualitäts-Score (MQS) bewertet, wie gut ein Mapping belegt und gepflegt ist: Herkunft (Provenance), Methodik und Lebenszyklus. Hohe Confidence bei niedrigem MQS heißt: inhaltlich plausibel, aber dünn dokumentiert.'
+        quality:
+            no_mappings: 'Keine Mappings gefunden. Bitte erstellen Sie zuerst Compliance-Mappings.'
+            no_analysis: 'Noch keine Analyse durchgeführt. Führen Sie zuerst "php bin/console app:analyze-mapping-quality" aus.'
+            dashboard_load_error: 'Fehler beim Laden des Dashboards: %message%'
+            review_queue_load_error: 'Fehler beim Laden der Review Queue: %message%'
+            gap_load_error: 'Fehler beim Laden der Gap-Übersicht: %message%'
+        success:
+            created: 'Compliance-Mapping wurde erstellt.'
+            updated: 'Compliance-Mapping wurde aktualisiert.'
+            deleted: 'Compliance-Mapping wurde gelöscht.'
+            analysis_completed: 'Mapping-Analyse erfolgreich abgeschlossen.'
         overview: 'Mapping-Übersicht'
         confirm:
             delete: 'Möchten Sie diese Zuordnung wirklich löschen?'
@@ -300,6 +388,9 @@ compliance:
             type: Mapping-Typ
             calculated: Berechnet
             analysis_confidence: Analyse-Konfidenz
+            mapping_type: 'Beziehungstyp'
+            confidence: 'Confidence'
+            mqs: 'Mapping-Qualitäts-Score (MQS)'
         action:
             create: 'Mapping erstellen'
         help:
@@ -485,6 +576,25 @@ compliance:
             fulfilled: Erfüllt
             compliance: Compliance-Rate
     requirement:
+        aria:
+            current: 'Ist (aktueller Reifegrad)'
+            target: 'Soll (Ziel-Reifegrad)'
+        mapped_col:
+            control_id: 'Control-ID'
+            name: 'Name'
+            status: 'Status'
+            progress: 'Fortschritt'
+        success:
+            created: 'Compliance-Anforderung wurde erstellt.'
+            updated: 'Compliance-Anforderung wurde aktualisiert.'
+            deleted: 'Compliance-Anforderung wurde gelöscht.'
+            mris_saved: 'MRIS-Reifegrad gespeichert.'
+            fulfillment_updated: 'Anforderungs-Erfüllungsstatus wurde für Ihre Organisation aktualisiert.'
+        error:
+            mris_only: 'Reifegrad ist nur für MRIS-MHC-Requirements verfügbar.'
+            no_tenant: 'Kein Organisation zugewiesen. Bitte wenden Sie sich an einen Administrator.'
+            fulfillment_no_tenant: 'Erfüllungsstatus kann ohne Organisationszuordnung nicht aktualisiert werden.'
+            inherited_fulfillment_readonly: 'Vererbter Erfüllungsstatus von der übergeordneten Organisation kann nicht bearbeitet werden.'
         details: 'Anforderungsdetails'
         confirm:
             delete: 'Möchten Sie diese Anforderung wirklich löschen?'
@@ -554,6 +664,13 @@ compliance:
             fulfillment:
                 title: Erfüllungsgrad
                 desc: 'Prozentsatz der Anforderungserfüllung (0-100%)'
+        equivalents:
+            title: 'Äquivalente in anderen Frameworks'
+            frameworks: 'Framework(s)'
+            controls: 'Control(s)'
+            intro: 'Diese Anforderung ist in den folgenden Frameworks äquivalent abgebildet. Prozentwert = Mapping-Stärke gemäß ComplianceMapping.'
+            reverse: 'Umgekehrte Zuordnung (Ziel → Quelle, bidirektional)'
+            legend: 'Prozentwert = Mapping-Stärke. ← = bidirektionale Umkehrzuordnung.'
         priority:
             critical: Kritisch
             high: Hoch
@@ -577,6 +694,7 @@ compliance:
         applicable_description: 'Diese Anforderung gilt für unsere Organisation'
         save_quick_update: 'Schnell-Update speichern'
     cross_framework:
+        exceeds_tooltip: 'Erweiterte Abdeckung: Quell-Framework deckt %pct%% des Ziel-Requirements ab — mehr als 100 % bedeutet, dass Source-Controls strenger sind als die Ziel-Anforderung.'
         source_target_label: 'Quell- und Ziel-Framework'
         table:
             source: Quelle
@@ -726,6 +844,10 @@ compliance:
         fulfilled: Erfüllt
         partial: 'Teilweise erfüllt'
         gap: 'Lücke'
+        analyzing: 'Analyse läuft…'
+        done: 'Fertig'
+        cancelled: 'Abgebrochen'
+        error: 'Fehler'
     tooltip:
         not_started: 'Nicht begonnen - Keine Umsetzung bisher'
         planning_phase: 'Planungsphase - Anforderungen analysiert, Plan erstellt'
@@ -734,6 +856,8 @@ compliance:
         tooltip:
             review_requirements: 'Prüfen Sie jede Anforderung und markieren Sie, ob sie für Ihre Organisation gilt. Nicht anwendbare Anforderungen werden nicht zur Compliance-Quote gezählt.'
             implement_requirements: 'Verknüpfen Sie Anforderungen mit bestehenden Controls oder erstellen Sie neue Controls zur Umsetzung. Dies zeigt, wie Sie jede Anforderung erfüllen.'
+        framework_loaded: 'Framework geladen'
+        loaded_count: '%count% Anforderungen geladen'
         review_applicable: 'Prüfen & Anwendbarkeit markieren'
         reviewed_count: '%reviewed% von %total% geprüft'
         action:
@@ -784,6 +908,11 @@ compliance:
             all_analyzed_desc: 'Sie können eine Re-Analyse starten um die Qualitätswerte mit dem neuesten Algorithmus neu zu berechnen.'
             analyze_count: '%count% analysieren'
             analyze_all: 'Alle analysieren'
+            pending_count: '%count% ausstehend'
+            results_summary: '%analyzed% Mappings analysiert, %errors% Fehler'
+            progress:
+                status: 'Analyse läuft…'
+                ready: 'Bereit'
         progress:
             analyzed: 'Analysiert'
             remaining: 'Verbleibend'
@@ -792,6 +921,10 @@ compliance:
             ready: 'Bereit'
             complete: 'Analyse abgeschlossen!'
             reload: 'Seite neu laden'
+        confidence:
+            high: 'Hoch (≥80)'
+            medium: 'Mittel (60-79)'
+            low: 'Niedrig (<60)'
         charts:
             confidence_distribution: 'Confidence-Verteilung'
             gap_stats_priority: 'Gap-Statistiken nach Priorität'
@@ -1069,16 +1202,160 @@ admin:
                 gxp: 'Hersteller, Distributoren oder Service-Provider von Arzneimitteln, Medizinprodukten oder deren IT-Systemen (GMP-/GxP-regulierte Branchen).'
                 bdsg: 'Verantwortliche oder Auftragsverarbeiter mit Sitz oder PII-Verarbeitung in Deutschland.'
                 eu_ai_act: 'Anbieter oder Deployer von KI-Systemen, die als High-Risk nach EU AI Act Anhang III klassifiziert sind.'
+                iso42001: 'Organisationen, die KI-Systeme entwickeln, bereitstellen oder nutzen und ein zertifizierbares KI-Managementsystem aufbauen wollen (ergänzt EU AI Act).'
+                iso27017: 'Cloud-Service-Anbieter oder -Nutzer, die cloud-spezifische Sicherheitscontrols zusätzlich zu ISO 27001/27002 nachweisen wollen.'
+                iso27018: 'Public-Cloud-Anbieter, die personenbezogene Daten (PII) im Auftrag verarbeiten und Datenschutz-Controls nachweisen müssen.'
+                eu_cra: 'Hersteller, Importeure oder Händler von Produkten mit digitalen Elementen (Hardware/Software) mit EU-Marktzugang.'
+                pci_dss: 'Organisationen, die Karteninhaberdaten speichern, verarbeiten oder übertragen (Händler, Acquirer, Payment-Provider).'
 
 fulfillment:
     field:
         responsible_person_user: 'Verantwortliche Person (Benutzer)'
         responsible_person: 'Verantwortliche Person (Kontakt)'
         responsible_deputy_persons: 'Stellvertreter'
+        attestation_owner_person: 'Attestierungs-Verantwortlicher (Governance)'
     placeholder:
         responsible_person_user: '-- Benutzer auswählen --'
         responsible_person: '-- Kontaktperson auswählen --'
+        attestation_owner_person: '-- Attestierungs-Verantwortliche/n auswählen --'
     help:
         responsible_person_user: 'Systembenutzer, der für die Umsetzung verantwortlich ist'
         responsible_person: 'Kontaktperson (Personenstamm) als Verantwortliche'
         responsible_deputy_persons: 'Stellvertretende Kontaktpersonen für diesen Anforderungspunkt'
+        attestation_owner_person: 'Person, die die jaehrliche Konformitaets-Attestierung formal abzeichnet. Unabhängig vom taeglichen Verantwortlichen — typischerweise CISO, Compliance-Officer oder externer Auditor.'
+
+    # V3 B6 / EF-4: Inverse-Coverage Impact-Analyse
+    coverage:
+        impact:
+            title:
+                asset: 'Compliance-Impact dieses Assets'
+                control: 'Compliance-Impact dieses Controls'
+                risk: 'Compliance-Impact dieses Risks'
+            help:
+                asset: 'Wenn dieses Asset deaktiviert oder neu klassifiziert wird, betrifft das die folgenden Framework-Anforderungen.'
+                control: 'Wenn dieses Control geändert oder deaktiviert wird, betrifft das die folgenden Framework-Anforderungen — sie verlieren u.U. ihre Erfüllung.'
+                risk: 'Dieses Risk steht in Bezug zu den folgenden Framework-Anforderungen (über gemappte Controls bzw. data-source mapping).'
+            view_modal: 'Details anzeigen'
+
+# Top-level coverage alias for templates using coverage.impact.* directly
+coverage:
+    impact:
+        view_modal: 'Details anzeigen'
+        title:
+            asset: 'Compliance-Abdeckung dieses Assets'
+            control: 'Compliance-Abdeckung dieses Controls'
+            risk: 'Compliance-Abdeckung dieses Risks'
+        help:
+            asset: 'Frameworks und Anforderungen, die dieses Asset abdeckt — über zugeordnete Controls bzw. data-source-Mapping.'
+            control: 'Wenn dieses Control geändert oder deaktiviert wird, betrifft das die folgenden Framework-Anforderungen.'
+            risk: 'Dieses Risk steht in Bezug zu den folgenden Framework-Anforderungen (über gemappte Controls bzw. data-source-Mapping).'
+
+# ─── mapping_admin JSON error/progress responses ───────────────────────────
+mapping_admin:
+    error:
+        both_ids_required: 'Beide Framework IDs müssen angegeben werden!'
+        frameworks_must_differ: 'Die beiden Frameworks müssen unterschiedlich sein!'
+        frameworks_not_found: 'Ein oder beide Frameworks wurden nicht gefunden!'
+        iso_required: 'ISO 27001 Framework muss zuerst geladen werden!'
+        min_two_frameworks: 'Mindestens 2 Frameworks müssen geladen sein!'
+    progress:
+        batch_created: 'Batch %batch%: %count% Mappings erstellt'
+        batch_progress: '(%percent%% – %processed%/%total% verarbeitet, %remaining% verbleibend)'
+        all_done: ' – Alle Mappings erstellt!'
+
+# ─── export CSV / Excel column headers and labels ───────────────────────────
+export:
+    section:
+        summary: 'Zusammenfassung'
+        gaps_by_severity: 'Gaps nach Severity'
+        framework_relationships: 'Framework-Beziehungen'
+        framework_comparison: 'Framework-Vergleich'
+    column:
+        framework: 'Framework'
+        requirement_id: 'Anforderungs-ID'
+        title: 'Titel'
+        category: 'Kategorie'
+        description: 'Beschreibung'
+        reusable_data: 'Wiederverwendbare Daten'
+        data_source: 'Datenquelle'
+        estimated_time_savings_h: 'Geschätzte Zeitersparnis (h)'
+        reuse_percentage: 'Reuse-Prozentsatz (%)'
+        confidence: 'Confidence'
+        total_time_savings_hours: 'Gesamt Zeitersparnis (Stunden)'
+        total_time_savings_days: 'Gesamt Zeitersparnis (Tage)'
+        analyzed_requirements: 'Anzahl analysierten Anforderungen'
+        time_savings_hours: 'Zeitersparnis (Stunden)'
+        time_savings_days: 'Zeitersparnis (Tage)'
+        time_savings_h: 'Zeitersparnis (h)'
+        sources: 'Quellen'
+        total_requirements: 'Gesamt Anforderungen'
+        met_requirements: 'Erfüllte Anforderungen'
+        identified_gaps: 'Identifizierte Gaps'
+        compliance_score_pct: 'Compliance Score (%)'
+        compliance_score: 'Compliance Score'
+        priority_severity: 'Priorität / Severity'
+        status: 'Status'
+        fulfillment_pct: 'Erfüllung (%)'
+        gap_reason: 'Gap-Grund'
+        export_date: 'Export-Datum'
+        source_framework: 'Quell-Framework'
+        target_framework: 'Ziel-Framework'
+        mapped_requirements: 'Gemappte Anforderungen'
+        active_frameworks: 'Aktive Frameworks'
+        framework_relations: 'Framework-Beziehungen'
+        transitive_opportunities: 'Transitive Möglichkeiten'
+        total_supported_requirements: 'Gesamt unterstützte Anforderungen'
+        supported_requirements: 'Unterstützte Anforderungen'
+        metric: 'Kennzahl'
+        value: 'Wert'
+        mapping_status: 'Mapping-Status'
+        match_quality_pct: 'Match-Qualität (%)'
+        overlap_percentage: 'Überlappung (%)'
+        framework1_requirements: 'Framework 1 Anforderungen'
+        framework2_requirements: 'Framework 2 Anforderungen'
+        mapped: 'Gemappt'
+    sheet:
+        reuse_details: 'Reuse Details'
+        gap_details: 'Gap Details'
+        framework_relations: 'Framework-Beziehungen'
+        detailed_comparison: 'Detaillierter Vergleich'
+    label:
+        critical: 'Kritisch'
+        high: 'Hoch'
+        medium: 'Mittel'
+        low: 'Niedrig'
+        critical_gaps: 'Kritisch'
+        high_gaps: 'Hoch'
+        medium_gaps: 'Mittel'
+        low_gaps: 'Niedrig'
+        not_met: 'Nicht erfüllt'
+        mapped: 'Gemappt'
+        not_mapped: 'Nicht gemappt'
+    status:
+        not_applicable: 'Nicht anwendbar'
+        not_implemented: 'Nicht umgesetzt'
+        partially_implemented: 'Teilweise umgesetzt'
+        partially_implemented_short: 'Teilweise'
+        implemented: 'Umgesetzt'
+        not_assessed: 'Nicht bewertet'
+
+    # TISAX per-tier assessment KPI tiles (framework show page)
+    tisax:
+        tier_is_label: 'Informationssicherheit (Reifegrad Ø → Ziel AL3: 3)'
+        tier_is_value: 'Ø %avg% / Ziel 3,0 → Lücke %gap%'
+        tier_pp_label: 'Prototypenschutz (%compliant% / %total% konform)'
+        tier_pp_value: '%compliant% / %total% konform (%pct% %%)'
+        tier_dp_label: 'Datenschutz (%in_place% / %total% vorhanden)'
+        tier_dp_value: '%in_place% / %total% Maßnahmen vorhanden (%pct% %%)'
+        schutzbedarf_cascade_title: 'Schutzbedarf-Ergänzungen relevant — BSI 3.6 Maximumprinzip'
+        schutzbedarf_cascade_body: >
+          %high_asset_count% Asset(s) mit hohem Schutzbedarf (C/I/A ≥ 4) und
+          %very_high_asset_count% Asset(s) mit sehr hohem Schutzbedarf (C/I/A ≥ 5) vorhanden.
+          %high_control_count% VDA-ISA-Kontrollen haben Zusatzanforderungen bei hohem Schutzbedarf (Spalte L),
+          %very_high_control_count% Kontrollen bei sehr hohem Schutzbedarf (Spalte M).
+        schutzbedarf_cascade_byo: 'Bitte lesen Sie den Anforderungstext in Ihrem lizenzierten ENX-Workbook nach (BYO-Assistent).'
+
+framework_show:
+    tisax_skeleton_hint: 'Dieses TISAX-Framework hat keine Kontrollen. Das VDA-ISA-Arbeitsbuch ist ENX-lizenziert und nicht weitergabe-berechtigt. Bitte den BYO-Import-Assistenten mit Ihrer lizenzierten Kopie verwenden.'
+    action:
+        open_byo_wizard: 'BYO-Import-Assistent öffnen'

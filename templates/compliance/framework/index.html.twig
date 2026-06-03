@@ -1,6 +1,6 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
-
 {% block title %}{{ 'compliance.framework.title'|trans({}, 'compliance') }}{% endblock %}
 
 {% block body %}
@@ -12,22 +12,20 @@
         ]
     } %}
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1><i class="fa-icon fa-icon--compliance-shield" aria-hidden="true"></i> {{ 'compliance.framework.heading'|trans({}, 'compliance') }}</h1>
-            <p class="text-muted">{{ 'compliance.framework.description'|trans({}, 'compliance') }}</p>
-        </div>
-        <div>
-            {% if is_granted('ROLE_ADMIN') %}
-                <a href="{{ path('app_compliance_framework_new') }}" class="fa-cyber-btn fa-cyber-btn--success">
-                    <i class="fa-icon fa-icon--ui-plus" aria-hidden="true"></i> {{ 'compliance.framework.action.new'|trans({}, 'compliance') }}
-                </a>
-            {% endif %}
-            <a href="{{ path('app_compliance_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> {{ 'common.back'|trans({}, 'messages') }}
-            </a>
-        </div>
-    </div>
+    {% set _header_actions = [
+        { label: 'common.back'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_compliance_index') }
+    ] %}
+    {% if is_granted('ROLE_ADMIN') %}
+        {% set _header_actions = _header_actions|merge([
+            { label: 'compliance.framework.action.new'|trans({}, 'compliance'), variant: 'primary', icon: 'ui-plus', href: path('app_compliance_framework_new') }
+        ]) %}
+    {% endif %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'compliance-shield', label: 'nav.compliance'|trans({}, 'nav') },
+        title: 'compliance.framework.heading'|trans({}, 'compliance'),
+        subtitle: 'compliance.framework.description'|trans({}, 'compliance'),
+        actions: _header_actions
+    }) }}
 
     {# Skip link for filters section - WCAG 2.4.1 #}
     <a href="#filter-section" class="skip-link">{{ 'accessibility.skip_to_filters'|trans({}, 'messages') }}</a>
@@ -44,7 +42,7 @@
             <form method="get" class="row g-3" role="search" aria-label="{{ 'common.filters'|trans({}, 'messages') }}">
                 <div class="col-md-3">
                     <label class="form-label" for="filter-active">{{ 'compliance.framework.field.active'|trans({}, 'compliance') }}</label>
-                    <select name="active" id="filter-active" class="form-select">
+                    <select name="active" id="filter-active" class="form-select fa-cyber-input__field">
                         <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                         <option value="1" {{ filters.active == '1' ? 'selected' }}>{{ 'common.yes'|trans({}, 'messages') }}</option>
                         <option value="0" {{ filters.active == '0' ? 'selected' }}>{{ 'common.no'|trans({}, 'messages') }}</option>
@@ -52,7 +50,7 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label" for="filter-mandatory">{{ 'compliance.framework.field.mandatory'|trans({}, 'compliance') }}</label>
-                    <select name="mandatory" id="filter-mandatory" class="form-select">
+                    <select name="mandatory" id="filter-mandatory" class="form-select fa-cyber-input__field">
                         <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                         <option value="1" {{ filters.mandatory == '1' ? 'selected' }}>{{ 'common.yes'|trans({}, 'messages') }}</option>
                         <option value="0" {{ filters.mandatory == '0' ? 'selected' }}>{{ 'common.no'|trans({}, 'messages') }}</option>
@@ -60,7 +58,7 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label" for="filter-industry">{{ 'compliance.framework.field.industry'|trans({}, 'compliance') }}</label>
-                    <select name="industry" id="filter-industry" class="form-select">
+                    <select name="industry" id="filter-industry" class="form-select fa-cyber-input__field">
                         <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                         {% for industry in industries %}
                             <option value="{{ industry }}" {{ filters.industry == industry ? 'selected' }}>{{ industry }}</option>
@@ -108,6 +106,7 @@
                         </tr>
                     {% endblock %}
                     {% block table_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                         {% for framework in frameworks %}
                             <tr>
                                 <td><code>{{ framework.code }}</code></td>
@@ -137,16 +136,7 @@
                                 </td>
                                 <td>
                                     {% set percentage = framework.compliancePercentage %}
-                                    <div class="progress progress-h-20">
-                                        <div class="progress-bar {% if percentage >= 80 %}bg-success{% elseif percentage >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
-                                             role="progressbar"
-                                             style="width: {{ percentage }}%"
-                                             aria-valuenow="{{ percentage }}"
-                                             aria-valuemin="0"
-                                             aria-valuemax="100">
-                                            {{ percentage|round }}%
-                                        </div>
-                                    </div>
+                                    {{ _fa_progress.render({ value: percentage, tone: percentage >= 80 ? 'success' : (percentage >= 50 ? 'warning' : 'danger'), showText: true }) }}
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm" role="group" aria-label="{{ 'common.actions'|trans({}, 'messages') }}">
@@ -177,7 +167,7 @@
                     norm_ref: 'ISO 27001 Clause 4.2, 6.1.3',
                     help_link: path('app_help_glossary') ~ '#glossary-framework',
                     actions: is_granted('ROLE_ADMIN') ? [
-                        { label: 'compliance.framework.action.new'|trans({}, 'compliance'), variant: 'primary', icon: 'plus-circle', href: path('app_compliance_framework_new') }
+                        { label: 'compliance.framework.action.new'|trans({}, 'compliance'), variant: 'primary', icon: 'plus', href: path('app_compliance_framework_new') }
                     ] : []
                 }) }}
             {% endif %}

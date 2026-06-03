@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use RuntimeException;
 
 /**
  * Application-level encryption for MFA TOTP secrets.
@@ -20,7 +19,7 @@ use RuntimeException;
  * PenTest Finding PT-003 (CVSS 6.5): TOTP secrets were stored in cleartext.
  * Backup codes were already Argon2id-hashed — this closes the gap.
  */
-class MfaEncryptionService
+final class MfaEncryptionService
 {
     private const string ENCRYPTED_PREFIX = 'enc:';
 
@@ -85,7 +84,7 @@ class MfaEncryptionService
         $decoded = base64_decode($encoded, true);
 
         if ($decoded === false || strlen($decoded) < SODIUM_CRYPTO_SECRETBOX_NONCEBYTES + SODIUM_CRYPTO_SECRETBOX_MACBYTES) {
-            throw new RuntimeException('Invalid encrypted MFA secret: decoding failed');
+            throw new \App\Exception\Io\IoException('Invalid encrypted MFA secret: decoding failed');
         }
 
         $nonce = substr($decoded, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
@@ -94,7 +93,7 @@ class MfaEncryptionService
         $plaintext = sodium_crypto_secretbox_open($ciphertext, $nonce, $this->encryptionKey);
 
         if ($plaintext === false) {
-            throw new RuntimeException('MFA secret decryption failed — APP_SECRET may have changed');
+            throw new \App\Exception\Io\IoException('MFA secret decryption failed — APP_SECRET may have changed');
         }
 
         return $plaintext;

@@ -7,6 +7,7 @@ namespace App\Service\Export;
 use App\Entity\Supplier;
 use App\Entity\Tenant;
 use App\Repository\SupplierRepository;
+use App\Util\CsvSanitizer;
 
 /**
  * DORA Register of Information (ROI) CSV exporter.
@@ -70,13 +71,13 @@ final class DoraRegisterOfInformationExporter
 
         $handle = fopen('php://temp', 'w+');
         if ($handle === false) {
-            throw new \RuntimeException('Unable to open in-memory stream for CSV export.');
+            throw new \App\Exception\Io\IoException('Unable to open in-memory stream for CSV export.');
         }
 
         fputcsv($handle, self::COLUMNS, ',', '"', '\\');
 
         foreach ($suppliers as $supplier) {
-            fputcsv($handle, array_map([$this, 'sanitizeCsvValue'], $this->buildRow($supplier, $entityLei)), ',', '"', '\\');
+            fputcsv($handle, array_map([CsvSanitizer::class, 'sanitize'], $this->buildRow($supplier, $entityLei)), ',', '"', '\\');
         }
 
         rewind($handle);
@@ -84,29 +85,24 @@ final class DoraRegisterOfInformationExporter
         fclose($handle);
 
         if ($body === false) {
-            throw new \RuntimeException('Failed to read CSV body from stream.');
+            throw new \App\Exception\Io\IoException('Failed to read CSV body from stream.');
         }
 
         return self::UTF8_BOM . $body;
     }
 
     /**
-     * Resolve the reporting entity's own LEI.
+     * Resolve the reporting entity's own LEI (ISO 17442) from the tenant.
      *
-     * TODO(MINOR-6): Tenant entity currently exposes no LEI field. Once the
-     * reporting entity's LEI is captured (e.g. Tenant::getLeiCode()), plug it
-     * in here. Until then the `entity_lei` column is emitted as an empty
-     * string — the ITS allows blank fields but flags them for review.
+     * Emits an empty string when the tenant has no LEI captured — the ITS
+     * allows blank fields but flags them for review, so tenants should fill
+     * {@see Tenant::$leiCode} (Organisation settings) for a clean filing.
      */
     private function resolveEntityLei(Tenant $tenant): string
     {
-        if (method_exists($tenant, 'getLeiCode')) {
-            $lei = $tenant->getLeiCode();
-            if (is_string($lei) && $lei !== '') {
-                return $lei;
-            }
-        }
-        return '';
+        $lei = $tenant->getLeiCode();
+
+        return $lei !== null && $lei !== '' ? $lei : '';
     }
 
     /**
@@ -169,20 +165,5 @@ final class DoraRegisterOfInformationExporter
             static fn(string $v): bool => $v !== '',
         ));
         return implode('|', $normalized);
-    }
-
-    /**
-     * Sanitize a CSV cell value to prevent formula injection (OWASP - Injection).
-     * Prefixes values starting with =, +, -, @, TAB or CR with a single quote.
-     */
-    private function sanitizeCsvValue(mixed $value): mixed
-    {
-        if (!is_string($value)) {
-            return $value;
-        }
-        if ($value !== '' && in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
-            return "'" . $value;
-        }
-        return $value;
     }
 }

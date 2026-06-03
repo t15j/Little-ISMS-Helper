@@ -22,6 +22,59 @@ app_quick_fix_reconcile:
     controller: App\Controller\QuickFixController::reconcile
     methods: [POST]
 
+app_quick_fix_repair_orphans:
+    path: /quick-fix/repair/orphans
+    controller: App\Controller\QuickFixController::repairOrphans
+    methods: [POST]
+
+app_quick_fix_repair_mismatches:
+    path: /quick-fix/repair/tenant-mismatches
+    controller: App\Controller\QuickFixController::repairTenantMismatches
+    methods: [POST]
+
+app_quick_fix_repair_duplicates:
+    path: /quick-fix/repair/duplicates/{entityType}
+    controller: App\Controller\QuickFixController::repairDuplicates
+    methods: [POST]
+
+app_quick_fix_repair_all:
+    path: /quick-fix/repair/all
+    controller: App\Controller\QuickFixController::repairAll
+    methods: [POST]
+
+app_quick_fix_force_mark_executed:
+    path: /quick-fix/force-mark-executed
+    controller: App\Controller\QuickFixController::forceMarkExecuted
+    methods: [POST]
+
+app_quick_fix_mark_all_phantom_diff:
+    path: /quick-fix/mark-all-phantom-diff
+    controller: App\Controller\QuickFixController::markAllPhantomDiff
+    methods: [POST]
+
+app_quick_fix_force_schema_update:
+    path: /quick-fix/force-schema-update
+    controller: App\Controller\QuickFixController::forceSchemaUpdate
+    methods: [POST]
+
+# Public job-status polling endpoint for QuickFix async jobs.
+# Mirrors /admin/jobs/{id}/status but is gated by QuickFixGuard (no auth)
+# so the emergency-recovery UI can poll progress while the app boot is
+# still degraded (which is the entire reason QuickFix exists).
+app_quick_fix_job_status:
+    path: /quick-fix/jobs/{id}/status
+    controller: App\Controller\QuickFixJobStatusController::status
+    methods: [GET]
+
+# Shared progress page for QuickFix async jobs (PRG-after-POST landing).
+# Sibling to admin_job_progress_page but un-authenticated (QuickFixGuard).
+# Every QuickFix POST dispatcher redirects here with a 303 so Turbo can
+# follow the redirect instead of erroring on a 200+HTML response to a form.
+app_quick_fix_job_progress:
+    path: /quick-fix/jobs/{id}/progress
+    controller: App\Controller\QuickFixJobStatusController::progressPage
+    methods: [GET]
+
 # Root redirect - smart locale detection (without locale)
 app_home:
     path: /
@@ -70,3 +123,30 @@ app_routes:
         - '../src/Controller/SecurityController.php'
         - '../src/Controller/HomeController.php'
         - '../src/Controller/QuickFixController.php'
+        - '../src/Controller/QuickFixJobStatusController.php'
+        - '../src/Controller/SsoController.php'
+        - '../src/Controller/LifecycleController.php'
+        - '../src/Controller/GlossaryApiController.php'
+
+# Glossary API WITHOUT locale prefix — the fa-glossary-tooltip component fetches
+# /api/glossary/{acronym} directly; UI locale is passed as ?locale.
+glossary_api_routes:
+    resource: ../src/Controller/GlossaryApiController.php
+    type: attribute
+
+# Lifecycle API routes WITHOUT locale prefix — machine-to-machine JSON endpoints;
+# locale prefix would break client URLs and is unnecessary for API-style routes.
+lifecycle_routes:
+    resource: ../src/Controller/LifecycleController.php
+    type: attribute
+
+# SSO public routes WITHOUT locale prefix — must be declared AFTER app_routes so
+# this registration wins over the locale-prefixed duplicate from the directory scan.
+# IdP redirect URIs must be fixed strings; OAuth exact-match at Entra ID / Okta /
+# Google / Auth0 rejects locale-prefixed callback URIs.
+# Note: use string resource (AttributeFileLoader), NOT {path+namespace} array
+# (Psr4DirectoryLoader only handles directories and silently returns an empty
+# RouteCollection for single-file resources).
+sso_routes:
+    resource: ../src/Controller/SsoController.php
+    type: attribute

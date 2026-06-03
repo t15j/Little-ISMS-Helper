@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Controller\Trait\LocalizedFlashTrait;
 use App\Repository\MfaTokenRepository;
 use App\Repository\UserRepository;
 use App\Service\AuditLogger;
@@ -23,6 +24,8 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  */
 class MfaLoginController extends AbstractController
 {
+    use LocalizedFlashTrait;
+
     public function __construct(
         private readonly MfaService $mfaService,
         private readonly MfaTokenRepository $mfaTokenRepository,
@@ -32,7 +35,17 @@ class MfaLoginController extends AbstractController
     ) {
     }
 
-    #[Route('/mfa-challenge', name: 'app_mfa_challenge')]
+    protected function getFlashDomain(): string
+    {
+        return 'mfa';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
+    }
+
+    #[Route('/mfa-challenge', name: 'app_mfa_challenge', methods: ['GET'])]
     public function challenge(Request $request): Response
     {
         // Ensure user is authenticated but hasn't completed MFA yet
@@ -90,7 +103,7 @@ class MfaLoginController extends AbstractController
         $tokenId = (int) $request->request->get('token_id');
 
         if ($code === '' || $code === '0') {
-            $this->addFlash('mfa_error', $this->translator->trans('mfa.challenge.error.code_required'));
+            $this->addFlash('mfa_error', $this->translator->trans('mfa.challenge.error.code_required', [], 'mfa'));
             return $this->redirectToRoute('app_mfa_challenge', ['_locale' => $request->getLocale()]);
         }
 
@@ -103,7 +116,7 @@ class MfaLoginController extends AbstractController
                 'ip' => $request->getClientIp(),
             ]);
 
-            $this->addFlash('mfa_error', $this->translator->trans('mfa.challenge.error.invalid_token'));
+            $this->addFlash('mfa_error', $this->translator->trans('mfa.challenge.error.invalid_token', [], 'mfa'));
             return $this->redirectToRoute('app_mfa_challenge', ['_locale' => $request->getLocale()]);
         }
 
@@ -131,7 +144,7 @@ class MfaLoginController extends AbstractController
                 'ip' => $request->getClientIp(),
             ]);
 
-            $this->addFlash('success', $this->translator->trans('mfa.challenge.success'));
+            $this->flashSuccess('mfa.challenge.success');
 
             // Redirect to original target or dashboard
             $targetPath = $session->get('_security.main.target_path');
@@ -151,7 +164,7 @@ class MfaLoginController extends AbstractController
             'ip' => $request->getClientIp(),
         ]);
 
-        $this->addFlash('mfa_error', $this->translator->trans('mfa.challenge.error.invalid_code'));
+        $this->addFlash('mfa_error', $this->translator->trans('mfa.challenge.error.invalid_code', [], 'mfa'));
         return $this->redirectToRoute('app_mfa_challenge', ['_locale' => $request->getLocale()]);
     }
 }

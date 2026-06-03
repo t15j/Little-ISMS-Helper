@@ -78,6 +78,8 @@ risk_manager:
         forecast: 'Risikovorhersage'
         untreated_risks: 'Unbehandelte Risiken'
         overdue_treatments: 'Überfällige Behandlungen'
+        pending_approvals: 'Ausstehende Freigaben'
+        lifecycle_stuck: 'Überfällige Lifecycles'
     pipeline:
         total: 'Gesamt'
         treated: 'Behandelt'
@@ -96,6 +98,8 @@ risk_manager:
     all_treated: 'Alle Risiken sind behandelt'
     no_overdue: 'Keine überfälligen Behandlungen'
     target_date: 'Zieldatum'
+    no_pending_approvals: 'Keine ausstehenden Freigaben'
+    no_lifecycle_stuck: 'Keine überfälligen Lifecycles'
 
 # Auditor Dashboard
 auditor:
@@ -105,7 +109,7 @@ auditor:
     kpi:
         audits_ytd: 'Audits (YTD)'
         upcoming: 'Bevorstehend'
-        open_findings: 'Offene Findings'
+        open_findings: 'Offene Feststellungen'
         overdue_actions: 'Überfällige Maßnahmen'
         evidence_coverage: 'Nachweisabdeckung'
     section:
@@ -135,6 +139,99 @@ auditor:
         total: 'Gesamt'
         open: 'Offen'
         overdue: 'Überfällig'
+
+# Compliance Manager Dashboard
+compliance_manager:
+    title: 'Compliance-Manager-Dashboard'
+    subtitle: 'Frameworks, Findings, Audits, Approval-Queue — Head-of-GRC-Sicht'
+    badge: 'GRC'
+    action:
+        ciso_view: 'CISO-Sicht'
+        compliance_wizards: 'Compliance-Wizards'
+    kpi:
+        frameworks_active: 'Frameworks aktiv'
+        avg_compliance: 'Ø Compliance'
+        at_risk: 'Frameworks at-risk'
+        open_findings: 'Offene Feststellungen'
+        upcoming_audits: 'Audits 90d'
+        approval_queue: 'Doc-Approval-Queue'
+        dora_roi_status: 'DORA RoI-Status'
+        dora_roi_status_open: 'Ausstehend'
+        dora_roi_open: 'RoI öffnen'
+    section:
+        coverage_heatmap: 'Coverage-Heatmap pro Framework'
+        lowest_coverage: 'Top-3 Frameworks mit niedrigster Coverage'
+        findings_by_severity: 'Offene Feststellungen nach Schweregrad'
+        audit_schedule: 'Audit-Schedule (nächste 90 Tage)'
+        approval_queue: 'Dokument-Approval-Queue'
+        quick_actions: 'Quick-Actions'
+        dora_status: 'DORA-Verpflichtungsstatus'
+        pending_approvals: 'Ausstehende Freigaben'
+        lifecycle_stuck: 'Überfällige Lifecycles'
+    table:
+        framework: 'Framework'
+        coverage: 'Coverage'
+        bar: 'Bar'
+        status: 'Status'
+        actions: 'Aktionen'
+    status:
+        ok: 'OK'
+        at_risk: 'At Risk'
+        gap: 'Lücke'
+    severity:
+        critical: 'Critical'
+        high: 'High'
+        medium: 'Medium'
+        low: 'Low'
+    empty:
+        no_frameworks_title: 'Noch keine Frameworks aktiv'
+        no_frameworks_text: 'Aktivieren Sie ein Framework über die Compliance-Wizard-Übersicht.'
+        no_frameworks_action: 'Wizard wählen'
+        no_audits_title: 'Keine Audits geplant'
+        no_audits_text: 'In den nächsten 90 Tagen ist kein Audit terminiert.'
+        no_pending_docs_title: 'Approval-Queue leer'
+        no_pending_docs_text: 'Keine Dokumente warten auf Ihre Freigabe.'
+    lowest:
+        coverage_hint: '%coverage%% Coverage — Priorisiert für nächsten Sprint'
+        edit: 'Bearbeiten'
+    audit:
+        prefix: 'Audit #'
+    quick:
+        new_wizard: 'Neuen Wizard starten'
+        cross_mapping: 'Cross-Framework-Mapping'
+        compare_wizards: 'Wizards vergleichen'
+    common:
+        wizard: 'Wizard'
+    heatmap:
+        drill:
+            title: 'Heatmap-Drill-Down: %framework% / %section%'
+            page_title: 'Drill-Down %framework% — %section%'
+            subtitle: 'Abgedeckte Controls, Lücken und offene Findings für diese Section'
+            breadcrumb: 'Heatmap-Drill-Down'
+            action: 'Details'
+            back: 'Zurück zur Übersicht'
+            filter_section: 'Section'
+            all_sections: 'Alle Sections'
+            covered: 'Abgedeckt'
+            gaps: 'Lücken'
+            findings: 'Offene Feststellungen'
+            coverage_rate: 'Coverage-Rate'
+            fix: 'Beheben'
+            framework_not_found: 'Framework "%code%" nicht gefunden oder nicht aktiv.'
+            col:
+                req_id: 'Anforderungs-ID'
+                title: 'Titel'
+                category: 'Category'
+                controls: 'Controls'
+                priority: 'Priorität'
+                action: 'Aktion'
+            empty:
+                no_covered_title: 'Keine abgedeckten Anforderungen'
+                no_covered_text: 'Noch keine Controls dieser Section implementiert.'
+                no_gaps_title: 'Keine Lücken — alles abgedeckt!'
+                no_gaps_text: 'Alle Anforderungen dieser Section sind durch Controls abgedeckt.'
+                no_findings_title: 'Keine offenen Findings'
+                no_findings_text: 'Es gibt aktuell keine offenen Audit-Findings.'
 
 # Board Dashboard
 board:
@@ -177,3 +274,104 @@ board:
         metric: 'Metrik'
         change: 'Änderung'
         target: 'Ziel'
+
+# DPO (Datenschutzbeauftragter) Dashboard — Art. 39 DSGVO
+dpo:
+    badge: 'Datenschutz'
+    title: 'DSB-Dashboard'
+    subtitle: 'Operative DSGVO-Übersicht: Datenpannen, DSFA und Verzeichnis'
+    action:
+        vvt_export: 'VVT exportieren'
+        dpia_list: 'DSFA-Liste'
+        create_dpia: 'DSFA anlegen'
+    kpi:
+        open_breaches: 'Offene Datenpannen'
+        ticking_72h: '72h-Frist läuft'
+        dpias_in_progress: 'DSFAs in Bearbeitung'
+        activities_needing_dpia: 'Verfahren ohne DSFA'
+        activities_due_review: 'Verfahren zur Überprüfung'
+        third_country_transfers: 'Drittlandsübermittlungen'
+        dora_obligation: 'DORA-Verpflichtung'
+        dora_obligated: 'Verpflichtet'
+        dora_roi_link: 'RoI öffnen'
+    section:
+        open_breaches: 'Offene Datenpannen (Art. 33 DSGVO)'
+        dpias_in_progress: 'Datenschutz-Folgenabschätzungen in Bearbeitung (Art. 35 DSGVO)'
+        activities_needing_dpia: 'Verarbeitungsverfahren ohne DSFA'
+        quick_actions: 'Schnellzugriff'
+        dora_status: 'DORA-Verpflichtungsstatus'
+        pending_approvals: 'Ausstehende Freigaben'
+        lifecycle_stuck: 'Überfällige Lifecycles'
+    empty:
+        no_breaches_title: 'Keine offenen Datenpannen'
+        no_breaches_text: 'Aktuell sind keine offenen Datenpannen zu bearbeiten.'
+        no_dpias_title: 'Keine DSFAs in Bearbeitung'
+        no_dpias_text: 'Alle Datenschutz-Folgenabschätzungen sind abgeschlossen oder noch nicht gestartet.'
+    activity:
+        no_dpia_hint: 'Verfahren mit erhöhtem Risiko — DSFA erforderlich (Art. 35 DSGVO)'
+    quick:
+        new_dpia: 'Neue DSFA'
+        report_breach: 'Datenpanne melden'
+        new_activity: 'Verfahren anlegen'
+        vvt_export: 'VVT exportieren (XLSX)'
+
+# ── ISB Dashboard (Wave 5) ──────────────────────────────────
+isb:
+    badge: 'ISB · ISO 27001'
+    title: 'ISB-Dashboard'
+    subtitle: 'Informationssicherheitsbeauftragter — ISMS-Betrieb und Kontrolle'
+    action:
+        controls: 'Maßnahmen'
+        incidents: 'Vorfälle'
+        audits: 'Audits'
+    section:
+        pending_approvals: 'Ausstehende Freigaben'
+        lifecycle_stuck: 'Überfällige Lifecycles'
+        quick_actions: 'Schnellzugriff'
+    empty:
+        no_approvals_title: 'Keine offenen Freigaben'
+        no_approvals_text: 'Alle Freigabeanfragen sind bearbeitet.'
+
+# ── BCM-Officer Dashboard (Wave 5) ─────────────────────────
+bcm_officer:
+    badge: 'BCM · ISO 22301'
+    title: 'BCM-Officer-Dashboard'
+    subtitle: 'Business-Continuity-Manager — Betrieb und Planung'
+    action:
+        bc_plans: 'BC-Pläne'
+        exercises: 'Übungen'
+        crisis_team: 'Krisenstab'
+    section:
+        pending_approvals: 'Ausstehende Freigaben'
+        lifecycle_stuck: 'Überfällige Lifecycles'
+        quick_actions: 'Schnellzugriff'
+    empty:
+        no_approvals_title: 'Keine offenen Freigaben'
+        no_approvals_text: 'Alle Freigabeanfragen sind bearbeitet.'
+
+# ── TISAX Per-Tier Statistics (shared across persona dashboards) ──────────────
+tisax:
+    section:
+        title: 'TISAX Reifegradübersicht'
+        subtitle: 'VDA-ISA 6 — Drei-Tier-Bewertung'
+    tier:
+        information_security:  'Informationssicherheit (Kap. 1–6)'
+        prototype_protection:  'Prototypenschutz (Kap. 7–8)'
+        data_protection:       'Datenschutz (Kap. 9 / DSGVO)'
+    label:
+        avg_maturity: 'Ø Reifegrad'
+        target:       'Ziel AL3'
+        gap:          'Lücke'
+        assessed:     'Bewertet'
+        total:        'Gesamt'
+        compliant:    'Konform'
+        not_compliant: 'Nicht konform'
+        not_applicable: 'Nicht anwendbar'
+        pct_compliant: 'Konformitätsquote'
+    grade:
+        critical: 'Kritisch'
+        amber:    'Verbesserungsbedarf'
+        green:    'Ziel erreicht'
+    empty:
+        no_tisax_title: 'Keine TISAX-Anforderungen'
+        no_tisax_text:  'Bisher wurden keine VDA-ISA-Anforderungen hochgeladen.'

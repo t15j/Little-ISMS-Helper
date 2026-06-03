@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% trans_default_domain 'change_requests' %}
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
@@ -16,12 +17,19 @@
     } %}
 
     {{ _fa_page_header.render({
-        badge: { icon: 'arrow-repeat', label: 'change_request.title'|trans({}, 'change_requests') },
+        badge: { icon: 'util-refresh', label: 'change_request.title'|trans({}, 'change_requests') },
         title: 'change_request.page.title'|trans({}, 'change_requests'),
         actions: [
-            { label: 'change_request.action.create'|trans({}, 'change_requests'), href: path('app_change_request_new'), variant: 'primary', icon: 'plus-lg' }
+            { label: 'change_request.action.create'|trans({}, 'change_requests'), href: path('app_change_request_new'), variant: 'primary', icon: 'plus' }
         ]
     }) }}
+{% set _global_hints = alva_hints('change_request_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
     <main class="fa-aurora-surface">
 
     {% if statistics %}
@@ -73,6 +81,7 @@
     {% endif %}
 
     {% embed '_components/_card.html.twig' %}
+        {% block card_attrs %}data-controller="bulk-actions" data-bulk-actions-endpoint-value="/{{ app.request.locale }}/change-request"{% endblock %}
         {% block card_header %}
             <div class="card-header">
                 {%- set requestCount = change_requests|length -%}
@@ -88,6 +97,13 @@
             } %}
                 {% block table_head %}
                     <tr>
+                        <th scope="col" class="bulk-select-column">
+                            <input type="checkbox"
+                                   class="form-check-input"
+                                   data-action="bulk-actions#selectAll"
+                                   data-bulk-actions-target="selectAllCheckbox"
+                                   aria-label="{{ 'bulk_actions.select_all'|trans({}, 'messages') }}">
+                        </th>
                         <th scope="col">{{ 'change_request.table.change_number'|trans({}, 'change_requests') }}</th>
                         <th scope="col">{{ 'change_request.table.title'|trans({}, 'change_requests') }}</th>
                         <th scope="col">{{ 'change_request.table.type'|trans({}, 'change_requests') }}</th>
@@ -101,6 +117,14 @@
                 {% block table_body %}
                     {% for change in change_requests %}
                     <tr>
+                        <td class="bulk-select-column">
+                            <input type="checkbox"
+                                   class="form-check-input"
+                                   data-bulk-actions-target="item"
+                                   data-action="bulk-actions#selectItem"
+                                   value="{{ change.id }}"
+                                   aria-label="{{ 'common.select'|trans({}, 'messages') }} {{ change.changeNumber }}">
+                        </td>
                         <td><a href="{{ path('app_change_request_show', {id: change.id}) }}">{{ change.changeNumber }}</a></td>
                         <td>{{ change.title|slice(0, 40) }}...</td>
                         <td><span class="badge badge-{{ change.changeType }}">{{ ('change_request.change_type.' ~ change.changeType)|trans({}, 'change_requests') }}</span></td>
@@ -116,12 +140,17 @@
                     {% endfor %}
                 {% endblock %}
             {% endembed %}
+
+            {# Bulk Action Bar #}
+            {% include '_components/_bulk_action_bar.html.twig' with {
+                actions: ['export', 'delete']
+            } %}
             {% else %}
             {{ _fa_empty_state.render({
                 mood: 'sleeping',
                 title: 'change_request.empty.message'|trans({}, 'change_requests'),
                 actions: [
-                    { label: 'change_request.empty.create_first'|trans({}, 'change_requests'), variant: 'primary', icon: 'plus-circle', href: path('app_change_request_new') }
+                    { label: 'change_request.empty.create_first'|trans({}, 'change_requests'), variant: 'primary', icon: 'plus', href: path('app_change_request_new') }
                 ]
             }) }}
             {% endif %}

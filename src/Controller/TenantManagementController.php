@@ -36,6 +36,7 @@ class TenantManagementController extends AbstractController
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly TenantRepository $tenantRepository,
+        private readonly \App\Repository\UserRepository $userRepository,
         private readonly CorporateGovernanceRepository $corporateGovernanceRepository,
         private readonly LoggerInterface $logger,
         private readonly AuditLogger $auditLogger,
@@ -45,6 +46,7 @@ class TenantManagementController extends AbstractController
         private readonly MultiTenantCheckService $multiTenantCheckService,
         private readonly ISMSContextService $ismsContextService,
         private readonly ISMSContextRepository $ismsContextRepository,
+        private readonly \App\Service\AssetSubTypeSeeder $assetSubTypeSeeder,
         private readonly string $uploadsDirectory = 'uploads/tenants',
     ) {
     }
@@ -83,6 +85,7 @@ class TenantManagementController extends AbstractController
             'totalCount' => count($this->tenantRepository->findAll()),
             'activeCount' => count($this->tenantRepository->findBy(['isActive' => true])),
             'inactiveCount' => count($this->tenantRepository->findBy(['isActive' => false])),
+            'orphanUserCount' => $this->userRepository->countOrphan(),
         ]);
     }
     #[Route('/admin/tenants/new', name: 'tenant_management_new', methods: ['GET', 'POST'])]
@@ -90,6 +93,12 @@ class TenantManagementController extends AbstractController
     public function new(Request $request): Response
     {
         $tenant = new Tenant();
+        // Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+        // Initial-marking bootstrap: tenants created via the admin UI are
+        // operational from day one. Bypass the workflow on create because
+        // the marking-store is not yet wired for an unpersisted entity;
+        // setStatus() mirrors into isActive so legacy readers stay correct.
+        $tenant->setStatus(Tenant::STATUS_ACTIVE);
         $form = $this->createForm(TenantType::class, $tenant);
         $form->handleRequest($request);
 
@@ -105,14 +114,17 @@ class TenantManagementController extends AbstractController
                     }
                 }
 
-                // Handle settings JSON
-                $settingsJson = $form->get('settings')->getData();
-                if ($settingsJson) {
-                    $tenant->setSettings(json_decode((string) $settingsJson, true));
-                }
+                // Settings are now mapped via App\Form\Type\JsonStructuredType —
+                // the JsonArrayTransformer round-trips array<->JSON and raises a
+                // user-friendly TransformationFailedException on invalid JSON
+                // instead of silently writing null (C-06).
 
                 $this->entityManager->persist($tenant);
                 $this->entityManager->flush();
+
+                // Seed BSI IT-Grundschutz default asset sub-types so the
+                // sub-type dropdown is not empty for new tenants (Bug S18 B2).
+                $this->assetSubTypeSeeder->applyPreset($tenant, \App\Service\AssetSubTypeSeeder::PRESET_BSI);
 
                 $this->logger->info('Tenant created', [
                     'tenant_id' => $tenant->getId(),
@@ -149,11 +161,15 @@ class TenantManagementController extends AbstractController
             }
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/tenants/form.html.twig', [
             'tenant' => $tenant,
             'form' => $form,
             'isEdit' => false,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/admin/tenants/corporate-structure', name: 'tenant_management_corporate_structure', methods: ['GET'])]
     #[IsGranted('TENANT_VIEW')]
@@ -252,11 +268,9 @@ class TenantManagementController extends AbstractController
                     }
                 }
 
-                // Handle settings JSON
-                $settingsJson = $form->get('settings')->getData();
-                if ($settingsJson) {
-                    $tenant->setSettings(json_decode((string) $settingsJson, true));
-                }
+                // Settings are now mapped via App\Form\Type\JsonStructuredType
+                // (C-06). The JsonArrayTransformer has already deserialised the
+                // textarea content into $tenant->getSettings() by this point.
 
                 // MRIS-KPI-Toggle (inline checkbox, gated to ROLE_ADMIN). Merge
                 // statt überschreiben, damit andere Settings-Keys erhalten bleiben.
@@ -312,16 +326,25 @@ class TenantManagementController extends AbstractController
             }
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/tenants/form.html.twig', [
             'tenant' => $tenant,
             'form' => $form,
             'isEdit' => true,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/admin/tenants/{id}/toggle', name: 'tenant_management_toggle', methods: ['POST'])]
     #[IsGranted('TENANT_EDIT')]
-    public function toggle(Tenant $tenant): Response
+    public function toggle(Tenant $tenant, Request $request): Response
     {
+        if (!$this->isCsrfTokenValid('toggle_tenant_' . $tenant->getId(), $request->request->get('_token'))) {
+            $this->addFlash('danger', 'common.csrf_error');
+            return $this->redirectToRoute('tenant_management_index');
+        }
+
         try {
             $previousStatus = $tenant->isActive();
             $tenant->setIsActive(!$previousStatus);
@@ -489,6 +512,11 @@ class TenantManagementController extends AbstractController
     #[IsGranted('TENANT_EDIT')]
     public function setParent(Request $request, Tenant $tenant): Response
     {
+        if (!$this->isCsrfTokenValid('set_parent', $request->request->get('_token'))) {
+            $this->addFlash('danger', 'common.csrf_error');
+            return $this->redirectToRoute('tenant_management_corporate_structure');
+        }
+
         $parentId = $request->request->get('parent_id');
         $governanceModel = $request->request->get('governance_model');
 
@@ -572,6 +600,11 @@ class TenantManagementController extends AbstractController
     #[IsGranted('TENANT_EDIT')]
     public function updateGovernance(Request $request, Tenant $tenant): Response
     {
+        if (!$this->isCsrfTokenValid('update_governance', $request->request->get('_token'))) {
+            $this->addFlash('danger', 'common.csrf_error');
+            return $this->redirectToRoute('tenant_management_corporate_structure');
+        }
+
         $governanceModel = $request->request->get('governance_model');
 
         if (!$governanceModel || !in_array($governanceModel, ['hierarchical', 'shared', 'independent'])) {
@@ -889,10 +922,14 @@ class TenantManagementController extends AbstractController
             }
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/tenants/organisation_context.html.twig', [
             'tenant' => $tenant,
             'form' => $form,
             'current_settings' => $orgSettings,
-        ]);
+        ], new Response(status: $status));
     }
 }

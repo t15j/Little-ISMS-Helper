@@ -1,26 +1,31 @@
 {% extends 'admin/layout.html.twig' %}
+{% trans_default_domain 'gstool_import' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_status_pill.html.twig' as pill %}
 
 {% block title %}{{ 'gstool_import.title'|trans({}, 'gstool_import') }}{% endblock %}
 
 {% block admin_title %}{{ 'gstool_import.title'|trans({}, 'gstool_import') }}{% endblock %}
 
-{% block admin_content %}
-<div class="container">
-    {% include '_components/_breadcrumb.html.twig' with {
-        breadcrumbs: [
-            { label: 'nav.admin'|trans({}, 'nav'), url: path('admin_dashboard') },
-            { label: 'gstool_import.title'|trans({}, 'gstool_import') }
-        ]
-    } only %}
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item active" aria-current="page">{{ 'gstool_import.title'|trans({}, 'gstool_import') }}</li>
+{% endblock %}
 
-    <div class="card mb-4">
-        <div class="card-header">
-            <h2 class="h5 mb-0">
+{% block admin_content %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'ui-upload', label: 'Import' },
+        title: 'gstool_import.title'|trans({}, 'gstool_import'),
+        subtitle: 'gstool_import.intro'|trans({}, 'gstool_import'),
+    }) }}
+
+    <section class="fa-section mb-4">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">
                 <i class="fa-icon fa-icon--nav-upload" aria-hidden="true"></i>
                 {{ 'gstool_import.upload.card_title'|trans({}, 'gstool_import') }}
             </h2>
         </div>
-        <div class="card-body">
+        <div class="fa-section__body">
             <p class="text-muted">{{ 'gstool_import.intro'|trans({}, 'gstool_import') }}</p>
 
             {{ form_start(form) }}
@@ -53,12 +58,12 @@
 &lt;/gstool-export&gt;</code></pre>
             </div>
         </div>
-    </div>
+    </section>
 
     {% if result is not null %}
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h2 class="h5 mb-0">
+        <section class="fa-section">
+            <div class="fa-section__header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h2 class="fa-section__title">
                     {% if isDryRun %}
                         <i class="fa-icon fa-icon--status-pending text-warning" aria-hidden="true"></i>
                         {{ 'gstool_import.result.preview_title'|trans({}, 'gstool_import') }}
@@ -70,7 +75,7 @@
                         {% endif %}
                     {% endif %}
                 </h2>
-                <span class="badge bg-secondary">
+                <span class="fa-status-pill fa-status-pill--neutral">
                     {{ 'gstool_import.result.summary'|trans({
                         '%new%': result.summary.new,
                         '%update%': result.summary.update,
@@ -78,24 +83,24 @@
                     }, 'gstool_import') }}
                 </span>
             </div>
-            <div class="card-body p-0">
+            <div class="fa-section__body p-0">
                 {% if result.header_error is not null %}
                     <div class="p-3">
-                        <div class="alert alert-danger mb-0">{{ result.header_error }}</div>
+                        <div class="fa-alert fa-alert--danger mb-0">{{ result.header_error }}</div>
                     </div>
                 {% else %}
                     <ul class="nav nav-tabs px-3 pt-3" role="tablist">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active" id="tab-assets" data-bs-toggle="tab" data-bs-target="#pane-assets" type="button" role="tab">
                                 {{ 'gstool_import.tab.assets'|trans({}, 'gstool_import') }}
-                                <span class="badge bg-secondary ms-1">{{ result.rows|length }}</span>
+                                <span class="fa-status-pill fa-status-pill--neutral ms-1">{{ result.rows|length }}</span>
                             </button>
                         </li>
                         {% if result.bausteine_rows is defined and result.bausteine_rows|length > 0 %}
                         <li class="nav-item" role="presentation">
                             <button class="nav-link" id="tab-bausteine" data-bs-toggle="tab" data-bs-target="#pane-bausteine" type="button" role="tab">
                                 {{ 'gstool_import.tab.bausteine'|trans({}, 'gstool_import') }}
-                                <span class="badge bg-secondary ms-1">{{ result.bausteine_rows|length }}</span>
+                                <span class="fa-status-pill fa-status-pill--neutral ms-1">{{ result.bausteine_rows|length }}</span>
                             </button>
                         </li>
                         {% endif %}
@@ -103,7 +108,7 @@
                         <li class="nav-item" role="presentation">
                             <button class="nav-link" id="tab-massnahmen" data-bs-toggle="tab" data-bs-target="#pane-massnahmen" type="button" role="tab">
                                 {{ 'gstool_import.tab.massnahmen'|trans({}, 'gstool_import') }}
-                                <span class="badge bg-secondary ms-1">{{ result.massnahmen_rows|length }}</span>
+                                <span class="fa-status-pill fa-status-pill--neutral ms-1">{{ result.massnahmen_rows|length }}</span>
                             </button>
                         </li>
                         {% endif %}
@@ -111,7 +116,7 @@
                         <li class="nav-item" role="presentation">
                             <button class="nav-link" id="tab-risiken" data-bs-toggle="tab" data-bs-target="#pane-risiken" type="button" role="tab">
                                 {{ 'gstool_import.tab.risiken'|trans({}, 'gstool_import') }}
-                                <span class="badge bg-secondary ms-1">{{ result.risiken_rows|length }}</span>
+                                <span class="fa-status-pill fa-status-pill--neutral ms-1">{{ result.risiken_rows|length }}</span>
                             </button>
                         </li>
                         {% endif %}
@@ -119,192 +124,181 @@
                     <div class="tab-content">
 
                     <div class="tab-pane fade show active" id="pane-assets" role="tabpanel">
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0">
-                            <thead>
-                                <tr>
-                                    <th>{{ 'gstool_import.result.line'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.result.action'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.result.gstool_id'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.result.name'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.result.asset_type'|trans({}, 'gstool_import') }}</th>
-                                    <th class="text-end">C</th>
-                                    <th class="text-end">I</th>
-                                    <th class="text-end">A</th>
-                                    <th>{{ 'gstool_import.result.error'|trans({}, 'gstool_import') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                        {% block table_head %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.result.line'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.result.action'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.result.gstool_id'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.result.name'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.result.asset_type'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">C</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">I</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">A</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.result.error'|trans({}, 'gstool_import') }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
                             {% for row in result.rows %}
-                                <tr>
-                                    <td class="text-muted small">{{ row.line ?? '' }}</td>
-                                    <td>
+                                <tr class="fa-table__row">
+                                    <td class="fa-table__cell text-muted small">{{ row.line ?? '' }}</td>
+                                    <td class="fa-table__cell">
                                         {% if row.action == 'new' %}
-                                            <span class="badge bg-success">{{ 'gstool_import.action.new'|trans({}, 'gstool_import') }}</span>
+                                            <span class="fa-status-pill fa-status-pill--success">{{ 'gstool_import.action.new'|trans({}, 'gstool_import') }}</span>
                                         {% elseif row.action == 'update' %}
-                                            <span class="badge bg-info">{{ 'gstool_import.action.update'|trans({}, 'gstool_import') }}</span>
+                                            <span class="fa-status-pill fa-status-pill--primary">{{ 'gstool_import.action.update'|trans({}, 'gstool_import') }}</span>
                                         {% elseif row.action == 'error' %}
-                                            <span class="badge bg-danger">{{ 'gstool_import.action.error'|trans({}, 'gstool_import') }}</span>
+                                            <span class="fa-status-pill fa-status-pill--danger">{{ 'gstool_import.action.error'|trans({}, 'gstool_import') }}</span>
                                         {% else %}
-                                            <span class="badge bg-secondary">{{ row.action }}</span>
+                                            <span class="fa-status-pill fa-status-pill--neutral">{{ row.action }}</span>
                                         {% endif %}
                                     </td>
-                                    <td><code>{{ row.id ?? '' }}</code></td>
-                                    <td>{{ row.name ?? '' }}</td>
-                                    <td><code class="small">{{ row.assetType ?? '' }}</code></td>
-                                    <td class="text-end">{{ row.confidentiality ?? '–' }}</td>
-                                    <td class="text-end">{{ row.integrity ?? '–' }}</td>
-                                    <td class="text-end">{{ row.availability ?? '–' }}</td>
-                                    <td class="text-danger small">{{ row.error ?? '' }}</td>
+                                    <td class="fa-table__cell"><code>{{ row.id ?? '' }}</code></td>
+                                    <td class="fa-table__cell">{{ row.name ?? '' }}</td>
+                                    <td class="fa-table__cell"><code class="small">{{ row.assetType ?? '' }}</code></td>
+                                    <td class="fa-table__cell fa-table__cell--num">{{ row.confidentiality ?? '–' }}</td>
+                                    <td class="fa-table__cell fa-table__cell--num">{{ row.integrity ?? '–' }}</td>
+                                    <td class="fa-table__cell fa-table__cell--num">{{ row.availability ?? '–' }}</td>
+                                    <td class="fa-table__cell text-danger small">{{ row.error ?? '' }}</td>
                                 </tr>
                             {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                        {% endblock %}
+                    {% endembed %}
                     </div>
 
                     {% if result.bausteine_rows is defined and result.bausteine_rows|length > 0 %}
                     <div class="tab-pane fade" id="pane-bausteine" role="tabpanel">
-                    <div class="alert alert-info mx-3 mt-3 mb-0 small">
+                    <div class="fa-alert fa-alert--info mx-3 mt-3 mb-0 small">
                         {{ 'gstool_import.bausteine.note'|trans({}, 'gstool_import') }}
                     </div>
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0">
-                            <thead>
-                                <tr>
-                                    <th>{{ 'gstool_import.bausteine.legacy_id'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.bausteine.title_old'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.bausteine.kompendium_2023'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.bausteine.title_new'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.bausteine.zielobjekt'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.bausteine.status'|trans({}, 'gstool_import') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                        {% block table_head %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.bausteine.legacy_id'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.bausteine.title_old'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.bausteine.kompendium_2023'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.bausteine.title_new'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.bausteine.zielobjekt'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.bausteine.status'|trans({}, 'gstool_import') }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
+                            {% import '_components/_status_pill.html.twig' as pill %}
                             {% for r in result.bausteine_rows %}
-                                <tr>
-                                    <td><code>{{ r.legacy_id }}</code></td>
-                                    <td class="small">{{ r.title_old ?? '–' }}</td>
-                                    <td>
+                                <tr class="fa-table__row">
+                                    <td class="fa-table__cell"><code>{{ r.legacy_id }}</code></td>
+                                    <td class="fa-table__cell small">{{ r.title_old ?? '–' }}</td>
+                                    <td class="fa-table__cell">
                                         {% if r.kompendium_2023_id %}
                                             <code class="text-success">{{ r.kompendium_2023_id }}</code>
                                         {% else %}
                                             <span class="text-danger small">{{ 'gstool_import.bausteine.unmapped'|trans({}, 'gstool_import') }}</span>
                                         {% endif %}
                                     </td>
-                                    <td class="small">{{ r.title_new ?? '–' }}</td>
-                                    <td><code class="small">{{ r.zielobjekt ?? '–' }}</code></td>
-                                    <td>
+                                    <td class="fa-table__cell small">{{ r.title_new ?? '–' }}</td>
+                                    <td class="fa-table__cell"><code class="small">{{ r.zielobjekt ?? '–' }}</code></td>
+                                    <td class="fa-table__cell">
                                         {% set s = r.status %}
-                                        <span class="badge bg-{{ s == 'direct' ? 'success' : s == 'split' ? 'warning' : s == 'merged' ? 'info' : s == 'removed' ? 'danger' : s == 'bcm' ? 'primary' : 'secondary' }}">
-                                            {{ s }}
-                                        </span>
+                                        {{ pill.render(s, s == 'direct' ? 'success' : (s == 'split' ? 'warning' : (s == 'merged' ? 'primary' : (s == 'removed' ? 'danger' : (s == 'bcm' ? 'primary' : 'neutral')))), {size: 'sm'}) }}
                                         {% if r.note %}<div class="small text-muted">{{ r.note }}</div>{% endif %}
                                     </td>
                                 </tr>
                             {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                        {% endblock %}
+                    {% endembed %}
                     </div>
                     {% endif %}
 
                     {% if result.massnahmen_rows is defined and result.massnahmen_rows|length > 0 %}
                     <div class="tab-pane fade" id="pane-massnahmen" role="tabpanel">
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0">
-                            <thead>
-                                <tr>
-                                    <th>{{ 'gstool_import.massnahmen.legacy_id'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.massnahmen.titel'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.massnahmen.baustein'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.massnahmen.umsetzungsstatus'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.massnahmen.implementation_status'|trans({}, 'gstool_import') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                        {% block table_head %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.massnahmen.legacy_id'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.massnahmen.titel'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.massnahmen.baustein'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.massnahmen.umsetzungsstatus'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.massnahmen.implementation_status'|trans({}, 'gstool_import') }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
                             {% for r in result.massnahmen_rows %}
-                                <tr>
-                                    <td><code>{{ r.legacy_id }}</code></td>
-                                    <td class="small">{{ r.titel ?? '–' }}</td>
-                                    <td>
+                                <tr class="fa-table__row">
+                                    <td class="fa-table__cell"><code>{{ r.legacy_id }}</code></td>
+                                    <td class="fa-table__cell small">{{ r.titel ?? '–' }}</td>
+                                    <td class="fa-table__cell">
                                         <code>{{ r.baustein_legacy ?? '–' }}</code>
                                         {% if r.baustein_kompendium_2023 %}
                                             <span class="text-muted">→</span> <code class="text-success">{{ r.baustein_kompendium_2023 }}</code>
                                         {% endif %}
                                     </td>
-                                    <td><code class="small">{{ r.umsetzungsstatus_raw ?? '–' }}</code></td>
-                                    <td>
+                                    <td class="fa-table__cell"><code class="small">{{ r.umsetzungsstatus_raw ?? '–' }}</code></td>
+                                    <td class="fa-table__cell">
                                         {% set s = r.implementation_status %}
                                         {% if s == 'implemented' %}
-                                            <span class="badge bg-success">{{ s }}</span>
+                                            <span class="fa-status-pill fa-status-pill--success">{{ s }}</span>
                                         {% elseif s == 'partially_implemented' %}
-                                            <span class="badge bg-warning">{{ s }}</span>
+                                            <span class="fa-status-pill fa-status-pill--warning">{{ s }}</span>
                                         {% elseif s == 'not_implemented' %}
-                                            <span class="badge bg-danger">{{ s }}</span>
+                                            <span class="fa-status-pill fa-status-pill--danger">{{ s }}</span>
                                         {% elseif s == 'not_applicable' %}
-                                            <span class="badge bg-secondary">{{ s }}</span>
+                                            <span class="fa-status-pill fa-status-pill--neutral">{{ s }}</span>
                                         {% else %}
                                             <span class="text-muted small">unmapped</span>
                                         {% endif %}
                                     </td>
                                 </tr>
                             {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                        {% endblock %}
+                    {% endembed %}
                     </div>
                     {% endif %}
 
                     {% if result.risiken_rows is defined and result.risiken_rows|length > 0 %}
                     <div class="tab-pane fade" id="pane-risiken" role="tabpanel">
-                    <div class="table-responsive">
-                        <table class="table table-sm mb-0">
-                            <thead>
-                                <tr>
-                                    <th>{{ 'gstool_import.risiken.legacy_id'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.risiken.titel'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.risiken.haeufigkeit'|trans({}, 'gstool_import') }}</th>
-                                    <th class="text-end">L</th>
-                                    <th>{{ 'gstool_import.risiken.schaden'|trans({}, 'gstool_import') }}</th>
-                                    <th class="text-end">I</th>
-                                    <th class="text-end">{{ 'gstool_import.risiken.score'|trans({}, 'gstool_import') }}</th>
-                                    <th>{{ 'gstool_import.risiken.behandlung'|trans({}, 'gstool_import') }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                    {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                        {% block table_head %}
+                            <tr>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.risiken.legacy_id'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.risiken.titel'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.risiken.haeufigkeit'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">L</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.risiken.schaden'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">I</th>
+                                <th scope="col" class="fa-table__th fa-table__th--num">{{ 'gstool_import.risiken.score'|trans({}, 'gstool_import') }}</th>
+                                <th scope="col" class="fa-table__th">{{ 'gstool_import.risiken.behandlung'|trans({}, 'gstool_import') }}</th>
+                            </tr>
+                        {% endblock %}
+                        {% block table_body %}
+                            {% import '_components/_status_pill.html.twig' as pill %}
                             {% for r in result.risiken_rows %}
-                                <tr>
-                                    <td><code>{{ r.legacy_id }}</code></td>
-                                    <td class="small">{{ r.titel ?? '–' }}</td>
-                                    <td class="small">{{ r.eintrittshaeufigkeit_raw ?? '–' }}</td>
-                                    <td class="text-end"><strong>{{ r.inherent_likelihood ?? '–' }}</strong></td>
-                                    <td class="small">{{ r.schadenshoehe_raw ?? '–' }}</td>
-                                    <td class="text-end"><strong>{{ r.inherent_impact ?? '–' }}</strong></td>
-                                    <td class="text-end">
+                                <tr class="fa-table__row">
+                                    <td class="fa-table__cell"><code>{{ r.legacy_id }}</code></td>
+                                    <td class="fa-table__cell small">{{ r.titel ?? '–' }}</td>
+                                    <td class="fa-table__cell small">{{ r.eintrittshaeufigkeit_raw ?? '–' }}</td>
+                                    <td class="fa-table__cell fa-table__cell--num"><strong>{{ r.inherent_likelihood ?? '–' }}</strong></td>
+                                    <td class="fa-table__cell small">{{ r.schadenshoehe_raw ?? '–' }}</td>
+                                    <td class="fa-table__cell fa-table__cell--num"><strong>{{ r.inherent_impact ?? '–' }}</strong></td>
+                                    <td class="fa-table__cell fa-table__cell--num">
                                         {% if r.inherent_risk_score %}
-                                            <span class="badge bg-{{ r.inherent_risk_score >= 13 ? 'danger' : r.inherent_risk_score >= 7 ? 'warning' : 'success' }}">
-                                                {{ r.inherent_risk_score }}
-                                            </span>
+                                            {{ pill.render(r.inherent_risk_score, r.inherent_risk_score >= 13 ? 'danger' : (r.inherent_risk_score >= 7 ? 'warning' : 'success'), {size: 'sm'}) }}
                                         {% else %}–{% endif %}
                                     </td>
-                                    <td>
+                                    <td class="fa-table__cell">
                                         {% if r.treatment_strategy %}
-                                            <span class="badge bg-info">{{ r.treatment_strategy }}</span>
+                                            <span class="fa-status-pill fa-status-pill--primary">{{ r.treatment_strategy }}</span>
                                         {% else %}<span class="text-muted small">–</span>{% endif %}
                                     </td>
                                 </tr>
                             {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                        {% endblock %}
+                    {% endembed %}
                     </div>
                     {% endif %}
 
                     </div>{# /.tab-content #}
                 {% endif %}
             </div>
-        </div>
+        </section>
     {% endif %}
-</div>
 {% endblock %}

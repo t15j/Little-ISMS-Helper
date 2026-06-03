@@ -1,65 +1,120 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'document' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_norm_bridge.html.twig' as _fa_norm_bridge %}
 
 {% block title %}{{ 'document.new'|trans({}, 'document')}} - {{ parent() }}{% endblock %}
 
 {% block body %}
+{# Junior-ISB-Audit-2026-05-22 P-12 rollout — 9001 norm-bridge for Document. #}
 {# Breadcrumb Navigation #}
 {% include '_components/_breadcrumb.html.twig' with {
     breadcrumbs: [
-        { label: 'document.title'|trans({}, 'document'), url: path('app_document_index'), icon: 'bi-file-earmark-text' },
+        { label: 'document.title'|trans({}, 'document'), url: path('app_document_index'), icon: 'nav-file-earmark-text' },
         { label: 'document.new'|trans({}, 'document')}
     ]
 } %}
 
 {# Page Header #}
-{% include '_components/_page_header.html.twig' with {
+{{ _fa_page_header.render({
     title: 'document.new'|trans({}, 'document'),
-    icon: 'bi-plus-circle',
+    badge: { icon: 'plus', label: '' },
     actions: [
-        { label: 'common.back'|trans({}, 'messages'), url: path('app_document_index'), variant: 'secondary', icon: 'bi-arrow-left' }
+        { label: 'common.back'|trans({}, 'messages'), href: path('app_document_index'), variant: 'secondary', icon: 'util-arrow-left' }
     ]
+}) }}
+
+{# 9001-bridge: Documented Information identical mapping ISO 27001 7.5 ↔ ISO 9001 7.5. P-12 rollout. #}
+{{ _fa_norm_bridge.render({
+    from_norm: 'ISO 27001 7.5',
+    to_norm:   'ISO 9001 7.5',
+    bridge_text: ('iso_9001_bridge.policy'|trans({}, 'document')),
+    prominence: 'subtle'
+}) }}
+
+{# Junior-ISB-Audit T8.4 (UX-P1): discoverability bridge to policy_wizard
+   for users who landed on Upload but actually want to author a new
+   ISMS-Leitlinie from scratch via wizard-driven templates. #}
+<div class="alert alert-info d-flex align-items-start gap-3 mb-4" role="note">
+    <i class="fa-icon fa-icon--ui-info fs-4" aria-hidden="true"></i>
+    <div class="flex-grow-1">
+        <strong>{{ 'document.wizard_cta.title'|trans({}, 'document') }}</strong>
+        <p class="mb-2">{{ 'document.wizard_cta.body'|trans({}, 'document') }}</p>
+        <a href="{{ path('app_policy_wizard_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost btn-sm">
+            <i class="fa-icon fa-icon--ui-magic" aria-hidden="true"></i>
+            {{ 'document.wizard_cta.action'|trans({}, 'document') }}
+        </a>
+    </div>
+</div>
+
+{# C3-03 (S14, 2026-05-23) — conditional-fields Stimulus controller
+   toggles acknowledgementAudience visibility based on
+   requiresAcknowledgement checkbox. #}
+{# P-19 — Form-Step-Inline-Hint controller. See assets/controllers/alva_hint_in_form_controller.js. #}
+{{ form_start(form, {'attr': {
+    'enctype': 'multipart/form-data',
+    'data-controller': 'conditional-fields alva-hint-in-form',
+    'data-alva-hint-in-form-entity-type-value': 'document',
+    'data-alva-hint-in-form-form-name-value': 'document',
+    'data-alva-hint-in-form-endpoint-value': path('api_alva_hint_form_evaluate', {'entityType': 'document'}),
+    'data-alva-hint-in-form-csrf-token-value': csrf_token('alva_hint_form'),
+    'data-action': 'input->alva-hint-in-form#scheduleEvaluate change->alva-hint-in-form#scheduleEvaluate',
+}}) }}
+{% include '_components/_auto_form.html.twig' with {
+    'form': form,
+    'layout': 'outline-rail',
+    'eyebrow': 'ISO 27001 A.5.9 · Document Management',
+    'title': 'document.new'|trans({}, 'document'),
+    'sections': {
+        'overview': {
+            'label': 'document.section.basic_info'|trans({}, 'document'),
+            'fields': ['originalFilename', 'description', 'category', 'status']
+        },
+        'classification': {
+            'label': 'document.section.classification'|trans({}, 'document'),
+            'fields': ['tisaxInformationClassification']
+        },
+        'lifecycle': {
+            'label': 'document.section.lifecycle'|trans({}, 'document'),
+            'fields': ['version', 'reviewIntervalMonths', 'requiresAcknowledgement', 'acknowledgementAudience']
+        },
+        'ownership': {
+            'label': 'document.section.ownership'|trans({}, 'document'),
+            'fields': ['inheritable', 'overrideAllowed']
+        },
+        'linkage': {
+            'label': 'document.section.linkage'|trans({}, 'document'),
+            'fields': ['linkedControls']
+        },
+        'content': {
+            'label': 'document.section.file_upload'|trans({}, 'document'),
+            'fields': ['file']
+        }
+    },
+    'col_widths': {
+        'originalFilename': 8,
+        'status': 4,
+        'description': 12,
+        'category': 6,
+        'tisaxInformationClassification': 6,
+        'version': 4,
+        'reviewIntervalMonths': 4,
+        'requiresAcknowledgement': 4,
+        'acknowledgementAudience': 12,
+        'inheritable': 6,
+        'overrideAllowed': 6,
+        'linkedControls': 12,
+        'file': 12
+    },
+    'tooltips': {
+        'category': 'document.tooltip.category',
+        'tisaxInformationClassification': 'document.tooltip.classification'
+    },
+    'translation_domain': 'document',
+    'actions': {
+        'close': { 'label': 'common.cancel'|trans({}, 'messages'), 'variant': 'ghost' },
+        'submit': { 'label': 'document.action.upload'|trans({}, 'document'), 'variant': 'primary', 'icon': 'nav-upload' }
+    }
 } %}
-
-{% embed '_components/_card.html.twig' %}
-    {% block card_body %}
-        {{ form_start(form, {'attr': {'enctype': 'multipart/form-data'}}) }}
-            {% include '_components/_auto_form.html.twig' with {
-                'form': form,
-                'sections': {
-                    'basic_info': {
-                        'label': 'document.section.basic_info'|trans({}, 'document'),
-                        'fields': ['originalFilename', 'description', 'category', 'tisaxInformationClassification']
-                    },
-                    'file_upload': {
-                        'label': 'document.section.file_upload'|trans({}, 'document'),
-                        'fields': ['file']
-                    }
-                },
-                'col_widths': {
-                    'originalFilename': 12,
-                    'description': 12,
-                    'category': 6,
-                    'tisaxInformationClassification': 6,
-                    'file': 12
-                },
-                'tooltips': {
-                    'category': 'document.tooltip.category',
-                    'tisaxInformationClassification': 'document.tooltip.classification'
-                }
-            } %}
-
-            <div class="form-actions d-flex gap-2 justify-content-end">
-                <a href="{{ path('app_document_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                    <i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i>
-                    {{ 'common.cancel'|trans({}, 'messages') }}
-                </a>
-                <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary">
-                    <i class="fa-icon fa-icon--nav-upload" aria-hidden="true"></i>
-                    {{ 'document.action.upload'|trans({}, 'document')}}
-                </button>
-            </div>
-        {{ form_end(form) }}
-    {% endblock %}
-{% endembed %}
+{{ form_end(form) }}
 {% endblock %}

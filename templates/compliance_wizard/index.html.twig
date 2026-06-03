@@ -6,14 +6,22 @@
 
 {% block body %}
 {% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {{ _fa_page_header.render({
-    badge: { icon: 'compass', label: 'wizard.title'|trans({}, 'wizard') },
+    badge: { icon: 'nav-target', label: 'wizard.title'|trans({}, 'wizard') },
     title: 'wizard.title'|trans({}, 'wizard'),
     subtitle: 'wizard.subtitle'|trans({}, 'wizard'),
     actions: available_wizards|length > 1 ? [
-        { label: 'wizard.compare_frameworks'|trans({}, 'wizard'), href: path('app_compliance_wizard_compare'), variant: 'ghost', icon: 'columns-gap' }
+        { label: 'wizard.compare_frameworks'|trans({}, 'wizard'), href: path('app_compliance_wizard_compare'), variant: 'ghost', icon: 'nav-grid' }
     ] : []
 }) }}
+{% set _global_hints = alva_hints('compliance_wizard_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 <main class="fa-aurora-surface fa-aurora-surface--dots">
 <div class="container-fluid py-4">
 
@@ -29,7 +37,7 @@
         <div class="col-md-6 col-lg-4 mb-4">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100 border-' ~ wizard.color ~ ' wizard-card' } %}
                 {% block card_header %}
-                    <div class="card-header bg-{{ wizard.color }} bg-opacity-10 border-{{ wizard.color }}">
+                    <div class="card-header border-{{ wizard.color }}">
                         <div class="d-flex align-items-center">
                             <i class="{{ wizard.icon }} fs-3 text-{{ wizard.color }} me-3"></i>
                             <div>
@@ -45,7 +53,7 @@
                     <div class="mb-3">
                         <small class="text-muted d-block mb-1">{{ 'wizard.required_modules'|trans({}, 'wizard') }}:</small>
                         {% for mod in wizard.required_modules %}
-                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle', class: 'me-1', content: mod } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'status-ok', class: 'me-1', content: mod } %}
                         {% endfor %}
                     </div>
 
@@ -54,9 +62,9 @@
                         <small class="text-muted d-block mb-1">{{ 'wizard.recommended_modules'|trans({}, 'wizard') }}:</small>
                         {% for mod in wizard.recommended_modules %}
                             {% if mod in active_modules %}
-                                {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle', class: 'me-1', content: mod } %}
+                                {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'status-ok', class: 'me-1', content: mod } %}
                             {% else %}
-                                {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'bi-exclamation-triangle', class: 'me-1', content: mod } %}
+                                {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'status-warning', class: 'me-1', content: mod } %}
                             {% endif %}
                         {% endfor %}
                     </div>
@@ -70,7 +78,7 @@
                 {% block card_footer %}
                     <div class="card-footer bg-transparent border-{{ wizard.color }}">
                         <a href="{{ path('app_compliance_wizard_start', {wizard: key}) }}" class="btn btn-{{ wizard.color }} w-100">
-                            <i class="bi bi-play-circle me-1" aria-hidden="true"></i>{{ 'wizard.start_wizard'|trans({}, 'wizard') }}
+                            <i class="fa-icon me-1 fa-icon--status-info" aria-hidden="true"></i>{{ 'wizard.start_wizard'|trans({}, 'wizard') }}
                         </a>
                     </div>
                 {% endblock %}
@@ -93,9 +101,9 @@
         <div class="col-md-6 col-lg-4 mb-4">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100 border-secondary opacity-75' } %}
                 {% block card_header %}
-                    <div class="card-header bg-secondary bg-opacity-10">
+                    <div class="card-header">
                         <div class="d-flex align-items-center">
-                            <i class="{{ wizard.icon }} fs-3 text-secondary me-3"></i>
+                            <i class="{{ wizard.icon }} fs-3 text-muted me-3"></i>
                             <div>
                                 <h3 class="card-title h5 mb-0 text-muted">{{ wizard.name }}</h3>
                                 {% include '_components/_badge.html.twig' with { variant: 'secondary', content: wizard.code } %}
@@ -139,7 +147,7 @@
                     <div class="row">
                         <div class="col-md-4 mb-3 mb-md-0">
                             <div class="d-flex">
-                                <div class="badge bg-primary rounded-circle me-2" style="width: 24px; height: 24px; line-height: 16px;">1</div>
+                                <div class="fa-status-pill fa-status-pill--primary rounded-circle me-2" style="width: 24px; height: 24px; line-height: 16px;">1</div>
                                 <div>
                                     <strong>{{ 'wizard.step1_title'|trans({}, 'wizard') }}</strong>
                                     <p class="small text-muted mb-0">{{ 'wizard.step1_desc'|trans({}, 'wizard') }}</p>
@@ -148,7 +156,7 @@
                         </div>
                         <div class="col-md-4 mb-3 mb-md-0">
                             <div class="d-flex">
-                                <div class="badge bg-primary rounded-circle me-2" style="width: 24px; height: 24px; line-height: 16px;">2</div>
+                                <div class="fa-status-pill fa-status-pill--primary rounded-circle me-2" style="width: 24px; height: 24px; line-height: 16px;">2</div>
                                 <div>
                                     <strong>{{ 'wizard.step2_title'|trans({}, 'wizard') }}</strong>
                                     <p class="small text-muted mb-0">{{ 'wizard.step2_desc'|trans({}, 'wizard') }}</p>
@@ -157,7 +165,7 @@
                         </div>
                         <div class="col-md-4">
                             <div class="d-flex">
-                                <div class="badge bg-primary rounded-circle me-2" style="width: 24px; height: 24px; line-height: 16px;">3</div>
+                                <div class="fa-status-pill fa-status-pill--primary rounded-circle me-2" style="width: 24px; height: 24px; line-height: 16px;">3</div>
                                 <div>
                                     <strong>{{ 'wizard.step3_title'|trans({}, 'wizard') }}</strong>
                                     <p class="small text-muted mb-0">{{ 'wizard.step3_desc'|trans({}, 'wizard') }}</p>

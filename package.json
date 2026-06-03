@@ -2,10 +2,26 @@
     "name": "little-isms-helper",
     "private": true,
     "devDependencies": {
-        "stylelint": "^17.9.1",
-        "stylelint-config-standard": "^40.0.0"
+        "@playwright/test": "^1.60.0",
+        "@types/node": "^25.9.1",
+        "js-yaml": "^4.2.0",
+        "playwright": "^1.60.0",
+        "stylelint": "^17.12.0",
+        "stylelint-config-standard": "^40.0.0",
+        "typescript": "^6.0.3"
     },
     "scripts": {
-        "stylelint": "stylelint 'assets/styles/**/*.css'"
+        "stylelint": "stylelint 'assets/styles/**/*.css'",
+        "screenshots": "node scripts/screenshots/capture.mjs",
+        "audit:console": "node scripts/screenshots/audit.mjs",
+        "e2e": "playwright test",
+        "e2e:headed": "playwright test --headed",
+        "e2e:debug": "playwright test --debug",
+        "e2e:report": "playwright show-report var/playwright-report",
+        "e2e:list": "playwright test --list",
+        "e2e:smoke": "bash scripts/browser-coverage/run.sh",
+        "e2e:smoke:report": "node scripts/browser-coverage/generate-report.mjs",
+        "e2e:scenarios": "bash scripts/browser-coverage/run-scenarios.sh",
+        "e2e:scenarios:report": "node scripts/browser-coverage/generate-scenario-report.mjs"
     }
 }

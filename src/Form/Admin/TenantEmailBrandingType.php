@@ -13,7 +13,7 @@ use Symfony\Component\Form\Extension\Core\Type\UrlType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
-class TenantEmailBrandingType extends AbstractType
+final class TenantEmailBrandingType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -36,6 +36,10 @@ class TenantEmailBrandingType extends AbstractType
                 'required' => false,
                 'attr' => ['maxlength' => 500, 'placeholder' => 'https://...'],
                 'default_protocol' => 'https',
+                'constraints' => [
+                    new \Symfony\Component\Validator\Constraints\Url(protocols: ['https'], requireTld: true),
+                    new \App\Validator\Constraint\NoInternalIp(),
+                ],
             ])
             ->add('emailFooterText', TextareaType::class, [
                 'label' => 'tenant.email.field.footer_text',

@@ -14,6 +14,7 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\Metadata\Delete;
 
+use App\Enum\BusinessContinuityPlanStatus;
 use App\Repository\BusinessContinuityPlanRepository;
 use App\Service\OwnerResolver;
 use App\State\TenantAwareStateProcessor;
@@ -29,6 +30,9 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Business Continuity Plan Entity for ISO 22301
  *
  * Documents recovery procedures and strategies for business processes
+ *
+ * Junior-ISB-Audit-2026-05-22 C2-06: 3-team-worlds consolidation —
+ * responseTeamMembers canonical, crisisTeams reusable, bcTeam deprecated.
  */
 #[ApiResource(
     operations: [
@@ -61,7 +65,7 @@ class BusinessContinuityPlan
     private ?Tenant $tenant = null;
 
     #[ORM\Column(length: 255)]
-    #[Assert\NotBlank(message: 'Plan name is required')]
+    #[Assert\NotBlank(message: 'bc_plan.validation.name_required')]
     #[Groups(['bc_plan:read', 'bc_plan:write'])]
     private ?string $name = null;
 
@@ -74,7 +78,7 @@ class BusinessContinuityPlan
      */
     #[ORM\ManyToOne(targetEntity: BusinessProcess::class)]
     #[ORM\JoinColumn(nullable: false)]
-    #[Assert\NotNull(message: 'Business process is required')]
+    #[Assert\NotNull(message: 'bc_plan.validation.business_process_required')]
     #[Groups(['bc_plan:read'])]
     private ?BusinessProcess $businessProcess = null;
 
@@ -86,10 +90,26 @@ class BusinessContinuityPlan
     private ?string $planOwner = null;
 
     /**
-     * BC Team members
+     * Junior-ISB-Audit-2026-05-22 C2-06: Doppelpflege-Deprecation — use $responseTeamMembers.
+     *
+     * Freetext BC team roster. Superseded by the structured
+     * {@see self::$responseTeamMembers} JSON field (per ISO 22301 §8.5.3 with
+     * roles incident_commander/comms_lead/recovery_lead/technical_lead) which is
+     * the canonical per-plan team store, and by the optional
+     * {@see self::$crisisTeams} ManyToMany collection for cross-plan reusable
+     * crisis teams (ISO 22301 §8.4.2). The column is retained for backward
+     * compatibility with pre-S13 records ("Legacy-Mode für Bestandsdaten");
+     * a cleanup migration dropping the column is scheduled for S14 after one
+     * release cycle.
+     *
+     * Do NOT write to this field in new code. The Form input is `disabled`,
+     * the show-page renders it only when non-empty inside a "Legacy"-info
+     * alert, and the API exposes it read-only via the `bc_plan:read` group.
+     *
+     * @deprecated since S13 (2026-05-23) — use {@see self::$responseTeamMembers}.
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
-    #[Groups(['bc_plan:read', 'bc_plan:write'])]
+    #[Groups(['bc_plan:read'])]
     private ?string $bcTeam = null;
 
     /**
@@ -101,10 +121,19 @@ class BusinessContinuityPlan
     private ?string $status = 'draft';
 
     /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on
+     * business_continuity_plan_lifecycle.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
+    /**
      * Activation criteria - when to activate this plan
      */
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Activation criteria must be defined')]
+    #[Assert\NotBlank(message: 'bc_plan.validation.activation_criteria_required')]
     #[Groups(['bc_plan:read', 'bc_plan:write'])]
     private ?string $activationCriteria = null;
 
@@ -132,7 +161,7 @@ class BusinessContinuityPlan
      * Recovery procedures (step-by-step)
      */
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Recovery procedures must be documented')]
+    #[Assert\NotBlank(message: 'bc_plan.validation.recovery_procedures_required')]
     #[Groups(['bc_plan:read', 'bc_plan:write'])]
     private ?string $recoveryProcedures = null;
 
@@ -212,6 +241,57 @@ class BusinessContinuityPlan
     private ?array $requiredResources = null;
 
     /**
+     * Recovery Time Objective (Stunden) — ISO 22301 Cl. 8.2.2 / 8.4.2.
+     *
+     * Maximal akzeptable Wiederherstellungszeit dieses BC-Plans nach Eintritt
+     * einer Störung. Kann vom RTO des assoziierten Geschäftsprozesses
+     * (BIA-Ergebnis) abweichen, wenn der Plan ein dediziertes
+     * Wiederanlauf-Szenario abdeckt.
+     */
+    #[ORM\Column(type: Types::INTEGER, nullable: true, options: ['comment' => 'Recovery Time Objective in hours (ISO 22301 8.2.2)'])]
+    #[Assert\Range(min: 0, max: 8760, notInRangeMessage: 'bc_plans.error.rto_range')]
+    #[Groups(['bc_plan:read', 'bc_plan:write'])]
+    private ?int $rto = null;
+
+    /**
+     * Recovery Point Objective (Stunden) — ISO 22301 Cl. 8.2.2 / 8.4.2.
+     *
+     * Maximal tolerierbarer Datenverlust für diesen Plan, gemessen als
+     * Zeitspanne zwischen letztem konsistentem Backup und Eintritt der
+     * Störung.
+     */
+    #[ORM\Column(type: Types::INTEGER, nullable: true, options: ['comment' => 'Recovery Point Objective in hours (ISO 22301 8.2.2)'])]
+    #[Assert\Range(min: 0, max: 8760, notInRangeMessage: 'bc_plans.error.rpo_range')]
+    #[Groups(['bc_plan:read', 'bc_plan:write'])]
+    private ?int $rpo = null;
+
+    /**
+     * Response team members — structured list per ISO 22301 §8.5.3
+     * [{role: 'incident_commander|comms_lead|recovery_lead|technical_lead', userId: int|null, name: string, contact: string, responsibilities: string}, ...]
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[Groups(['bc_plan:read', 'bc_plan:write'])]
+    private ?array $responseTeamMembers = null;
+
+    /**
+     * Escalation levels — BSI 200-4 §6.2
+     * [{level: 1|2|3, trigger: string, responder: string, escalateAfter: '15min'|'1h'|...}, ...]
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[Groups(['bc_plan:read', 'bc_plan:write'])]
+    private ?array $escalationLevels = null;
+
+    /**
+     * Crisis teams assigned to this plan — bidirectional ISO 22301 §8.4.2
+     *
+     * @var Collection<int, CrisisTeam>
+     */
+    #[ORM\ManyToMany(targetEntity: CrisisTeam::class, inversedBy: 'bcPlans')]
+    #[ORM\JoinTable(name: 'bc_plan_crisis_team')]
+    #[Groups(['bc_plan:read'])]
+    private Collection $crisisTeams;
+
+    /**
      * Critical suppliers for this plan
      */
     #[ORM\ManyToMany(targetEntity: Supplier::class)]
@@ -282,6 +362,7 @@ class BusinessContinuityPlan
         $this->criticalAssets = new ArrayCollection();
         $this->documents = new ArrayCollection();
         $this->planOwnerDeputyPersons = new ArrayCollection();
+        $this->crisisTeams = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
     }
 
@@ -316,7 +397,7 @@ class BusinessContinuityPlan
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -349,17 +430,28 @@ class BusinessContinuityPlan
         return $this->planOwner;
     }
 
-    public function setPlanOwner(string $planOwner): static
+    public function setPlanOwner(?string $planOwner): static
     {
         $this->planOwner = $planOwner;
         return $this;
     }
 
+    /**
+     * @deprecated since S13 (2026-05-23) — use {@see self::getResponseTeamMembers()}.
+     *             Junior-ISB-Audit-2026-05-22 C2-06: Doppelpflege-Deprecation.
+     */
     public function getBcTeam(): ?string
     {
         return $this->bcTeam;
     }
 
+    /**
+     * @deprecated since S13 (2026-05-23) — use {@see self::setResponseTeamMembers()}.
+     *             Junior-ISB-Audit-2026-05-22 C2-06: Doppelpflege-Deprecation.
+     *             Retained for fixture/seed compatibility only — the Form
+     *             input is disabled and the show-page renders the value
+     *             read-only inside a "Legacy"-info alert.
+     */
     public function setBcTeam(?string $bcTeam): static
     {
         $this->bcTeam = $bcTeam;
@@ -371,10 +463,18 @@ class BusinessContinuityPlan
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(BusinessContinuityPlanStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?BusinessContinuityPlanStatus
+    {
+        return $this->status !== null ? BusinessContinuityPlanStatus::tryFrom($this->status) : null;
     }
 
     public function getActivationCriteria(): ?string
@@ -382,7 +482,7 @@ class BusinessContinuityPlan
         return $this->activationCriteria;
     }
 
-    public function setActivationCriteria(string $activationCriteria): static
+    public function setActivationCriteria(?string $activationCriteria): static
     {
         $this->activationCriteria = $activationCriteria;
         return $this;
@@ -415,7 +515,7 @@ class BusinessContinuityPlan
         return $this->recoveryProcedures;
     }
 
-    public function setRecoveryProcedures(string $recoveryProcedures): static
+    public function setRecoveryProcedures(?string $recoveryProcedures): static
     {
         $this->recoveryProcedures = $recoveryProcedures;
         return $this;
@@ -531,6 +631,28 @@ class BusinessContinuityPlan
         return $this;
     }
 
+    public function getRto(): ?int
+    {
+        return $this->rto;
+    }
+
+    public function setRto(?int $rto): static
+    {
+        $this->rto = $rto;
+        return $this;
+    }
+
+    public function getRpo(): ?int
+    {
+        return $this->rpo;
+    }
+
+    public function setRpo(?int $rpo): static
+    {
+        $this->rpo = $rpo;
+        return $this;
+    }
+
     /**
      * @return Collection<int, Supplier>
      */
@@ -602,7 +724,7 @@ class BusinessContinuityPlan
         return $this->version;
     }
 
-    public function setVersion(string $version): static
+    public function setVersion(?string $version): static
     {
         $this->version = $version;
         return $this;
@@ -668,7 +790,7 @@ class BusinessContinuityPlan
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -708,6 +830,53 @@ class BusinessContinuityPlan
         }
 
         return $this->nextReviewDate < new DateTime();
+    }
+
+    public function getResponseTeamMembers(): ?array
+    {
+        return $this->responseTeamMembers;
+    }
+
+    public function setResponseTeamMembers(?array $responseTeamMembers): static
+    {
+        $this->responseTeamMembers = $responseTeamMembers;
+        return $this;
+    }
+
+    public function getEscalationLevels(): ?array
+    {
+        return $this->escalationLevels;
+    }
+
+    public function setEscalationLevels(?array $escalationLevels): static
+    {
+        $this->escalationLevels = $escalationLevels;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, CrisisTeam>
+     */
+    public function getCrisisTeams(): Collection
+    {
+        return $this->crisisTeams;
+    }
+
+    public function addCrisisTeam(CrisisTeam $crisisTeam): static
+    {
+        if (!$this->crisisTeams->contains($crisisTeam)) {
+            $this->crisisTeams->add($crisisTeam);
+            $crisisTeam->addBcPlan($this);
+        }
+        return $this;
+    }
+
+    public function removeCrisisTeam(CrisisTeam $crisisTeam): static
+    {
+        if ($this->crisisTeams->removeElement($crisisTeam)) {
+            $crisisTeam->removeBcPlan($this);
+        }
+        return $this;
     }
 
     /**
@@ -940,4 +1109,8 @@ class BusinessContinuityPlan
         );
     }
 
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
+    }
 }

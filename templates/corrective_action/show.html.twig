@@ -1,9 +1,22 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_status_chip.html.twig' as _fa_status_chip %}
+{% import '_components/_lifecycle_actions.html.twig' as _lifecycle_actions %}
+{% import '_components/_lifecycle_history_tab.html.twig' as _lifecycle_history %}
 
 {% block title %}{{ action.title }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid py-4">
+    {# M-4 — module-gating: Corrective Actions (ISO 27001 Cl. 10.2) #}
+    {% if not is_module_active('corrective_actions') %}
+        {{ _fa_alert.render({
+            variant: 'info',
+            icon: 'nav-shield-alert',
+            body: 'common.module_not_active'|trans({'%module%': 'Corrective Actions'}, 'messages')
+        }) }}
+    {% else %}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
             { label: 'audit_finding.page.title'|trans({}, 'audits'), url: path('app_audit_finding_index') },
@@ -11,20 +24,45 @@
             { label: action.title }
         ]
     } %}
-    <div class="d-flex justify-content-between align-items-start mb-4">
-        <div>
-            <h1 class="h3 mb-1">{{ action.title }}</h1>
-            {% if action.finding %}
-                <div class="text-muted">
-                    {{ 'corrective_action.message.for_finding'|trans({}, 'audits') }}:
-                    <a href="{{ path('app_audit_finding_show', {id: action.finding.id}) }}">{{ action.finding.(findingNumber ?? ('#' ~ action.finding.id)) }} — {{ action.finding.title }}</a>
-                </div>
-            {% endif %}
-        </div>
-        <a href="{{ path('app_corrective_action_edit', {id: action.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-            <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'common.edit'|trans({}, 'messages') }}
-        </a>
+    {{ _fa_page_header.render({
+        badge:    { icon: 'nav-wrench', label: 'corrective_action.page.title'|trans({}, 'audits') },
+        title:    action.title,
+        subtitle: action.finding ? 'corrective_action.message.for_finding'|trans({}, 'audits') ~ ': ' ~ (action.finding.findingNumber ?? ('#' ~ action.finding.id)) ~ ' — ' ~ action.finding.title : null,
+        actions: [
+            { label: 'common.edit'|trans({}, 'messages'), variant: 'ghost', icon: 'ui-edit', href: path('app_corrective_action_edit', {id: action.id}) }
+        ]
+    }) }}
+
+    {# Lifecycle X.3b — status chip + transition dropdown #}
+    <div class="d-flex align-items-center gap-2 mb-3" data-testid="lifecycle-toolbar">
+        {{ _fa_status_chip.render({ entity_class: 'App\\Entity\\CorrectiveAction', status_key: action.status }) }}
+        {{ _lifecycle_actions.dropdown(action, 'corrective-action', 'corrective_action_lifecycle') }}
     </div>
+
+    {# S3 P0-30 — Tier-1 alert when CAPA is verified_ineffective and no Folge-CAPA yet.
+       AlvaHintService would also surface this via the Show-template, but a hard
+       inline alert covers the path where the hint card is dismissed or absent. #}
+    {% if action.verifiedIneffective %}
+        {{ _fa_alert.render({
+            variant: 'danger',
+            title: 'corrective_action.alva_hint.ineffective_followup.title'|trans({}, 'audits'),
+            body: 'corrective_action.alva_hint.ineffective_followup.body'|trans({'%id%': action.id, '%title%': action.title}, 'audits')
+                  ~ ' <a class="fa-alert__link" href="' ~ path('app_corrective_action_new', {from_ineffective_capa: action.id}) ~ '">'
+                  ~ 'corrective_action.alva_hint.ineffective_followup.cta'|trans({}, 'audits')
+                  ~ '</a>'
+        }) }}
+    {% endif %}
+
+    {# S3 P0-30 — Audit-Trail link to the unwirksame Vorgänger-CAPA. #}
+    {% if action.previousCapa %}
+        <p class="text-muted small mb-3">
+            <i class="fa-icon fa-icon--ui-link" aria-hidden="true"></i>
+            {{ 'corrective_action.field.previous_capa'|trans({}, 'audits') }}:
+            <a href="{{ path('app_corrective_action_show', {id: action.previousCapa.id}) }}">
+                #{{ action.previousCapa.id }} — {{ action.previousCapa.title }}
+            </a>
+        </p>
+    {% endif %}
 
     <div class="row g-3 mb-4">
         <div class="col-md-3"><strong>{{ 'corrective_action.field.status'|trans({}, 'audits') }}:</strong> {{ ('corrective_action.status.' ~ action.status)|trans({}, 'audits') }}</div>
@@ -52,11 +90,50 @@
         {% endblock %}
     {% endembed %}
 
-    <form method="post" action="{{ path('app_corrective_action_delete', {id: action.id}) }}" class="mt-4" onsubmit="return confirm('{{ 'corrective_action.confirm.delete'|trans({}, 'audits') }}');">
+    {# S3 P0-32 — Verification details (only when verified_*). #}
+    {% if action.status in ['verified_effective', 'verified_ineffective'] %}
+        {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
+            {% block card_header %}
+                <div class="card-header"><h2 class="h5 mb-0">{{ 'corrective_action.section.verification'|trans({}, 'audits') }}</h2></div>
+            {% endblock %}
+            {% block card_body %}
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">{{ 'corrective_action.field.verified_by'|trans({}, 'audits') }}</dt>
+                    <dd class="col-sm-9">{{ action.verifiedBy ? action.verifiedBy.fullName : '—' }}</dd>
+
+                    <dt class="col-sm-3">{{ 'corrective_action.field.verified_at'|trans({}, 'audits') }}</dt>
+                    <dd class="col-sm-9">{{ action.verifiedAt ? action.verifiedAt|date('Y-m-d H:i') : '—' }}</dd>
+
+                    <dt class="col-sm-3">{{ 'corrective_action.field.effectiveness_evidence'|trans({}, 'audits') }}</dt>
+                    <dd class="col-sm-9">{{ action.effectivenessEvidence ? action.effectivenessEvidence|nl2br : '—' }}</dd>
+                </dl>
+            {% endblock %}
+        {% endembed %}
+    {% endif %}
+
+    <form method="post" action="{{ path('app_corrective_action_delete', {id: action.id}) }}" class="mt-4"
+          data-controller="ui-actions"
+          data-action="submit->ui-actions#confirm"
+          data-ui-actions-message-param="{{ 'corrective_action.confirm.delete'|trans({}, 'audits') }}"
+          data-ui-actions-tone-param="danger">
         <input type="hidden" name="_token" value="{{ csrf_token('delete_ca_' ~ action.id) }}">
         <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm">
             <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i> {{ 'common.delete'|trans({}, 'messages') }}
         </button>
     </form>
+
+    {# V4 LB-4: Comment-Thread adoption (C7 macro). #}
+    {% include '_components/_isms_comment_thread.html.twig' with {
+        comments: comments|default([]),
+        entityType: 'CorrectiveAction',
+        entityId: action.id,
+        showForm: true,
+        formAction: path('app_comment_post', {entityType: 'CorrectiveAction', entityId: action.id}),
+        csrfToken: csrf_token('isms-comment')
+    } only %}
+
+    {# Lifecycle X.3b — transition history tab #}
+    {{ _lifecycle_history.history('corrective-action', action.id) }}
+    {% endif %} {# /M-4 corrective_actions module gate #}
 </div>
 {% endblock %}

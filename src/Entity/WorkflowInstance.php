@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use DateTimeImmutable;
 use App\Entity\Tenant;
+use App\Enum\WorkflowInstanceStatus;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -59,12 +60,46 @@ class WorkflowInstance
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $dueDate = null;
 
-    
     #[ORM\ManyToOne(targetEntity: Tenant::class)]
     #[ORM\JoinColumn(nullable: true)]
     private ?Tenant $tenant = null;
 
-public function __construct()
+    /**
+     * Optimistic-locking version column — guards concurrent status transitions
+     * via Symfony Workflow (Sprint Y.0). Doctrine @Version increments this on
+     * every flush so parallel approve/reject calls are serialised safely.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: Types::INTEGER, options: ['default' => 0])]
+    private int $lockVersion = 0;
+
+    /**
+     * Zero-based index tracking which step is currently active.
+     * Maintained by WorkflowService::moveToNextStep() as a plain field update
+     * alongside the step-ID reference stored in currentStep.
+     * Kept as a simple integer field; the Symfony Workflow SM only controls
+     * the coarser-grained status (pending/in_progress/approved/rejected/cancelled).
+     */
+    #[ORM\Column(name: 'current_step_index', type: Types::INTEGER, options: ['default' => 0])]
+    private int $currentStepIndex = 0;
+
+    /**
+     * Policy-Wizard W7-B — co-signature / witness on the approval-trail.
+     *
+     * GDPR DPO/CISO joint sign-offs (Art. 38(3), DPO independence) and
+     * BSI-aligned 4-eyes ceremonies use this slot to record the second
+     * signatory beside the regular approver chain stored in
+     * `approvalHistory`. Always optional — older instances and
+     * single-signature workflows leave both columns null.
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'witness_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $witnessUser = null;
+
+    #[ORM\Column(name: 'witnessed_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?DateTimeImmutable $witnessedAt = null;
+
+    public function __construct()
     {
         $this->startedAt = new DateTimeImmutable();
     }
@@ -90,7 +125,7 @@ public function __construct()
         return $this->entityType;
     }
 
-    public function setEntityType(string $entityType): static
+    public function setEntityType(?string $entityType): static
     {
         $this->entityType = $entityType;
         return $this;
@@ -101,7 +136,7 @@ public function __construct()
         return $this->entityId;
     }
 
-    public function setEntityId(int $entityId): static
+    public function setEntityId(?int $entityId): static
     {
         $this->entityId = $entityId;
         return $this;
@@ -112,10 +147,18 @@ public function __construct()
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(WorkflowInstanceStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum
+        // while existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?WorkflowInstanceStatus
+    {
+        return WorkflowInstanceStatus::tryFrom($this->status);
     }
 
     public function getInitiatedBy(): ?User
@@ -255,5 +298,57 @@ public function __construct()
     {
         $this->tenant = $tenant;
         return $this;
+    }
+
+    /**
+     * Optimistic-lock version — read-only from application code; Doctrine
+     * handles increments automatically on flush.
+     */
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
+    }
+
+    public function getCurrentStepIndex(): int
+    {
+        return $this->currentStepIndex;
+    }
+
+    public function setCurrentStepIndex(int $currentStepIndex): static
+    {
+        $this->currentStepIndex = $currentStepIndex;
+        return $this;
+    }
+
+    public function getWitnessUser(): ?User
+    {
+        return $this->witnessUser;
+    }
+
+    public function setWitnessUser(?User $witnessUser): static
+    {
+        $this->witnessUser = $witnessUser;
+        return $this;
+    }
+
+    public function getWitnessedAt(): ?DateTimeImmutable
+    {
+        return $this->witnessedAt;
+    }
+
+    public function setWitnessedAt(?DateTimeImmutable $witnessedAt): static
+    {
+        $this->witnessedAt = $witnessedAt;
+        return $this;
+    }
+
+    /**
+     * True when both witnessUser and witnessedAt are populated. Mirrors
+     * the audit-trail semantics of the BSI 4-eyes ceremony: a witness
+     * exists only when both the actor and timestamp are known.
+     */
+    public function hasWitness(): bool
+    {
+        return $this->witnessUser instanceof User && $this->witnessedAt instanceof DateTimeImmutable;
     }
 }

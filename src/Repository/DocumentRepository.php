@@ -6,6 +6,10 @@ namespace App\Repository;
 
 use App\Entity\Tenant;
 use App\Entity\Document;
+use App\Entity\User;
+use App\Enum\DocumentStatus;
+use DateTime;
+use DateTimeInterface;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -180,6 +184,52 @@ class DocumentRepository extends ServiceEntityRepository
 
         return $queryBuilder
             ->orderBy('d.uploadedAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Find approved, non-archived Documents whose review-cycle is overdue —
+     * i.e. nextReviewDate < asOf. Surfaces in My-Day per Audit V4 V4-LB-1.
+     *
+     * @return Document[] Sorted by nextReviewDate ASC (most overdue first)
+     */
+    public function findReviewOverdue(Tenant $tenant, ?DateTimeInterface $asOf = null): array
+    {
+        $asOf ??= new DateTime('today');
+
+        return $this->createQueryBuilder('d')
+            ->where('d.tenant = :tenant')
+            ->andWhere('d.isArchived = false')
+            ->andWhere('d.status = :approved')
+            ->andWhere('d.nextReviewDate IS NOT NULL')
+            ->andWhere('d.nextReviewDate < :asOf')
+            ->setParameter('tenant', $tenant)
+            ->setParameter('approved', 'approved')
+            ->setParameter('asOf', $asOf)
+            ->orderBy('d.nextReviewDate', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * V4-EF-7 CM-Bucket — Documents with status='in_review' for a given tenant.
+     * The CM sees all in-review documents when the filter is tenant-scoped
+     * (CM is responsible for the approval queue, not just their own documents).
+     * Optionally restrict to documents whose lastEffectivenessReviewBy matches the user
+     * to limit noise when the bucket is shown to ROLE_COMPLIANCE_MANAGER.
+     *
+     * @return Document[] Sorted by id ASC (oldest review first = most urgent)
+     */
+    public function findPendingApprovalForTenant(Tenant $tenant): array
+    {
+        return $this->createQueryBuilder('d')
+            ->where('d.tenant = :tenant')
+            ->andWhere('d.isArchived = false')
+            ->andWhere('d.status = :status')
+            ->setParameter('tenant', $tenant)
+            ->setParameter('status', DocumentStatus::InReview->value)
+            ->orderBy('d.id', 'ASC')
             ->getQuery()
             ->getResult();
     }

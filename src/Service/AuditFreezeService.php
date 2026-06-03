@@ -21,7 +21,7 @@ use Doctrine\ORM\EntityManagerInterface;
  *
  * @see docs/CM_JUNIOR_RESPONSE.md CM-8
  */
-class AuditFreezeService
+final class AuditFreezeService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -46,7 +46,7 @@ class AuditFreezeService
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION
         );
         if ($encoded === false) {
-            throw new \RuntimeException('Failed to JSON-encode audit-freeze payload: ' . json_last_error_msg());
+            throw new \App\Exception\Io\IoException('Failed to JSON-encode audit-freeze payload: ' . json_last_error_msg());
         }
         return $encoded;
     }

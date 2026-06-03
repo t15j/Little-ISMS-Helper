@@ -1,0 +1,383 @@
+{% extends 'base.html.twig' %}
+{% trans_default_domain 'dashboards' %}
+
+{% block title %}{{ 'compliance_manager.title'|trans }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
+
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
+{% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
+{% import '_components/_status_pill.html.twig' as pill %}
+
+{% block body %}
+<main class="fa-aurora-surface role-dashboard compliance-manager-dashboard">
+    {{ _fa_page_header.render({
+        badge:    { icon: 'nav-clipboard-check', label: 'compliance_manager.badge'|trans },
+        title:    'compliance_manager.title'|trans,
+        subtitle: 'compliance_manager.subtitle'|trans,
+        actions: [
+            { label: 'action.standard_dashboard'|trans, variant: 'ghost',   icon: 'nav-home',     href: path('app_dashboard') },
+            { label: 'compliance_manager.action.ciso_view'|trans, variant: 'ghost', icon: 'nav-shield-lock', href: path('app_dashboard_ciso') },
+            { label: 'compliance_manager.action.compliance_wizards'|trans, variant: 'primary', icon: 'nav-magic', href: path('app_compliance_wizard_index') }
+        ]
+    }) }}
+
+    {% set _global_hints = alva_hints('dashboard_compliance_manager') %}
+    {% if _global_hints|length > 0 %}
+        {% for _h in _global_hints %}
+            {{ _fa_alva_hint.render(_h) }}
+        {% endfor %}
+    {% endif %}
+
+
+    {# Top-line KPIs #}
+    <div class="kpi-grid d-grid grid-responsive-250 gap-4 my-2rem">
+        {{ _fa_feature_card.render({
+            icon: 'nav-collection',
+            label: 'compliance_manager.kpi.frameworks_active'|trans,
+            value: dashboard.frameworks_active,
+            variant: 'primary',
+            href: path('app_compliance_wizard_index')
+        }) }}
+        {{ _fa_feature_card.render({
+            icon: 'nav-speedometer',
+            label: 'compliance_manager.kpi.avg_compliance'|trans,
+            value: dashboard.avg_compliance,
+            unit: '%',
+            variant: dashboard.avg_compliance >= 80 ? 'success' : (dashboard.avg_compliance >= 60 ? 'warning' : 'danger'),
+        }) }}
+        {{ _fa_feature_card.render({
+            icon: 'status-warning',
+            label: 'compliance_manager.kpi.at_risk'|trans,
+            value: dashboard.at_risk_count,
+            variant: dashboard.at_risk_count > 0 ? 'warning' : 'success',
+        }) }}
+        {{ _fa_feature_card.render({
+            icon: 'ui-search',
+            label: 'compliance_manager.kpi.open_findings'|trans,
+            value: dashboard.findings_total,
+            variant: dashboard.findings_total > 0 ? 'warning' : 'success',
+            href: '#findings'
+        }) }}
+        {{ _fa_feature_card.render({
+            icon: 'ui-calendar-event',
+            label: 'compliance_manager.kpi.upcoming_audits'|trans,
+            value: dashboard.upcoming_audits|length,
+            variant: 'info',
+            href: '#audit-schedule'
+        }) }}
+        {{ _fa_feature_card.render({
+            icon: 'nav-file-check',
+            label: 'compliance_manager.kpi.approval_queue'|trans,
+            value: dashboard.pending_docs|length,
+            variant: dashboard.pending_docs|length > 0 ? 'warning' : 'success',
+            href: '#approval-queue'
+        }) }}
+    </div>
+
+    {# Coverage Heatmap (table-styled) #}
+    <section class="fa-section mb-4" id="coverage-heatmap">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance_manager.section.coverage_heatmap'|trans }}</h2>
+        </div>
+        <div class="fa-section__body">
+            {% if dashboard.frameworks|length > 0 %}
+            {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                {% block table_head %}
+                    {% trans_default_domain 'dashboards' %}
+                    <tr>
+                        <th scope="col" class="fa-table__th">{{ 'compliance_manager.table.framework'|trans }}</th>
+                        <th scope="col" class="fa-table__th fa-table__th--num">{{ 'compliance_manager.table.coverage'|trans }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'compliance_manager.table.bar'|trans }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'compliance_manager.table.status'|trans }}</th>
+                        <th scope="col" class="fa-table__th fa-table__th--actions">{{ 'compliance_manager.table.actions'|trans }}</th>
+                    </tr>
+                {% endblock %}
+                {% block table_body %}
+                    {% trans_default_domain 'dashboards' %}
+                    {% import '_components/_status_pill.html.twig' as pill %}
+                    {% for fw in dashboard.frameworks %}
+                        {% set coverage = fw.compliance|default(0) %}
+                        {% set tone = coverage >= 80 ? 'success' : (coverage >= 60 ? 'warning' : 'danger') %}
+                        {# V3 W3-Aurora: Aurora-Tone-Tokens via inline style — bypass Bootstrap bg-* fallback. #}
+                        <tr class="fa-table__row">
+                            <td class="fa-table__cell">
+                                {# V4-EF-5: Framework name links to drill-down #}
+                                {% if fw.code is defined and fw.code %}
+                                    <a href="{{ path('app_dashboard_cm_heatmap_drill', {framework: fw.code}) }}" class="fw-bold text-decoration-none link-body-emphasis">{{ fw.name|default(fw.code|default('—')) }}</a>
+                                {% else %}
+                                    <strong>{{ fw.name|default(fw.code|default('—')) }}</strong>
+                                {% endif %}
+                            </td>
+                            <td class="fa-table__cell fa-table__cell--num">{{ coverage }}%</td>
+                            <td class="fa-table__cell" style="min-width: 180px;">
+                                <div class="progress" role="progressbar" aria-valuenow="{{ coverage }}" aria-valuemin="0" aria-valuemax="100" style="height: 12px; background-color: var(--surface-2);">
+                                    <div class="progress-bar" style="width: {{ coverage }}%; background-color: var(--{{ tone }}); color: var(--on-{{ tone }});"></div>
+                                </div>
+                            </td>
+                            <td class="fa-table__cell">
+                                {{ pill.render(coverage >= 80 ? 'compliance_manager.status.ok'|trans : (coverage >= 60 ? 'compliance_manager.status.at_risk'|trans : 'compliance_manager.status.gap'|trans), tone, {size: 'sm'}) }}
+                            </td>
+                            <td class="fa-table__cell fa-table__cell--actions">
+                                {# V4-EF-5: Drill-down link to heatmap detail page #}
+                                {% if fw.code is defined and fw.code %}
+                                    <a class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm me-1"
+                                       href="{{ path('app_dashboard_cm_heatmap_drill', {framework: fw.code}) }}"
+                                       title="{{ 'compliance_manager.heatmap.drill.title'|trans }}">
+                                        <i class="fa-icon fa-icon--util-zoom-in" aria-hidden="true"></i>
+                                        {{ 'compliance_manager.heatmap.drill.action'|trans }}
+                                    </a>
+                                {% endif %}
+                                {# Wizard-Link nur wenn Framework-Code Konsument hat (Whitelist via Route-Requirements). Verhindert 500 bei obsoleten Codes wie 'bait' (DORA-replaced). #}
+                                {% set _knownWizards = ['iso27001','nis2','dora','tisax','gdpr','iso22301','iso27701','iso27017','iso27018','iso42001','bsi_grundschutz','bsi_c5','bsi_c5_2026','bsi_grundschutz_standard','bsi_grundschutz_kern','nist_csf','kritis','pci_dss','soc2','eu_ai_act','eucs','cra'] %}
+                                {% if fw.code is defined and fw.code and (fw.code|lower) in _knownWizards %}
+                                    <a class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm" href="{{ path('app_compliance_wizard_start', {wizard: fw.code|lower}) }}">
+                                        <i class="fa-icon fa-icon--ui-magic" aria-hidden="true"></i>
+                                        {{ 'compliance_manager.common.wizard'|trans }}
+                                    </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% endblock %}
+            {% endembed %}
+            {% else %}
+                {{ _fa_empty_state.render({
+                    mood: 'thinking',
+                    title: 'compliance_manager.empty.no_frameworks_title'|trans,
+                    text: 'compliance_manager.empty.no_frameworks_text'|trans,
+                    actions: [
+                        { label: 'compliance_manager.empty.no_frameworks_action'|trans, variant: 'primary', icon: 'nav-magic', href: path('app_compliance_wizard_index') }
+                    ]
+                }) }}
+            {% endif %}
+        </div>
+    </section>
+
+    {# Lowest 3 Frameworks #}
+    {% if dashboard.lowest_coverage|length > 0 %}
+    <section class="fa-section mb-4" id="lowest-coverage">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance_manager.section.lowest_coverage'|trans }}</h2>
+        </div>
+        <div class="fa-section__body">
+            <ol class="list-group list-group-numbered">
+                {% for fw in dashboard.lowest_coverage %}
+                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                        <div class="ms-2 me-auto">
+                            <div class="fw-bold">{{ fw.name|default(fw.code|default('—')) }}</div>
+                            <small class="text-muted">{{ 'compliance_manager.lowest.coverage_hint'|trans({'%coverage%': fw.compliance|default(0)}, 'dashboards') }}</small>
+                        </div>
+                        {% set _knownWizards = ['iso27001','nis2','dora','tisax','gdpr','iso22301','iso27701','iso27017','iso27018','iso42001','bsi_grundschutz','bsi_c5','bsi_c5_2026','bsi_grundschutz_standard','bsi_grundschutz_kern','nist_csf','kritis','pci_dss','soc2','eu_ai_act','eucs','cra'] %}
+                        {% if fw.code is defined and fw.code and (fw.code|lower) in _knownWizards %}
+                            <a class="fa-cyber-btn fa-cyber-btn--primary fa-cyber-btn--sm" href="{{ path('app_compliance_wizard_start', {wizard: fw.code|lower}) }}">
+                                <i class="fa-icon fa-icon--ui-arrow-right" aria-hidden="true"></i>
+                                {{ 'compliance_manager.lowest.edit'|trans }}
+                            </a>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ol>
+        </div>
+    </section>
+    {% endif %}
+
+    {# Findings by Severity #}
+    <section class="fa-section mb-4" id="findings">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance_manager.section.findings_by_severity'|trans }}</h2>
+        </div>
+        <div class="fa-section__body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    {{ _fa_feature_card.render({
+                        icon: 'nav-shield-alert',
+                        label: 'compliance_manager.severity.critical'|trans,
+                        value: dashboard.findings_severity.critical,
+                        variant: 'danger'
+                    }) }}
+                </div>
+                <div class="col-md-3">
+                    {{ _fa_feature_card.render({
+                        icon: 'status-critical',
+                        label: 'compliance_manager.severity.high'|trans,
+                        value: dashboard.findings_severity.high,
+                        variant: 'warning'
+                    }) }}
+                </div>
+                <div class="col-md-3">
+                    {{ _fa_feature_card.render({
+                        icon: 'status-info',
+                        label: 'compliance_manager.severity.medium'|trans,
+                        value: dashboard.findings_severity.medium,
+                        variant: 'info'
+                    }) }}
+                </div>
+                <div class="col-md-3">
+                    {{ _fa_feature_card.render({
+                        icon: 'ui-circle',
+                        label: 'compliance_manager.severity.low'|trans,
+                        value: dashboard.findings_severity.low,
+                        variant: 'success'
+                    }) }}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {# Audit Schedule #}
+    <section class="fa-section mb-4" id="audit-schedule">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance_manager.section.audit_schedule'|trans }}</h2>
+        </div>
+        <div class="fa-section__body">
+            {% if dashboard.upcoming_audits|length > 0 %}
+                <div class="list-group">
+                    {% for audit in dashboard.upcoming_audits %}
+                        <a href="{{ path('app_audit_show', {id: audit.id}) }}" class="list-group-item list-group-item-action d-flex justify-content-between">
+                            <div>
+                                <strong>{{ audit.title|default(('compliance_manager.audit.prefix'|trans ~ audit.id)) }}</strong>
+                                <small class="d-block text-muted">{{ audit.scope|default('—') }}</small>
+                            </div>
+                            <span>
+                                {% if audit.plannedDate is defined and audit.plannedDate %}
+                                    {{ pill.render(audit.plannedDate|date('d.m.Y'), 'primary', {size: 'sm'}) }}
+                                {% endif %}
+                            </span>
+                        </a>
+                    {% endfor %}
+                </div>
+            {% else %}
+                {{ _fa_empty_state.render({
+                    mood: 'idle',
+                    title: 'compliance_manager.empty.no_audits_title'|trans,
+                    text: 'compliance_manager.empty.no_audits_text'|trans
+                }) }}
+            {% endif %}
+        </div>
+    </section>
+
+    {# Document Approval Queue #}
+    <section class="fa-section mb-4" id="approval-queue">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance_manager.section.approval_queue'|trans }}</h2>
+        </div>
+        <div class="fa-section__body">
+            {% if dashboard.pending_docs|length > 0 %}
+                <div class="list-group">
+                    {% for doc in dashboard.pending_docs %}
+                        <a href="{{ path('app_document_show', {id: doc.id}) }}" class="list-group-item list-group-item-action d-flex justify-content-between">
+                            <div>
+                                <strong>{{ doc.originalFilename|default(doc.filename|default('Document #' ~ doc.id)) }}</strong>
+                                <small class="d-block text-muted">{{ doc.category|default('—') }} · v{{ doc.version|default('—') }}</small>
+                            </div>
+                            {{ pill.render(doc.status, 'warning', {size: 'sm'}) }}
+                        </a>
+                    {% endfor %}
+                </div>
+            {% else %}
+                {{ _fa_empty_state.render({
+                    mood: 'happy',
+                    title: 'compliance_manager.empty.no_pending_docs_title'|trans,
+                    text: 'compliance_manager.empty.no_pending_docs_text'|trans
+                }) }}
+            {% endif %}
+        </div>
+    </section>
+
+    {# Quick Actions #}
+    <section class="fa-section mb-4" id="quick-actions">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance_manager.section.quick_actions'|trans }}</h2>
+        </div>
+        <div class="fa-section__body">
+            <div class="d-flex flex-wrap gap-2">
+                <a class="fa-cyber-btn fa-cyber-btn--primary" href="{{ path('app_compliance_wizard_index') }}">
+                    <i class="fa-icon fa-icon--ui-stars"></i>
+                    {{ 'compliance_manager.quick.new_wizard'|trans }}
+                </a>
+                <a class="fa-cyber-btn fa-cyber-btn--ghost" href="{{ path('app_compliance_mapping_hub') }}">
+                    <i class="fa-icon fa-icon--nav-workflow"></i>
+                    {{ 'compliance_manager.quick.cross_mapping'|trans }}
+                </a>
+                <a class="fa-cyber-btn fa-cyber-btn--ghost" href="{{ path('app_compliance_wizard_compare') }}">
+                    <i class="fa-icon fa-icon--nav-bar-chart"></i>
+                    {{ 'compliance_manager.quick.compare_wizards'|trans }}
+                </a>
+            </div>
+        </div>
+    </section>
+
+    {# Z.0 — Workflow Transparency: Pending Approvals + Stuck Workflows #}
+    {% if dashboard.pending_approvals is defined and dashboard.pending_approvals|length > 0 %}
+    <section class="fa-section mb-4" id="pending-approvals">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance_manager.section.pending_approvals'|trans({}, 'dashboards') }}</h2>
+        </div>
+        <div class="fa-section__body">
+            <div class="list-group">
+                {% for approval in dashboard.pending_approvals %}
+                    <a href="{{ path('app_workflow_instance_show', {id: approval.id}) }}"
+                       class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ approval.title }}</strong>
+                            <small class="d-block text-muted">{{ approval.entity_type }}</small>
+                        </div>
+                        {% if approval.due_date %}
+                            <span class="badge bg-warning text-dark">{{ approval.due_date|date('d.m.Y') }}</span>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if dashboard.lifecycle_stuck is defined and dashboard.lifecycle_stuck|length > 0 %}
+    <section class="fa-section mb-4" id="lifecycle-stuck">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance_manager.section.lifecycle_stuck'|trans({}, 'dashboards') }}</h2>
+        </div>
+        <div class="fa-section__body">
+            <div class="list-group">
+                {% for instance in dashboard.lifecycle_stuck %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ instance.workflow ? instance.workflow.name : 'Workflow' }}</strong>
+                            <small class="d-block text-muted">{{ instance.entityType }} #{{ instance.entityId }}</small>
+                        </div>
+                        {% if instance.dueDate %}
+                            <span class="badge bg-danger">{{ instance.dueDate|date('d.m.Y') }}</span>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    {# DORA Obligation KPI tile — only for DORA-obligated tenants #}
+    {% if is_module_active('nis2_dora') and is_dora_obligated() %}
+    <section class="mt-4">
+        <div class="row g-3">
+            <div class="col-12">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <i class="fa-icon fa-icon--regulator text-warning" aria-hidden="true"></i>
+                    <h2 class="h6 mb-0">{{ 'compliance_manager.section.dora_status'|trans }}</h2>
+                </div>
+            </div>
+            <div class="col-md-4">
+                {{ _fa_feature_card.render({
+                    label:   'compliance_manager.kpi.dora_roi_status'|trans,
+                    value:   'compliance_manager.kpi.dora_roi_status_open'|trans,
+                    icon:    'file-earmark-spreadsheet',
+                    variant: 'warning',
+                    link:    path('dora_roi_index'),
+                    linkLabel: 'compliance_manager.kpi.dora_roi_open'|trans,
+                }) }}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+</main>
+{% endblock %}

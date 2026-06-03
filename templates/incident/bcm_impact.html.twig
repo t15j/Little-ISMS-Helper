@@ -8,7 +8,7 @@
     {# Breadcrumb #}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'Incidents', url: path('app_incident_index'), icon: 'bi-exclamation-triangle' },
+            { label: 'Incidents', url: path('app_incident_index'), icon: 'status-warning' },
             { label: incident.incidentNumber, url: path('app_incident_show', {id: incident.id}) },
             { label: 'BCM Impact Analysis' }
         ]
@@ -18,10 +18,10 @@
     {% include '_components/_page_header.html.twig' with {
         title: 'BCM Impact Analysis',
         subtitle: incident.title,
-        icon: 'bi-diagram-3',
+        icon: 'nav-workflow',
         actions: [
-            { label: 'Back to Incident', url: path('app_incident_show', {id: incident.id}), variant: 'secondary', icon: 'bi-arrow-left' },
-            { label: 'Download PDF', url: path('app_incident_bcm_impact_report', {id: incident.id}), variant: 'primary', icon: 'bi-file-earmark-pdf' }
+            { label: 'Back to Incident', url: path('app_incident_show', {id: incident.id}), variant: 'secondary', icon: 'util-arrow-left' },
+            { label: 'Download PDF', url: path('app_incident_bcm_impact_report', {id: incident.id}), variant: 'primary', icon: 'nav-file-pdf' }
         ]
     } %}
 
@@ -31,10 +31,10 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
                     <div class="text-center">
-                        <div class="text-muted mb-2 fw-semibold">Affected Processes</div>
+                        <div class="text-muted mb-2 fw-semibold">{{ 'incident.bcm_impact_page.kpi.affected_processes'|trans({}, 'incident') }}</div>
                         <div class="fs-2 mb-0">{{ analysis.affected_processes.total_count }}</div>
                         {% if analysis.affected_processes.critical_count > 0 %}
-                            {% include '_components/_badge.html.twig' with { variant: 'danger', class: 'mt-2', content: analysis.affected_processes.critical_count ~ ' Critical' } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'danger', class: 'mt-2', content: analysis.affected_processes.critical_count ~ ' ' ~ ('incident.bcm_impact_page.kpi.critical_suffix'|trans({}, 'incident')) } %}
                         {% endif %}
                     </div>
                 {% endblock %}
@@ -45,9 +45,9 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
                     <div class="text-center">
-                        <div class="text-muted mb-2 fw-semibold">Financial Impact</div>
+                        <div class="text-muted mb-2 fw-semibold">{{ 'incident.bcm_impact_page.kpi.financial_impact'|trans({}, 'incident') }}</div>
                         <div class="fs-2 mb-0">€{{ analysis.financial_impact.total_eur|number_format(0, '.', ',') }}</div>
-                        <small class="text-muted">€{{ analysis.financial_impact.per_hour_eur|number_format(2) }}/hour</small>
+                        <small class="text-muted">{{ 'incident.bcm_impact_page.kpi.per_hour'|trans({'%amount%': analysis.financial_impact.per_hour_eur|number_format(2)}, 'incident') }}</small>
                     </div>
                 {% endblock %}
             {% endembed %}
@@ -57,7 +57,7 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
                     <div class="text-center">
-                        <div class="text-muted mb-2 fw-semibold">Recovery Priority</div>
+                        <div class="text-muted mb-2 fw-semibold">{{ 'incident.bcm_impact_page.kpi.recovery_priority'|trans({}, 'incident') }}</div>
                         <div class="fs-3 mb-0">
                             {% set priority_class = {
                                 'immediate': 'danger',
@@ -77,11 +77,11 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
                     <div class="text-center">
-                        <div class="text-muted mb-2 fw-semibold">RTO Compliance</div>
+                        <div class="text-muted mb-2 fw-semibold">{{ 'incident.bcm_impact_page.kpi.rto_compliance'|trans({}, 'incident') }}</div>
                         {% if analysis.rto_compliance.is_compliant %}
-                            <div class="fs-3 mb-0 text-success"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i> Compliant</div>
+                            <div class="fs-3 mb-0 text-success"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i> {{ 'incident.bcm_impact_page.kpi.rto_compliant'|trans({}, 'incident') }}</div>
                         {% else %}
-                            <div class="fs-3 mb-0 text-danger"><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i> {{ analysis.rto_compliance.violations_count }} Violations</div>
+                            <div class="fs-3 mb-0 text-danger"><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i> {{ 'incident.bcm_impact_page.kpi.rto_violations'|trans({'%count%': analysis.rto_compliance.violations_count}, 'incident') }}</div>
                         {% endif %}
                     </div>
                 {% endblock %}
@@ -187,9 +187,21 @@
     {% endembed %}
 
     {# Recovery Priority Recommendations #}
-    {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
+    {% set _priorityVariant = {
+        'immediate': 'danger',
+        'high': 'warning',
+        'medium': 'primary',
+        'low': 'primary'
+    }[analysis.recovery_priority.level]|default('primary') %}
+    {% embed '_components/_card.html.twig' with { 'class': 'mb-4', 'variant': 'bordered', 'borderColor': _priorityVariant } %}
         {% block card_header %}
-            <div class="card-header bg-{{ priority_class }}"><h2 class="h5 mb-0 text-white"><i class="fa-icon fa-icon--ui-lightbulb" aria-hidden="true"></i> Recovery Priority: {{ analysis.recovery_priority.level|upper }}</h2></div>
+            <div class="fa-section__header card-header">
+                <h2 class="fa-section__title h5 mb-0">
+                    <i class="fa-icon fa-icon--ui-lightbulb" aria-hidden="true"></i>
+                    Recovery Priority:
+                    <span class="fa-status-pill fa-status-pill--{{ _priorityVariant }} ms-1">{{ analysis.recovery_priority.level|upper }}</span>
+                </h2>
+            </div>
         {% endblock %}
         {% block card_body %}
             <p><strong>Reasoning:</strong> {{ analysis.recovery_priority.reasoning }}</p>

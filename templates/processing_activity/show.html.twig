@@ -1,30 +1,44 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% trans_default_domain 'privacy'%}
 {% block title %}{{ processing_activity.name }} - Processing Activity{% endblock %}
 
 {% block body %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
+{% import '_components/_fa_status_chip.html.twig' as _fa_status_chip %}
+{% import '_components/_lifecycle_actions.html.twig' as _lifecycle_actions %}
+{% import '_components/_lifecycle_history_tab.html.twig' as _lifecycle_history %}
 <div class="container-fluid mt-4">
     {# Breadcrumb #}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'GDPR', url: path('app_processing_activity_index'), icon: 'bi-shield-check' },
+            { label: 'GDPR', url: path('app_processing_activity_index'), icon: 'shield-check' },
             { label: 'VVT', url: path('app_processing_activity_index') },
             { label: processing_activity.name }
         ]
     } %}
 
+    {% set hint = alva_hint(processing_activity) %}
+    {% if hint %}{{ _fa_alva_hint.render(hint) }}{% endif %}
+
     {# Page Header #}
-    {% include '_components/_page_header.html.twig' with {
-        title: processing_activity.name,
+    {{ _fa_page_header.render({
+        badge:    { icon: 'nav-file-earmark-text', label: 'GDPR' },
+        title:    processing_activity.name,
         subtitle: 'processing_activity.show.subtitle'|trans({}, 'privacy'),
-        icon: 'bi-file-earmark-text',
         actions: [
-            { label: 'Edit', url: path('app_processing_activity_edit', {id: processing_activity.id}), variant: 'primary', icon: 'bi-pencil' },
-            { label: 'Clone', url: '#', variant: 'outline-secondary', icon: 'bi-files', attributes: 'data-action="clone"' },
-            { label: 'Back to List', url: path('app_processing_activity_index'), variant: 'outline-secondary', icon: 'bi-arrow-left' }
+            { label: 'Edit',         variant: 'primary', icon: 'ui-edit',     href: path('app_processing_activity_edit', {id: processing_activity.id}) },
+            { label: 'Clone',        variant: 'ghost',   icon: 'files',      href: '#', attrs: { 'data-action': 'clone' } },
+            { label: 'Back to List', variant: 'ghost',   icon: 'util-arrow-left', href: path('app_processing_activity_index') }
         ]
-    } %}
+    }) }}
+
+    {# Lifecycle X.3 — status pill + transition dropdown #}
+    <div class="d-flex align-items-center gap-2 mb-3" data-testid="lifecycle-toolbar">
+        {{ _fa_status_chip.render({ entity_class: 'App\\Entity\\ProcessingActivity', status_key: processing_activity.status }) }}
+        {{ _lifecycle_actions.dropdown(processing_activity, 'processing-activity', 'processing_activity_lifecycle') }}
+    </div>
 
     {# Compliance Status Banner #}
     {% if not compliance_report.is_compliant %}
@@ -47,7 +61,7 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
                     <div class="text-center">
-                        <div class="text-muted mb-2 fw-semibold">Completeness</div>
+                        <div class="text-muted mb-2 fw-semibold">{{ 'processing_activity.kpi.completeness'|trans({}, 'privacy') }}</div>
                         {% set completeness = compliance_report.completeness_percentage %}
                         <div class="fs-2 fw-bold mb-0 {{ completeness == 100 ? 'text-success' : 'text-warning' }}">{{ completeness }}%</div>
                     </div>
@@ -58,7 +72,7 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
                     <div class="text-center">
-                        <div class="text-muted mb-2 fw-semibold">Status</div>
+                        <div class="text-muted mb-2 fw-semibold">{{ 'processing_activity.kpi.status'|trans({}, 'privacy') }}</div>
                         <div class="fs-4 fw-bold mb-0"><span class="{{ badge_status(processing_activity.status) }}">{{ processing_activity.status|upper }}</span></div>
                     </div>
                 {% endblock %}
@@ -68,7 +82,7 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
                     <div class="text-center">
-                        <div class="text-muted mb-2 fw-semibold">Risk Level</div>
+                        <div class="text-muted mb-2 fw-semibold">{{ 'processing_activity.kpi.risk_level'|trans({}, 'privacy') }}</div>
                         {% if processing_activity.riskLevel %}
                             <div class="fs-4 fw-bold mb-0"><span class="{{ badge_risk(processing_activity.riskLevel) }}">{{ processing_activity.riskLevel|upper }}</span></div>
                         {% else %}
@@ -82,17 +96,17 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
                     <div class="text-center">
-                        <div class="text-muted mb-2 fw-semibold">DPIA Status</div>
+                        <div class="text-muted mb-2 fw-semibold">{{ 'processing_activity.kpi.dpia_status'|trans({}, 'privacy') }}</div>
                         {% if processing_activity.requiresDPIA %}
                             {% if processing_activity.dpiaCompleted %}
                                 <div class="fs-4 fw-bold mb-0 text-success"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i></div>
                                 <small class="text-muted">{{ processing_activity.dpiaDate|date('Y-m-d') }}</small>
                             {% else %}
                                 <div class="fs-4 fw-bold mb-0 text-danger"><i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i></div>
-                                <small class="text-danger">Required</small>
+                                <small class="text-danger">{{ 'processing_activity.kpi.required'|trans({}, 'privacy') }}</small>
                             {% endif %}
                         {% else %}
-                            <div class="fs-4 fw-semibold mb-0 text-muted">Not Required</div>
+                            <div class="fs-4 fw-semibold mb-0 text-muted">{{ 'processing_activity.kpi.not_required'|trans({}, 'privacy') }}</div>
                         {% endif %}
                     </div>
                 {% endblock %}
@@ -148,7 +162,19 @@
                         </dd>
 
                         <dt class="col-sm-3">{{ 'processing_activity.field.responsible_department'|trans({}, 'privacy') }}:</dt>
-                        <dd class="col-sm-9">{{ processing_activity.responsibleDepartment ?? '—' }}</dd>
+                        <dd class="col-sm-9">
+                            {% if processing_activity.responsibleDepartmentEntity %}
+                                <strong>{{ processing_activity.responsibleDepartmentEntity.name }}</strong>
+                                {% if processing_activity.responsibleDepartmentEntity.code %}
+                                    <span class="text-muted">({{ processing_activity.responsibleDepartmentEntity.code }})</span>
+                                {% endif %}
+                                {% if processing_activity.responsibleDepartment %}
+                                    <br><small class="text-muted">{{ 'processing_activity.field.responsible_department'|trans({}, 'privacy') }} (Legacy): {{ processing_activity.responsibleDepartment }}</small>
+                                {% endif %}
+                            {% else %}
+                                {{ processing_activity.responsibleDepartment ?? '—' }}
+                            {% endif %}
+                        </dd>
 
                         <dt class="col-sm-3">{{ 'processing_activity.field.contact_person'|trans({}, 'privacy') }}:</dt>
                         <dd class="col-sm-9">{{ processing_activity.effectiveContactPerson ?? (processing_activity.contactPersonUser ? processing_activity.contactPersonUser.userIdentifier : '—') }}</dd>
@@ -245,9 +271,9 @@
                                     <td>{{ check|replace({'_': ' '})|title }}</td>
                                     <td>
                                         {% if passed %}
-                                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle-fill', content: 'Pass' } %}
+                                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'status-ok', content: 'Pass' } %}
                                         {% else %}
-                                            {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'bi-x-circle-fill', content: 'Fail' } %}
+                                            {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'status-critical', content: 'Fail' } %}
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -266,6 +292,21 @@
                             {% endfor %}
                         </ul>
                     {% endif %}
+
+                    {# V3 W2-Bug3: Linked Assets — drives DPIA auto-suggestion #}
+                    {% if processing_activity.assets|length > 0 %}
+                        <h3 class="h6 mt-3">{{ 'processing_activity.show.linked_assets'|trans({}, 'privacy') }}:</h3>
+                        <ul>
+                            {% for asset in processing_activity.assets %}
+                                <li>
+                                    <a href="{{ path('app_asset_show', {id: asset.id}) }}">{{ asset.name }}</a>
+                                    {% if asset.dataClassification %}
+                                        <small class="text-muted">({{ asset.dataClassification }})</small>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
                 {% endblock %}
             {% endembed %}
         </div>
@@ -277,11 +318,14 @@
     </form>
 
 <script>
-document.querySelector('[data-action="clone"]')?.addEventListener('click', (e) => {
+document.querySelector('[data-action="clone"]')?.addEventListener('click', async (e) => {
     e.preventDefault();
-    if (confirm('{{ 'processing_activity.confirm.clone'|trans({}, 'privacy') }}')) {
+    if (await window.faConfirm('{{ 'processing_activity.confirm.clone'|trans({}, 'privacy') }}')) {
         document.getElementById('cloneForm').submit();
     }
 });
 </script>
+
+{# Lifecycle X.3 — status history tab #}
+{{ _lifecycle_history.history('processing-activity', processing_activity.id) }}
 {% endblock %}

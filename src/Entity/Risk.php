@@ -30,6 +30,7 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Annotation\MaxDepth;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 #[ORM\Entity(repositoryClass: RiskRepository::class)]
 #[ORM\Index(name: 'idx_risk_status', columns: ['status'])]
@@ -81,8 +82,8 @@ class Risk
 
     #[ORM\Column(length: 255)]
     #[Groups(['risk:read', 'risk:write'])]
-    #[Assert\NotBlank(message: 'Risk title is required')]
-    #[Assert\Length(max: 255, maxMessage: 'Risk title cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'risk.validation.title_required')]
+    #[Assert\Length(max: 255, maxMessage: 'risk.validation.title_max_length')]
     private ?string $title = null;
 
     /**
@@ -161,8 +162,13 @@ class Risk
 
     #[ORM\Column(type: Types::TEXT)]
     #[Groups(['risk:read', 'risk:write'])]
-    #[Assert\NotBlank(message: 'Risk description is required')]
+    #[Assert\NotBlank(message: 'risk.validation.description_required')]
     private ?string $description = null;
+
+    /** Free-text notes — e.g. incident-triggered re-evaluation log. */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $notes = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['risk:read', 'risk:write'])]
@@ -203,25 +209,25 @@ class Risk
 
     #[ORM\Column(type: Types::INTEGER)]
     #[Groups(['risk:read', 'risk:write'])]
-    #[Assert\NotNull(message: 'Probability is required')]
-    #[Assert\Range(notInRangeMessage: 'Probability must be between { min } and { max }', min: 1, max: 5)]
+    #[Assert\NotNull(message: 'risk.validation.probability_required')]
+    #[Assert\Range(notInRangeMessage: 'risk.validation.probability_range', min: 1, max: 5)]
     private ?int $probability = null;
 
     #[ORM\Column(type: Types::INTEGER)]
     #[Groups(['risk:read', 'risk:write'])]
-    #[Assert\NotNull(message: 'Impact is required')]
-    #[Assert\Range(notInRangeMessage: 'Impact must be between { min } and { max }', min: 1, max: 5)]
+    #[Assert\NotNull(message: 'risk.validation.impact_required')]
+    #[Assert\Range(notInRangeMessage: 'risk.validation.impact_range', min: 1, max: 5)]
     private ?int $impact = null;
 
     // Set default values for required fields
     #[ORM\Column(type: Types::INTEGER)]
     #[Groups(['risk:read', 'risk:write'])]
-    #[Assert\Range(notInRangeMessage: 'Residual probability must be between { min } and { max }', min: 1, max: 5)]
+    #[Assert\Range(notInRangeMessage: 'risk.validation.residual_probability_range', min: 1, max: 5)]
     private ?int $residualProbability = 1;
 
     #[ORM\Column(type: Types::INTEGER)]
     #[Groups(['risk:read', 'risk:write'])]
-    #[Assert\Range(notInRangeMessage: 'Residual impact must be between { min } and { max }', min: 1, max: 5)]
+    #[Assert\Range(notInRangeMessage: 'risk.validation.residual_impact_range', min: 1, max: 5)]
     private ?int $residualImpact = 1;
 
     #[ORM\Column(type: 'string', length: 50, nullable: true, enumType: TreatmentStrategy::class)]
@@ -236,18 +242,32 @@ class Risk
      * Risk Owner (ISO 27001:2022 - A.5.1 Policies for information security)
      * Person responsible for managing this risk
      * Phase 6F-B: Changed from string to User entity reference
+     *
+     * Junior-ISB-Audit-2026-05-22 K-05: NotNull replaced by entity-level
+     * Callback validateOwnerEitherOr — either riskOwner (User) OR
+     * riskOwnerPerson (Person from master data) is required. The DB column
+     * was already nullable (Version20251113140643 created it as DEFAULT NULL),
+     * so no migration is needed; this purely relaxes the Symfony-side
+     * assertion so the existing dual-state form-callback can do its work.
      */
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'risk_owner_id', nullable: true, onDelete: 'SET NULL')]
     #[Groups(['risk:read', 'risk:write'])]
     #[MaxDepth(1)]
-    #[Assert\NotNull(message: 'risk.validation.risk_owner_required')]
+    // Either-or slot: validateOwnerEitherOr() (Entity callback) enforces
+    // "at least one of riskOwner / riskOwnerPerson". A blanket NotNull would
+    // block the Person path, which is the canonical PoC flow for orgs that
+    // run master-data Persons without User accounts.
     private ?User $riskOwner = null;
 
     #[ORM\Column(type: 'string', length: 50, enumType: RiskStatus::class)]
     #[Groups(['risk:read', 'risk:write'])]
-    #[Assert\NotNull(message: 'Status is required')]
+    #[Assert\NotNull(message: 'risk.validation.status_required')]
     private ?RiskStatus $status = RiskStatus::Identified;
+
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     #[ORM\Column(type: Types::DATE_MUTABLE, nullable: true)]
     #[Groups(['risk:read', 'risk:write'])]
@@ -278,11 +298,63 @@ class Risk
     private ?string $acceptanceJustification = null;
 
     /**
+     * Risk Acceptance Expiry (ISO 27001 Cl. 8.3 — Audit-V3 LB-7)
+     *
+     * Date until which the risk acceptance is valid. After this date the
+     * acceptance must be re-evaluated by the risk owner. Closing the
+     * audit-finding "risk acceptance without expiry date" requires every
+     * accepted risk to carry a finite review horizon. Auditors check this
+     * field as a tripwire for stale acceptances.
+     */
+    #[ORM\Column(type: Types::DATE_MUTABLE, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?DateTimeInterface $acceptanceExpiryDate = null;
+
+    /**
      * Formal approval for risk acceptance
      */
     #[ORM\Column(type: Types::BOOLEAN)]
     #[Groups(['risk:read'])]
     private bool $formallyAccepted = false;
+
+    /**
+     * Likelihood / probability justification (ISO 27001:2022 6.1.2.d — audit-required)
+     * Score without textual justification is not audit-proof.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $likelihoodJustification = null;
+
+    /**
+     * Impact justification (ISO 27001:2022 6.1.2.d — audit-required)
+     * Score without textual justification is not audit-proof.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $impactJustification = null;
+
+    /**
+     * Decision rationale for risk treatment (ISO 31000 §6.5.4)
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $decisionRationale = null;
+
+    /**
+     * User who approved the risk treatment decision (replaces plain-text PT-F01 vector)
+     * CVSS 9.1 fix: EntityType instead of free-text field.
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'decision_approved_by_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?User $decisionApprovedByUser = null;
+
+    /**
+     * Date when the risk treatment decision was approved.
+     */
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?\DateTimeImmutable $decisionApprovalDate = null;
 
     /**
      * Custom review interval in days (overrides default from RiskReviewService).
@@ -338,6 +410,8 @@ class Risk
         $this->controls = new ArrayCollection();
         $this->incidents = new ArrayCollection();
         $this->riskOwnerDeputyPersons = new ArrayCollection();
+        $this->ictAssetDependency = new ArrayCollection();
+        $this->ictIncidentHistory = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
     }
 
@@ -362,7 +436,7 @@ class Risk
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -373,7 +447,7 @@ class Risk
         return $this->category;
     }
 
-    public function setCategory(string $category): static
+    public function setCategory(?string $category): static
     {
         $this->category = $category;
         return $this;
@@ -384,9 +458,20 @@ class Risk
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
+        return $this;
+    }
+
+    public function getNotes(): ?string
+    {
+        return $this->notes;
+    }
+
+    public function setNotes(?string $notes): static
+    {
+        $this->notes = $notes;
         return $this;
     }
 
@@ -510,7 +595,7 @@ class Risk
         return $this->probability;
     }
 
-    public function setProbability(int $probability): static
+    public function setProbability(?int $probability): static
     {
         $this->probability = $probability;
         return $this;
@@ -521,7 +606,7 @@ class Risk
         return $this->impact;
     }
 
-    public function setImpact(int $impact): static
+    public function setImpact(?int $impact): static
     {
         $this->impact = $impact;
         return $this;
@@ -532,7 +617,7 @@ class Risk
         return $this->residualProbability;
     }
 
-    public function setResidualProbability(int $residualProbability): static
+    public function setResidualProbability(?int $residualProbability): static
     {
         $this->residualProbability = $residualProbability;
         return $this;
@@ -543,7 +628,7 @@ class Risk
         return $this->residualImpact;
     }
 
-    public function setResidualImpact(int $residualImpact): static
+    public function setResidualImpact(?int $residualImpact): static
     {
         $this->residualImpact = $residualImpact;
         return $this;
@@ -603,6 +688,27 @@ class Risk
         return $this;
     }
 
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
+    }
+
+    /**
+     * String-based status accessor for Symfony Workflow marking_store compatibility.
+     * The Workflow component calls setStatusValue(string) — this bridge coerces
+     * the string back to the typed RiskStatus enum.
+     */
+    public function getStatusValue(): string
+    {
+        return $this->status?->value ?? RiskStatus::Identified->value;
+    }
+
+    public function setStatusValue(string $statusValue): static
+    {
+        $this->status = RiskStatus::from($statusValue);
+        return $this;
+    }
+
     public function getReviewDate(): ?DateTimeInterface
     {
         return $this->reviewDate;
@@ -619,7 +725,7 @@ class Risk
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -861,6 +967,50 @@ class Risk
     {
         $this->acceptanceJustification = $acceptanceJustification;
         return $this;
+    }
+
+    public function getAcceptanceExpiryDate(): ?DateTimeInterface
+    {
+        return $this->acceptanceExpiryDate;
+    }
+
+    public function setAcceptanceExpiryDate(?DateTimeInterface $acceptanceExpiryDate): static
+    {
+        $this->acceptanceExpiryDate = $acceptanceExpiryDate;
+        return $this;
+    }
+
+    /**
+     * Whether the risk acceptance has passed its expiry date and must be
+     * re-evaluated. Returns false when no expiry is set or strategy is
+     * not "accept" — the caller should treat that as "no acceptance, no
+     * expiry signal".
+     */
+    #[Groups(['risk:read'])]
+    public function isAcceptanceExpired(): bool
+    {
+        if ($this->treatmentStrategy !== TreatmentStrategy::Accept) {
+            return false;
+        }
+        if ($this->acceptanceExpiryDate === null) {
+            return false;
+        }
+        return $this->acceptanceExpiryDate < new \DateTimeImmutable('today');
+    }
+
+    /**
+     * Number of days the acceptance has been expired. Returns 0 if not
+     * expired, positive int otherwise.
+     */
+    #[Groups(['risk:read'])]
+    public function getAcceptanceExpiredDays(): int
+    {
+        if (!$this->isAcceptanceExpired() || $this->acceptanceExpiryDate === null) {
+            return 0;
+        }
+        $now = new \DateTimeImmutable('today');
+        $diff = $now->diff($this->acceptanceExpiryDate);
+        return (int) $diff->days;
     }
 
     public function isFormallyAccepted(): bool
@@ -1151,4 +1301,594 @@ class Risk
         );
     }
 
+    // -------------------------------------------------------------------------
+    // Entity-level validators (Junior-ISB-Audit-2026-05-22)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 K-05: Owner Either-Or — at least one of
+     * riskOwner (User from system login) or riskOwnerPerson (Person from
+     * master data) must be set. Replaces the bare Assert\NotNull on the
+     * riskOwner field which blocked all Person-only assignments even though
+     * the FormType already exposes both slots.
+     */
+    #[Assert\Callback]
+    public function validateOwnerEitherOr(ExecutionContextInterface $context): void
+    {
+        if ($this->riskOwner === null && $this->riskOwnerPerson === null) {
+            $context->buildViolation('risk.validation.risk_owner_required')
+                ->atPath('riskOwner')
+                ->addViolation();
+        }
+    }
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 M-02: Subject required — ISO 27001
+     * Cl. 6.1.2 c demands every risk reference at least one of
+     * asset / person / location / supplier. A risk "in general" without a
+     * subject is a textbook Major-NC at external audit. The FormType
+     * already enforces this on submit; this entity-level Callback closes
+     * the same hole for the API Platform write-paths (POST/PUT) and any
+     * future Service-layer writers that bypass the form.
+     */
+    #[Assert\Callback]
+    public function validateSubjectBound(ExecutionContextInterface $context): void
+    {
+        if ($this->asset === null
+            && $this->person === null
+            && $this->location === null
+            && $this->supplier === null
+        ) {
+            $context->buildViolation('risk.validator.subject_required')
+                ->atPath('asset')
+                ->addViolation();
+        }
+    }
+
+    // Junior-ISB-Audit-2026-05-22 S-02: ISO 27001 Cl. 6.1.3 a-b Treatment-Plan-Pflicht
+    /**
+     * Once a Risk has left the initial draft-like state (Identified), the
+     * organisation is required by ISO 27001 Cl. 6.1.3 a-b to have selected
+     * a treatment option (mitigate / transfer / accept / avoid). Allowing a
+     * Risk to sit in `assessed`/`in_treatment`/`treated`/`monitored`/`closed`/
+     * `accepted` without a strategy is a textbook Major-NC at external audit
+     * — the auditor cannot see how the organisation decided to handle the
+     * risk. Draft / Identified Risks may still leave the field empty so
+     * scoping work is not blocked.
+     */
+    #[Assert\Callback]
+    public function validateTreatmentStrategyRequired(ExecutionContextInterface $context): void
+    {
+        // Identified is the draft-like initial state — strategy may be empty.
+        if ($this->status === null || $this->status === RiskStatus::Identified) {
+            return;
+        }
+
+        if ($this->treatmentStrategy === null) {
+            $context->buildViolation('risk.validator.treatment_strategy_required')
+                ->atPath('treatmentStrategy')
+                ->addViolation();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Justification & Decision fields (T31.1.2)
+    // -------------------------------------------------------------------------
+
+    public function getLikelihoodJustification(): ?string
+    {
+        return $this->likelihoodJustification;
+    }
+
+    public function setLikelihoodJustification(?string $likelihoodJustification): static
+    {
+        $this->likelihoodJustification = $likelihoodJustification;
+        return $this;
+    }
+
+    public function getImpactJustification(): ?string
+    {
+        return $this->impactJustification;
+    }
+
+    public function setImpactJustification(?string $impactJustification): static
+    {
+        $this->impactJustification = $impactJustification;
+        return $this;
+    }
+
+    public function getDecisionRationale(): ?string
+    {
+        return $this->decisionRationale;
+    }
+
+    public function setDecisionRationale(?string $decisionRationale): static
+    {
+        $this->decisionRationale = $decisionRationale;
+        return $this;
+    }
+
+    public function getDecisionApprovedByUser(): ?User
+    {
+        return $this->decisionApprovedByUser;
+    }
+
+    public function setDecisionApprovedByUser(?User $decisionApprovedByUser): static
+    {
+        $this->decisionApprovedByUser = $decisionApprovedByUser;
+        return $this;
+    }
+
+    public function getDecisionApprovalDate(): ?\DateTimeImmutable
+    {
+        return $this->decisionApprovalDate;
+    }
+
+    public function setDecisionApprovalDate(?\DateTimeImmutable $decisionApprovalDate): static
+    {
+        $this->decisionApprovalDate = $decisionApprovalDate;
+        return $this;
+    }
+
+    // ── Sprint 7-A: DORA ICT-Risk fields (gated 'nis2_dora' module) ──────────
+
+    /**
+     * ICT risk category (DORA Art. 6(8)).
+     * Values: cyber | operations | third_party_ict | concentration | data_integrity
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $ictRiskCategory = null;
+
+    /**
+     * Whether the risk concerns a critical or important function (DORA Art. 6(2)+Annex).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['risk:read', 'risk:write'])]
+    private bool $criticalOrImportantFunction = false;
+
+    /**
+     * ICT third-party concentration risk flag (DORA Art. 28+29).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['risk:read', 'risk:write'])]
+    private bool $ictThirdPartyConcentration = false;
+
+    /**
+     * ICT asset dependency M2M.
+     * NOTE: Risk already has $asset (ManyToOne). This collection covers multi-asset ICT dependencies.
+     *
+     * @var Collection<int, Asset>
+     */
+    #[ORM\ManyToMany(targetEntity: Asset::class)]
+    #[ORM\JoinTable(name: 'risk_ict_asset_dependency')]
+    #[ORM\JoinColumn(name: 'risk_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'asset_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[Groups(['risk:read', 'risk:write'])]
+    private Collection $ictAssetDependency;
+
+    /**
+     * ICT incident history M2M (DORA Art. 17-19).
+     * NOTE: Risk already has $incidents (ManyToMany, mappedBy). This separate collection
+     * tracks ICT-specific incident references for DORA reporting.
+     *
+     * @var Collection<int, Incident>
+     */
+    #[ORM\ManyToMany(targetEntity: Incident::class)]
+    #[ORM\JoinTable(name: 'risk_ict_incident_history')]
+    #[ORM\JoinColumn(name: 'risk_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'incident_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[Groups(['risk:read', 'risk:write'])]
+    private Collection $ictIncidentHistory;
+
+    /**
+     * Data resilience requirement (RTO/RPO, Art. 11(2)(c)).
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $dataResilienceRequirement = null;
+
+    /**
+     * Threat-Led Penetration Test scope flag (DORA Art. 26-27).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['risk:read', 'risk:write'])]
+    private bool $tlptScope = false;
+
+    /**
+     * Whether regulatory reporting is required (DORA Art. 19 + NIS2 Art. 23).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['risk:read', 'risk:write'])]
+    private bool $regulatoryReportingRequired = false;
+
+    /**
+     * Whether board escalation is required (DORA Art. 5(2)).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['risk:read', 'risk:write'])]
+    private bool $boardEscalationRequired = false;
+
+    /**
+     * Whether lessons learned have been documented (DORA Art. 13).
+     */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['risk:read', 'risk:write'])]
+    private bool $lessonsLearnedDocumented = false;
+
+    // ── FAIR Quantitative Risk fields (gated: quantitative_risk module) ───
+
+    /** FAIR Loss Event Frequency — minimum (annualised). */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 4, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $lossEventFrequencyMin = null;
+
+    /** FAIR Loss Event Frequency — maximum (annualised). */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 4, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $lossEventFrequencyMax = null;
+
+    /** FAIR Loss Event Frequency — most likely (mode). */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 4, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $lossEventFrequencyMode = null;
+
+    /** FAIR Threat Event Frequency — minimum (annualised). */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 4, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $threatEventFrequencyMin = null;
+
+    /** FAIR Threat Event Frequency — maximum (annualised). */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 4, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $threatEventFrequencyMax = null;
+
+    /** FAIR Threat Event Frequency — most likely (mode). */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 4, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $threatEventFrequencyMode = null;
+
+    /** FAIR Vulnerability probability (0.0000–1.0000): how likely a threat event leads to loss. */
+    #[ORM\Column(type: 'decimal', precision: 5, scale: 4, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $vulnerabilityProbability = null;
+
+    /** FAIR Primary Loss Magnitude — minimum (€). */
+    #[ORM\Column(type: 'decimal', precision: 15, scale: 2, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $primaryLossMagnitudeMin = null;
+
+    /** FAIR Primary Loss Magnitude — maximum (€). */
+    #[ORM\Column(type: 'decimal', precision: 15, scale: 2, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $primaryLossMagnitudeMax = null;
+
+    /** FAIR Primary Loss Magnitude — most likely (mode, €). */
+    #[ORM\Column(type: 'decimal', precision: 15, scale: 2, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $primaryLossMagnitudeMode = null;
+
+    /** FAIR Secondary Loss Magnitude — minimum (€, includes reputation/fines). */
+    #[ORM\Column(type: 'decimal', precision: 15, scale: 2, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $secondaryLossMagnitudeMin = null;
+
+    /** FAIR Secondary Loss Magnitude — maximum (€). */
+    #[ORM\Column(type: 'decimal', precision: 15, scale: 2, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $secondaryLossMagnitudeMax = null;
+
+    /** FAIR Secondary Loss Magnitude — most likely (mode, €). */
+    #[ORM\Column(type: 'decimal', precision: 15, scale: 2, nullable: true)]
+    #[Groups(['risk:read', 'risk:write'])]
+    private ?string $secondaryLossMagnitudeMode = null;
+
+    public function getIctRiskCategory(): ?string
+    {
+        return $this->ictRiskCategory;
+    }
+
+    public function setIctRiskCategory(?string $ictRiskCategory): static
+    {
+        $this->ictRiskCategory = $ictRiskCategory;
+        return $this;
+    }
+
+    public function isCriticalOrImportantFunction(): bool
+    {
+        return $this->criticalOrImportantFunction;
+    }
+
+    public function setCriticalOrImportantFunction(bool $criticalOrImportantFunction): static
+    {
+        $this->criticalOrImportantFunction = $criticalOrImportantFunction;
+        return $this;
+    }
+
+    public function isIctThirdPartyConcentration(): bool
+    {
+        return $this->ictThirdPartyConcentration;
+    }
+
+    public function setIctThirdPartyConcentration(bool $ictThirdPartyConcentration): static
+    {
+        $this->ictThirdPartyConcentration = $ictThirdPartyConcentration;
+        return $this;
+    }
+
+    /** @return Collection<int, Asset> */
+    public function getIctAssetDependency(): Collection
+    {
+        return $this->ictAssetDependency;
+    }
+
+    public function addIctAssetDependency(Asset $asset): static
+    {
+        if (!$this->ictAssetDependency->contains($asset)) {
+            $this->ictAssetDependency->add($asset);
+        }
+        return $this;
+    }
+
+    public function removeIctAssetDependency(Asset $asset): static
+    {
+        $this->ictAssetDependency->removeElement($asset);
+        return $this;
+    }
+
+    /** @return Collection<int, Incident> */
+    public function getIctIncidentHistory(): Collection
+    {
+        return $this->ictIncidentHistory;
+    }
+
+    public function addIctIncidentHistory(Incident $incident): static
+    {
+        if (!$this->ictIncidentHistory->contains($incident)) {
+            $this->ictIncidentHistory->add($incident);
+        }
+        return $this;
+    }
+
+    public function removeIctIncidentHistory(Incident $incident): static
+    {
+        $this->ictIncidentHistory->removeElement($incident);
+        return $this;
+    }
+
+    public function getDataResilienceRequirement(): ?string
+    {
+        return $this->dataResilienceRequirement;
+    }
+
+    public function setDataResilienceRequirement(?string $dataResilienceRequirement): static
+    {
+        $this->dataResilienceRequirement = $dataResilienceRequirement;
+        return $this;
+    }
+
+    public function isTlptScope(): bool
+    {
+        return $this->tlptScope;
+    }
+
+    public function setTlptScope(bool $tlptScope): static
+    {
+        $this->tlptScope = $tlptScope;
+        return $this;
+    }
+
+    public function isRegulatoryReportingRequired(): bool
+    {
+        return $this->regulatoryReportingRequired;
+    }
+
+    public function setRegulatoryReportingRequired(bool $regulatoryReportingRequired): static
+    {
+        $this->regulatoryReportingRequired = $regulatoryReportingRequired;
+        return $this;
+    }
+
+    public function isBoardEscalationRequired(): bool
+    {
+        return $this->boardEscalationRequired;
+    }
+
+    public function setBoardEscalationRequired(bool $boardEscalationRequired): static
+    {
+        $this->boardEscalationRequired = $boardEscalationRequired;
+        return $this;
+    }
+
+    public function isLessonsLearnedDocumented(): bool
+    {
+        return $this->lessonsLearnedDocumented;
+    }
+
+    public function setLessonsLearnedDocumented(bool $lessonsLearnedDocumented): static
+    {
+        $this->lessonsLearnedDocumented = $lessonsLearnedDocumented;
+        return $this;
+    }
+
+    // ── FAIR getters / setters ─────────────────────────────────────────────
+
+    public function getLossEventFrequencyMin(): ?string
+    {
+        return $this->lossEventFrequencyMin;
+    }
+
+    public function setLossEventFrequencyMin(?string $lossEventFrequencyMin): static
+    {
+        $this->lossEventFrequencyMin = $lossEventFrequencyMin;
+        return $this;
+    }
+
+    public function getLossEventFrequencyMax(): ?string
+    {
+        return $this->lossEventFrequencyMax;
+    }
+
+    public function setLossEventFrequencyMax(?string $lossEventFrequencyMax): static
+    {
+        $this->lossEventFrequencyMax = $lossEventFrequencyMax;
+        return $this;
+    }
+
+    public function getLossEventFrequencyMode(): ?string
+    {
+        return $this->lossEventFrequencyMode;
+    }
+
+    public function setLossEventFrequencyMode(?string $lossEventFrequencyMode): static
+    {
+        $this->lossEventFrequencyMode = $lossEventFrequencyMode;
+        return $this;
+    }
+
+    public function getThreatEventFrequencyMin(): ?string
+    {
+        return $this->threatEventFrequencyMin;
+    }
+
+    public function setThreatEventFrequencyMin(?string $threatEventFrequencyMin): static
+    {
+        $this->threatEventFrequencyMin = $threatEventFrequencyMin;
+        return $this;
+    }
+
+    public function getThreatEventFrequencyMax(): ?string
+    {
+        return $this->threatEventFrequencyMax;
+    }
+
+    public function setThreatEventFrequencyMax(?string $threatEventFrequencyMax): static
+    {
+        $this->threatEventFrequencyMax = $threatEventFrequencyMax;
+        return $this;
+    }
+
+    public function getThreatEventFrequencyMode(): ?string
+    {
+        return $this->threatEventFrequencyMode;
+    }
+
+    public function setThreatEventFrequencyMode(?string $threatEventFrequencyMode): static
+    {
+        $this->threatEventFrequencyMode = $threatEventFrequencyMode;
+        return $this;
+    }
+
+    public function getVulnerabilityProbability(): ?string
+    {
+        return $this->vulnerabilityProbability;
+    }
+
+    public function setVulnerabilityProbability(?string $vulnerabilityProbability): static
+    {
+        $this->vulnerabilityProbability = $vulnerabilityProbability;
+        return $this;
+    }
+
+    public function getPrimaryLossMagnitudeMin(): ?string
+    {
+        return $this->primaryLossMagnitudeMin;
+    }
+
+    public function setPrimaryLossMagnitudeMin(?string $primaryLossMagnitudeMin): static
+    {
+        $this->primaryLossMagnitudeMin = $primaryLossMagnitudeMin;
+        return $this;
+    }
+
+    public function getPrimaryLossMagnitudeMax(): ?string
+    {
+        return $this->primaryLossMagnitudeMax;
+    }
+
+    public function setPrimaryLossMagnitudeMax(?string $primaryLossMagnitudeMax): static
+    {
+        $this->primaryLossMagnitudeMax = $primaryLossMagnitudeMax;
+        return $this;
+    }
+
+    public function getPrimaryLossMagnitudeMode(): ?string
+    {
+        return $this->primaryLossMagnitudeMode;
+    }
+
+    public function setPrimaryLossMagnitudeMode(?string $primaryLossMagnitudeMode): static
+    {
+        $this->primaryLossMagnitudeMode = $primaryLossMagnitudeMode;
+        return $this;
+    }
+
+    public function getSecondaryLossMagnitudeMin(): ?string
+    {
+        return $this->secondaryLossMagnitudeMin;
+    }
+
+    public function setSecondaryLossMagnitudeMin(?string $secondaryLossMagnitudeMin): static
+    {
+        $this->secondaryLossMagnitudeMin = $secondaryLossMagnitudeMin;
+        return $this;
+    }
+
+    public function getSecondaryLossMagnitudeMax(): ?string
+    {
+        return $this->secondaryLossMagnitudeMax;
+    }
+
+    public function setSecondaryLossMagnitudeMax(?string $secondaryLossMagnitudeMax): static
+    {
+        $this->secondaryLossMagnitudeMax = $secondaryLossMagnitudeMax;
+        return $this;
+    }
+
+    public function getSecondaryLossMagnitudeMode(): ?string
+    {
+        return $this->secondaryLossMagnitudeMode;
+    }
+
+    public function setSecondaryLossMagnitudeMode(?string $secondaryLossMagnitudeMode): static
+    {
+        $this->secondaryLossMagnitudeMode = $secondaryLossMagnitudeMode;
+        return $this;
+    }
+
+    /**
+     * V3 W2-FV-5 — audit-trail: when was this risk last reassessed in
+     * direct response to an incident (and which incident triggered it)?
+     * Set by IncidentController::reassessLinkedRisk() so an auditor can
+     * verify "Risk-Update was incident-driven" without grep-ing the audit
+     * log.
+     */
+    #[ORM\Column(name: 'last_incident_reassessment_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?DateTimeImmutable $lastIncidentReassessmentAt = null;
+
+    #[ORM\ManyToOne(targetEntity: Incident::class)]
+    #[ORM\JoinColumn(name: 'last_incident_reassessment_incident_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Incident $lastIncidentReassessmentIncident = null;
+
+    public function getLastIncidentReassessmentAt(): ?DateTimeImmutable
+    {
+        return $this->lastIncidentReassessmentAt;
+    }
+
+    public function setLastIncidentReassessmentAt(?DateTimeImmutable $at): static
+    {
+        $this->lastIncidentReassessmentAt = $at;
+        return $this;
+    }
+
+    public function getLastIncidentReassessmentIncident(): ?Incident
+    {
+        return $this->lastIncidentReassessmentIncident;
+    }
+
+    public function setLastIncidentReassessmentIncident(?Incident $incident): static
+    {
+        $this->lastIncidentReassessmentIncident = $incident;
+        return $this;
+    }
 }

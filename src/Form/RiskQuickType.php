@@ -16,7 +16,7 @@ use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
-class RiskQuickType extends AbstractType
+final class RiskQuickType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -42,10 +42,7 @@ class RiskQuickType extends AbstractType
                 'placeholder' => 'risk.placeholder.category',
                 'required' => true,
                 'choice_translation_domain' => 'risk',
-                'attr' => [
-                    'class' => 'form-select',
-                ],
-            ])
+                            ])
             ->add('description', TextareaType::class, [
                 'label' => 'risk.field.description',
                 'required' => true,
@@ -77,10 +74,7 @@ class RiskQuickType extends AbstractType
                 'choice_label' => fn(User $user): string => $user->getFullName() . ' (' . $user->getEmail() . ')',
                 'placeholder' => 'risk.placeholder.risk_owner',
                 'required' => true,
-                'attr' => [
-                    'class' => 'form-select',
-                ],
-            ])
+                            ])
         ;
     }
 

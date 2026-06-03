@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Entity\Person;
+use App\Enum\PrototypeProtectionAssessmentStatus;
 use App\Repository\PrototypeProtectionAssessmentRepository;
 use App\Service\OwnerResolver;
 use DateTimeImmutable;
@@ -87,6 +88,15 @@ class PrototypeProtectionAssessment
         self::STATUS_EXPIRED,
     ])]
     private string $status = self::STATUS_DRAFT;
+
+    /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on
+     * prototype_protection_assessment_lifecycle.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /** TISAX Assessment Level — AL2 for standard, AL3 for high-protection prototypes. */
     #[ORM\Column(length: 5, nullable: true)]
@@ -206,7 +216,19 @@ class PrototypeProtectionAssessment
     public function setScope(?string $scope): self { $this->scope = $scope; return $this; }
 
     public function getStatus(): string { return $this->status; }
-    public function setStatus(string $status): self { $this->status = $status; return $this; }
+    public function setStatus(PrototypeProtectionAssessmentStatus|string $status): self
+    {
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
+        return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?PrototypeProtectionAssessmentStatus
+    {
+        return PrototypeProtectionAssessmentStatus::tryFrom($this->status);
+    }
 
     public function getTisaxLevel(): ?string { return $this->tisaxLevel; }
     public function setTisaxLevel(?string $level): self { $this->tisaxLevel = $level; return $this; }
@@ -353,5 +375,10 @@ class PrototypeProtectionAssessment
             }
         }
         return $worst;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

@@ -6,14 +6,16 @@ namespace App\Entity;
 
 use DateTimeImmutable;
 use App\Entity\Tenant;
+use App\Enum\PatchStatus;
 use App\Repository\PatchRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
- * Patch Entity for NIS2 Compliance (Art. 21.2.d)
+ * Patch Entity for NIS2 Compliance (Art. 21.2.e — security in development, acquisition, maintenance incl. vulnerability handling)
  * Patch Management and Remediation Tracking
  */
 #[ORM\Entity(repositoryClass: PatchRepository::class)]
@@ -33,18 +35,21 @@ class Patch
      * Patch identifier (e.g., KB5012345, MS24-001)
      */
     #[ORM\Column(length: 100)]
+    #[Assert\NotBlank(message: 'patch.validation.patch_id_required')]
     private ?string $patchId = null;
 
     /**
      * Patch title/name
      */
     #[ORM\Column(length: 255)]
+    #[Assert\NotBlank(message: 'patch.validation.title_required')]
     private ?string $title = null;
 
     /**
      * Detailed description
      */
     #[ORM\Column(type: Types::TEXT)]
+    #[Assert\NotBlank(message: 'patch.validation.description_required')]
     private ?string $description = null;
 
     /**
@@ -58,12 +63,14 @@ class Patch
      * Vendor/manufacturer
      */
     #[ORM\Column(length: 100)]
+    #[Assert\NotBlank(message: 'patch.validation.vendor_required')]
     private ?string $vendor = null;
 
     /**
      * Affected product/software
      */
     #[ORM\Column(length: 255)]
+    #[Assert\NotBlank(message: 'patch.validation.product_required')]
     private ?string $product = null;
 
     /**
@@ -114,6 +121,14 @@ class Patch
      */
     #[ORM\Column(length: 30)]
     private string $status = 'pending';
+
+    /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on patch_lifecycle.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /**
      * Date patch was released by vendor
@@ -191,12 +206,14 @@ class Patch
      * Download URL
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Assert\Url(requireTld: false)]
     private ?string $downloadUrl = null;
 
     /**
      * Documentation URL
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Assert\Url(requireTld: false)]
     private ?string $documentationUrl = null;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
@@ -227,7 +244,7 @@ public function __construct()
         return $this->patchId;
     }
 
-    public function setPatchId(string $patchId): static
+    public function setPatchId(?string $patchId): static
     {
         $this->patchId = $patchId;
         return $this;
@@ -238,7 +255,7 @@ public function __construct()
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -249,7 +266,7 @@ public function __construct()
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -271,7 +288,7 @@ public function __construct()
         return $this->vendor;
     }
 
-    public function setVendor(string $vendor): static
+    public function setVendor(?string $vendor): static
     {
         $this->vendor = $vendor;
         return $this;
@@ -282,7 +299,7 @@ public function __construct()
         return $this->product;
     }
 
-    public function setProduct(string $product): static
+    public function setProduct(?string $product): static
     {
         $this->product = $product;
         return $this;
@@ -304,7 +321,7 @@ public function __construct()
         return $this->patchType;
     }
 
-    public function setPatchType(string $patchType): static
+    public function setPatchType(?string $patchType): static
     {
         $this->patchType = $patchType;
         return $this;
@@ -315,7 +332,7 @@ public function __construct()
         return $this->priority;
     }
 
-    public function setPriority(string $priority): static
+    public function setPriority(?string $priority): static
     {
         $this->priority = $priority;
         return $this;
@@ -349,10 +366,18 @@ public function __construct()
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(PatchStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?PatchStatus
+    {
+        return PatchStatus::tryFrom($this->status);
     }
 
     public function getReleaseDate(): ?DateTimeImmutable
@@ -360,7 +385,7 @@ public function __construct()
         return $this->releaseDate;
     }
 
-    public function setReleaseDate(DateTimeImmutable $releaseDate): static
+    public function setReleaseDate(?DateTimeImmutable $releaseDate): static
     {
         $this->releaseDate = $releaseDate;
         return $this;
@@ -597,5 +622,10 @@ public function __construct()
     {
         $this->tenant = $tenant;
         return $this;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

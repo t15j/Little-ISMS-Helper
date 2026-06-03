@@ -1,0 +1,304 @@
+eu_authorities:
+    nav:
+        title: 'Behörden-Export'
+        index_title: 'EU-Behörden-Templates'
+        index_subtitle: 'Meldungsvorlagen für Aufsichtsbehörden'
+    page:
+        title: 'EU-Behörden-Reporting'
+        subtitle: 'Regulatory Reporting für Datenschutzaufsichtsbehörden'
+    field: {}
+    error: {}
+    help: {}
+    audit: {}
+    success: {}
+    warning: {}
+    vvt:
+        title: 'Verfahrensverzeichnis (Art. 30 DSGVO)'
+        subtitle: 'Export im BfDI-Muster für Aufsichtsbehörden'
+        action:
+            export_xlsx: 'BfDI-XLSX exportieren'
+            export_csv: 'BfDI-CSV exportieren'
+            export_pdf: 'BfDI-PDF exportieren'
+        error:
+            no_processing_activities: 'Keine Verarbeitungstätigkeiten erfasst — bitte mindestens eine anlegen.'
+        column:
+            verantwortlicher: 'Verantwortlicher'
+            dpo: 'Datenschutzbeauftragter'
+            zweck: 'Verarbeitungszweck'
+            betroffene: 'Kategorien betroffener Personen'
+            daten: 'Kategorien personenbezogener Daten'
+            empfaenger: 'Empfänger'
+            drittland: 'Drittlandübermittlung'
+            loeschfristen: 'Löschfristen'
+            toms: 'Technische und organisatorische Maßnahmen'
+    nis2_registration:
+        page:
+            title: 'NIS-2 BSI-Portal-Registrierung'
+            subtitle: 'Jährliche Wiederregistrierung gemäß BSIG § 33 (NIS-2)'
+            edit_title: 'Registrierungsprofil bearbeiten'
+            edit_subtitle: 'Pflichtfelder für das BSI-Meldung-Portal ausfüllen'
+        section:
+            organization: 'Organisationsdaten'
+            nis2: 'NIS-2-Klassifikation'
+            contacts: 'Meldekontakte'
+            submission: 'Einreichung & Bestätigung'
+            registration: 'Registrierungsdaten'
+        field:
+            legal_name: 'Juristischer Name der Organisation'
+            legal_form: 'Rechtsform'
+            register_city: 'Handelsregistergericht (Stadt)'
+            register_number: 'Handelsregisternummer'
+            vat_id: 'USt-IdNr. (optional)'
+            sector: 'NIS-2-Sektor'
+            category: 'Einrichtungskategorie'
+            headcount: 'Betroffene Beschäftigte (Anzahl)'
+            turnover: 'Jahresumsatz in EUR (optional)'
+            ict_dependency: 'Abhängigkeit von IKT-Systemen'
+            nace_codes: 'NACE-Codes'
+            current_nace_codes: 'Aktuelle NACE-Codes'
+            incident_contact: 'Kontakt für Vorfallsmeldungen'
+            security_contact: 'Verantwortliche/r IT-Sicherheit'
+            backup_contact: 'Stellvertretung IT-Sicherheit (optional)'
+            last_reported: 'Zuletzt gemeldet'
+            next_due: 'Nächste Fälligkeit'
+            confirmation_number: 'BSI-Bestätigungsnummer'
+        placeholder:
+            legal_form: 'z.B. GmbH, AG, KG …'
+            sector: 'Sektor auswählen …'
+            backup_contact: 'Keine Stellvertretung'
+            confirmation_number: 'z.B. BSI-2026-XXXX-YYYY'
+        help:
+            legal_form: 'Rechtsform gem. Handelsregister, z.B. GmbH, AG, GbR'
+            register_number: 'Handelsregisternummer, z.B. HRB 12345'
+            headcount: 'Anzahl der von der Einrichtung betroffenen Beschäftigten'
+            turnover: 'Jährlicher Umsatz in EUR — relevant für Schwellenwertprüfung'
+            ict_dependency: 'Kurzbeschreibung der kritischen IKT-Abhängigkeiten (max. 5 Sätze)'
+            nace_codes: 'NACE-Rev.2-Codes Ihrer Haupttätigkeit'
+            nace_codes_detail: 'NACE-Codes werden aus den Organisations-Stammdaten übernommen und können dort aktualisiert werden.'
+        action:
+            edit: 'Profil bearbeiten'
+            export_json: 'BSI-Portal-JSON herunterladen'
+            mark_reported: 'Als gemeldet markieren'
+            fill_profile: 'Profil vervollständigen'
+        status:
+            current: 'Registrierung aktuell'
+            current_body: 'Nächste Fälligkeit: %date%'
+            due_soon: 'Registrierung bald fällig'
+            due_soon_body: 'Fälligkeit am %date% — bitte rechtzeitig exportieren und beim BSI einreichen.'
+            overdue: 'Registrierung ÜBERFÄLLIG'
+            overdue_body: 'Deadline war %date% — sofortige Einreichung erforderlich (BSIG § 33).'
+            never_reported: 'Noch nicht beim BSI gemeldet'
+        error:
+            legal_name_required: 'Juristischer Name ist Pflichtfeld'
+            legal_form_required: 'Rechtsform ist Pflichtfeld'
+            register_city_required: 'Handelsregistergericht ist Pflichtfeld'
+            register_number_required: 'Handelsregisternummer ist Pflichtfeld'
+            nace_codes_required: 'Mindestens ein NACE-Code ist erforderlich'
+            sector_required: 'NIS-2-Sektor ist Pflichtfeld'
+            category_invalid: 'Ungültige Einrichtungskategorie'
+            headcount_required: 'Beschäftigtenzahl muss größer als 0 sein'
+            ict_description_required: 'IKT-Abhängigkeitsbeschreibung ist Pflichtfeld'
+            incident_contact_required: 'Kontakt für Vorfallsmeldungen ist Pflichtfeld'
+            security_contact_required: 'Verantwortliche/r IT-Sicherheit ist Pflichtfeld'
+            profile_incomplete: 'Profil unvollständig — bitte zuerst alle Pflichtfelder ausfüllen.'
+            confirmation_number_required: 'BSI-Bestätigungsnummer ist Pflichtfeld'
+        success:
+            saved: 'Registrierungsprofil gespeichert.'
+            reported: 'Als beim BSI-Portal gemeldet markiert. Bestätigungsnummer: %number%'
+        warning:
+            incomplete_title: 'Profil unvollständig'
+            incomplete_body: 'Folgende Pflichtfelder fehlen noch:'
+        sector:
+            energy: 'Energie'
+            transport: 'Verkehr'
+            banking: 'Bankwesen'
+            financial_market: 'Finanzmarktinfrastrukturen'
+            health: 'Gesundheit'
+            drinking_water: 'Trinkwasser'
+            waste_water: 'Abwasser'
+            digital_infrastructure: 'Digitale Infrastruktur'
+            ict_service_management: 'IKT-Dienstverwaltung (B2B)'
+            public_administration: 'Öffentliche Verwaltung'
+            space: 'Weltraum'
+            postal_courier: 'Post- und Kurierdienste'
+            waste_management: 'Abfallbewirtschaftung'
+            chemicals: 'Herstellung, Erzeugung und Vertrieb von Chemikalien'
+            food: 'Produktion, Verarbeitung und Vertrieb von Lebensmitteln'
+            manufacturing: 'Verarbeitendes Gewerbe / Herstellung von Waren'
+            digital_providers: 'Anbieter digitaler Dienste'
+            research: 'Forschungseinrichtungen'
+            other: 'Sonstiger Sektor'
+        category:
+            essential: 'Wesentliche Einrichtung'
+            important: 'Wichtige Einrichtung'
+    hub:
+        page:
+            title: 'EU-Behörden-Reporting-Hub'
+            subtitle: 'Übersicht aller EU-Behörden-Meldepflichten für Ihre Organisation'
+        summary:
+            current: 'Aktuell / Verfügbar'
+            due_soon: 'Bald fällig'
+            overdue: 'Überfällig'
+            not_configured: 'Nicht konfiguriert'
+        filter:
+            country: 'Land filtern'
+        field:
+            type: 'Typ'
+            next_due: 'Nächste Fälligkeit'
+            last_submitted: 'Zuletzt eingereicht'
+            country: 'Land'
+        status:
+            current: 'Aktuell'
+            due_soon: 'Bald fällig'
+            overdue: 'Überfällig'
+            available: 'Verfügbar'
+            not_configured: 'Nicht konfiguriert'
+        type:
+            on_demand: 'Auf Anfrage'
+            yearly: 'Jährlich'
+            triggered: 'Ereignisbasiert'
+        obligation:
+            vvt_bfdi: 'VVT / BfDI-Export (DSGVO Art. 30)'
+            bfdi_templates: 'Behörden-Meldung-Templates (BfDI / LfDI)'
+            bsi_nis2: 'NIS-2 BSI-Portal-Registrierung'
+            dora_roi: 'DORA Register of Information (RoI XBRL)'
+        action:
+            open: 'Öffnen'
+        empty:
+            no_obligations: 'Keine Behörden-Meldepflichten konfiguriert.'
+    dora_roi:
+        page:
+            title: 'DORA Register of Information (RoI)'
+            subtitle: 'XBRL-Export für ESA-RoI-Einreichungspflicht (DORA Art. 28)'
+        section:
+            history: 'Einreichungshistorie'
+        field:
+            reporting_date: 'Berichtsdatum'
+            scope: 'Umfang'
+            payload_hash: 'Payload-Hash (SHA-256)'
+            submitted_at: 'Eingereicht am'
+            submitted_by: 'Eingereicht von'
+            confirmation_number: 'Bestätigungsnummer'
+        placeholder:
+            confirmation_number: 'z.B. EBA-2026-DORA-ROI-XXXX'
+        scope:
+            yearly_full: 'Vollständige Jahreseinreichung'
+            significant_changes: 'Wesentliche Änderungen'
+        status:
+            submitted: 'Eingereicht'
+            submitted_body: 'Eingereicht am %date% — Bestätigungsnummer: %number%'
+            generated_not_submitted: 'Generiert — noch nicht eingereicht'
+            generated_body: 'Die XBRL-Datei wurde generiert. Bitte beim Aufseher einreichen und Bestätigungsnummer erfassen.'
+            not_yet_generated: 'RoI für %year% noch nicht generiert'
+            not_yet_generated_body: 'Klicken Sie auf "XBRL generieren" um das Register für die ESA-Einreichung zu exportieren.'
+            pending: 'Ausstehend'
+        action:
+            generate: 'XBRL für %year% generieren'
+            generate_help: 'Exportiert Top-10 ESA-Pflichtfelder (DORA Art. 28, Taxonomy Sprint 9+)'
+            mark_submitted: 'Als eingereicht markieren'
+            confirm_submission: 'Einreichung bestätigen'
+        modal:
+            mark_submitted_title: 'DORA RoI als eingereicht markieren'
+        empty:
+            title: 'Noch keine RoI-Einreichungen'
+            body: 'Generieren Sie den ersten XBRL-Export für Ihren DORA-RoI.'
+        error:
+            confirmation_required: 'Bestätigungsnummer ist Pflichtfeld.'
+        success:
+            submitted: 'DORA RoI als eingereicht markiert. Bestätigungsnummer: %number%'
+        info:
+            not_applicable_to_tenant: 'DORA ist für diese Organisation nicht einschlägig. Setzen Sie den DORA-Verpflichtungsstatus unter den Organisations-Einstellungen.'
+        alva:
+            overdue_authority_report:
+                title: 'EU-Behörden-Meldung überfällig'
+                body: 'Mindestens eine EU-Behörden-Meldepflicht ist überfällig. Sofortiger Handlungsbedarf.'
+                action: 'Behörden-Hub öffnen'
+            dora_roi_due:
+                title: 'DORA RoI noch nicht für dieses Jahr eingereicht'
+                body: 'Der DORA Register of Information (RoI) für das aktuelle Jahr wurde noch nicht beim Aufseher eingereicht.'
+                action: 'DORA RoI öffnen'
+        global:
+            overdue_authority_report:
+                title: 'EU-Behörden-Meldung überfällig'
+                body: 'Mindestens eine EU-Behörden-Meldepflicht ist überfällig. Sofortiger Handlungsbedarf.'
+                action: 'Behörden-Hub öffnen'
+            dora_roi_export_due:
+                title: 'DORA RoI noch nicht eingereicht'
+                body: 'Der DORA Register of Information für das aktuelle Geschäftsjahr wurde noch nicht beim zuständigen Aufseher eingereicht (DORA Art. 28).'
+                action: 'DORA RoI öffnen'
+authority:
+    bsi_meldestelle:
+        name: 'BSI-Meldestelle (NIS-2)'
+        description: 'Bundesamt für Sicherheit in der Informationstechnik — NIS-2-Meldestelle'
+    bfdi:
+        name: 'BfDI'
+        description: 'Bundesbeauftragte/r für den Datenschutz und die Informationsfreiheit'
+    lfdi:
+        name: 'LfDI'
+        description: 'Landesbeauftragte/r für den Datenschutz und die Informationsfreiheit'
+    bundesland:
+        bw: 'Baden-Württemberg (LfDI BW)'
+        by: 'Bayern (LDA Bayern)'
+        ber: 'Berlin (BlnBDI)'
+        brb: 'Brandenburg (LDA Brandenburg)'
+        hb: 'Bremen (LfDI Bremen)'
+        hh: 'Hamburg (HmbBfDI)'
+        he: 'Hessen (HBDI)'
+        mv: 'Mecklenburg-Vorpommern (LfDI MV)'
+        ni: 'Niedersachsen (LfDI Nds.)'
+        nrw: 'Nordrhein-Westfalen (LfDI NRW)'
+        rlp: 'Rheinland-Pfalz (LfDI RLP)'
+        sl: 'Saarland (ULD Saarland)'
+        sn: 'Sachsen (SLfDI)'
+        st: 'Sachsen-Anhalt (LfDI LSA)'
+        sh: 'Schleswig-Holstein (ULD SH)'
+        th: 'Thüringen (TLfDI)'
+    action:
+        export_pdf: 'PDF exportieren'
+        export_json: 'JSON exportieren'
+    error:
+        module_inactive: 'EU-Behörden-Reporting ist nicht aktiv.'
+        breach_not_found: 'Datenpanne nicht gefunden.'
+        incident_not_found: 'Vorfall nicht gefunden.'
+        unknown_authority: 'Unbekannte Behörde: %key%'
+    section:
+        data_breaches: 'Datenpannen-Meldungen (Art. 33 DSGVO)'
+        incidents: 'Vorfalls-Meldungen (NIS-2 BSI)'
+        lfdi_export: 'LfDI-Export (Bundesland)'
+    field:
+        incident: 'Vorfall'
+        severity: 'Schweregrad'
+        detected_at: 'Entdeckt am'
+    empty:
+        no_breaches: 'Keine Datenpannen erfasst'
+        no_breaches_body: 'Sobald eine Datenpanne angelegt ist, können Sie hier die Behörden-Meldung als PDF oder JSON exportieren.'
+    nav:
+        title: 'Behörden-Notification-Templates'
+    alva:
+        authority_overdue:
+            title: 'Behörden-Meldung ausstehend (DSGVO Art. 33)'
+            body: '%count% Datenpanne(n) kritisch/hoch — über 24h ohne dokumentierten Behörden-Export. DSGVO Art. 33: Meldung binnen 72h.'
+            action: 'Behörden-Export öffnen'
+    global:
+        authority_template_overdue:
+            title: 'Behörden-Meldung ausstehend (DSGVO Art. 33)'
+            body: '%count% schwere Datenpanne(n) ohne Behörden-Export seit > 24h. DSGVO Art. 33 — 72h-Frist.'
+            action: 'Behörden-Export öffnen'
+        nis2_registration_overdue:
+            title: 'NIS-2 BSI-Portal-Registrierung überfällig'
+            body: 'Die jährliche NIS-2-Registrierung beim BSI-Portal ist überfällig. Deadline war %date%.'
+            action: 'NIS-2-Registrierung öffnen'
+        nis2_registration_due_soon:
+            title: 'NIS-2 BSI-Portal-Registrierung bald fällig'
+            body: 'Die jährliche NIS-2-Registrierung beim BSI-Portal ist fällig am %date% — bitte rechtzeitig erneuern.'
+            action: 'NIS-2-Registrierung öffnen'
+
+global:
+    authority_template_overdue:
+        title: 'Behörden-Meldung ausstehend (DSGVO Art. 33)'
+        body: '%count% schwere Datenpanne(n) ohne Behörden-Export seit > 24h. DSGVO Art. 33 — 72h-Frist.'
+        action: 'Behörden-Export öffnen'
+
+# Top-level Flash für DORA-Anwendbarkeits-Gate (genutzt von DoraComplianceController / DoraRoiController)
+dora:
+    not_applicable_to_tenant: 'DORA gilt für diese Organisation nicht. Den DORA-Verpflichtungsstatus unter den Organisations-Einstellungen setzen.'

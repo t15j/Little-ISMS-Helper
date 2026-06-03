@@ -5,20 +5,28 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use DateTime;
+use DateTimeImmutable;
 use Exception;
 use App\Entity\InternalAudit;
+use App\Entity\User;
 use App\Form\InternalAuditType;
+use App\Lifecycle\LifecycleService;
+use App\Repository\AuditChecklistRepository;
 use App\Repository\AuditLogRepository;
 use App\Repository\InternalAuditRepository;
+use App\Service\Audit\CrossFrameworkCoverageService;
+use App\Service\AuditLogger;
 use App\Service\ExcelExportService;
 use App\Service\InternalAuditCloner;
 use App\Service\PdfExportService;
 use App\Service\TenantContext;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsCsrfTokenValid;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
@@ -32,9 +40,13 @@ class AuditController extends AbstractController
         private readonly ExcelExportService $excelExportService,
         private readonly TranslatorInterface $translator,
         private readonly TenantContext $tenantContext,
+        private readonly AuditChecklistRepository $auditChecklistRepository,
+        private readonly AuditLogger $auditLogger,
+        private readonly LifecycleService $lifecycleService,
+        private readonly CrossFrameworkCoverageService $crossFrameworkCoverage,
         private readonly ?InternalAuditCloner $internalAuditCloner = null,
     ) {}
-    #[Route('/audit/', name: 'app_audit_index')]
+    #[Route('/audit', name: 'app_audit_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
         // Get filter parameters
@@ -75,7 +87,7 @@ class AuditController extends AbstractController
             'upcoming' => $upcoming,
         ]);
     }
-    #[Route('/audit/new', name: 'app_audit_new')]
+    #[Route('/audit/new', name: 'app_audit_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
@@ -91,16 +103,20 @@ class AuditController extends AbstractController
             $this->entityManager->persist($internalAudit);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('audit.success.created'));
+            $this->addFlash('success', $this->translator->trans('audit.success.created', [], 'audit'));
             return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('audit/new.html.twig', [
             'audit' => $internalAudit,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/audit/export/excel', name: 'app_audit_export_excel')]
+    #[Route('/audit/export/excel', name: 'app_audit_export_excel', methods: ['GET'])]
     public function exportExcel(Request $request): Response
     {
         $audits = $this->internalAuditRepository->findAll();
@@ -130,6 +146,19 @@ class AuditController extends AbstractController
             'Content-Disposition' => 'attachment; filename="audits_' . date('Y-m-d') . '.xlsx"',
         ]);
     }
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * Audits have no blocking FK relations — returns empty dependencies.
+     */
+    #[Route('/audit/bulk-delete-check', name: 'app_audit_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = (array) ($data['ids'] ?? []);
+        return new JsonResponse(['dependencies' => [], 'checked_count' => count($ids)]);
+    }
+
     #[Route('/audit/bulk-delete', name: 'app_audit_bulk_delete', methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function bulkDelete(Request $request): Response
@@ -178,7 +207,7 @@ class AuditController extends AbstractController
             'message' => "$deleted audits deleted successfully"
         ]);
     }
-    #[Route('/audit/{id}', name: 'app_audit_show', requirements: ['id' => '\d+'])]
+    #[Route('/audit/{id}', name: 'app_audit_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(InternalAudit $internalAudit): Response
     {
         // Get audit log history for this audit (last 10 entries)
@@ -186,13 +215,17 @@ class AuditController extends AbstractController
         $totalAuditLogs = count($auditLogs);
         $auditLogs = array_slice($auditLogs, 0, 10);
 
+        // C4-B4 — cross-framework coverage analysis for multi-framework audits
+        $coverageReport = $this->crossFrameworkCoverage->buildReport($internalAudit);
+
         return $this->render('audit/show.html.twig', [
             'audit' => $internalAudit,
             'auditLogs' => $auditLogs,
             'totalAuditLogs' => $totalAuditLogs,
+            'coverageReport' => $coverageReport,
         ]);
     }
-    #[Route('/audit/{id}/edit', name: 'app_audit_edit', requirements: ['id' => '\d+'])]
+    #[Route('/audit/{id}/edit', name: 'app_audit_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, InternalAudit $internalAudit): Response
     {
@@ -202,14 +235,18 @@ class AuditController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('audit.success.updated'));
+            $this->addFlash('success', $this->translator->trans('audit.success.updated', [], 'audit'));
             return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('audit/edit.html.twig', [
             'audit' => $internalAudit,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     /**
      * Sprint 3 / C1 — Clone an existing audit into a new planned audit.
@@ -218,7 +255,7 @@ class AuditController extends AbstractController
      * must stay intact).
      */
     #[Route('/audit/{id}/clone', name: 'app_audit_clone', requirements: ['id' => '\d+'], methods: ['POST'])]
-    #[IsGranted('ROLE_MANAGER')]
+    #[IsGranted('ROLE_USER')]
     public function clone(Request $request, InternalAudit $internalAudit): Response
     {
         if (!$this->isCsrfTokenValid('clone_audit_' . $internalAudit->getId(), (string) $request->request->get('_token'))) {
@@ -254,6 +291,97 @@ class AuditController extends AbstractController
         return $this->redirectToRoute('app_audit_show', ['id' => $clone->getId()]);
     }
 
+    #[Route('/audit/{id}/checklist', name: 'app_audit_checklist', requirements: ['id' => '\d+'], methods: ['GET'])]
+    #[IsGranted('ROLE_USER')]
+    public function checklist(InternalAudit $internalAudit): Response
+    {
+        $items = $this->auditChecklistRepository->findByAudit($internalAudit);
+
+        // Group items by framework (for non-compliance audits with multiple frameworks)
+        $grouped = [];
+        foreach ($items as $item) {
+            $frameworkName = $item->getRequirement()?->getFramework()?->getName() ?? 'general';
+            $grouped[$frameworkName] ??= [];
+            $grouped[$frameworkName][] = $item;
+        }
+
+        // Compute stats
+        $stats = [
+            'total' => count($items),
+            'verified' => 0,
+            'compliant' => 0,
+            'partial' => 0,
+            'non_compliant' => 0,
+            'not_applicable' => 0,
+        ];
+        foreach ($items as $item) {
+            $status = $item->getVerificationStatus();
+            if ($status !== 'not_checked') {
+                $stats['verified']++;
+            }
+            if (isset($stats[$status])) {
+                $stats[$status]++;
+            }
+        }
+
+        return $this->render('audit/checklist.html.twig', [
+            'audit' => $internalAudit,
+            'checklist_items' => $items,
+            'grouped_items' => $grouped,
+            'stats' => $stats,
+        ]);
+    }
+
+    #[Route('/audit/{id}/checklist/save', name: 'app_audit_checklist_save', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function checklistSave(Request $request, InternalAudit $internalAudit): Response
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        if (!isset($data['_token']) || !$this->isCsrfTokenValid('audit_checklist_save_' . $internalAudit->getId(), (string) $data['_token'])) {
+            return new JsonResponse(['error' => 'Invalid CSRF token'], Response::HTTP_FORBIDDEN);
+        }
+
+        $items = $data['items'] ?? [];
+        $updated = 0;
+        foreach ($items as $itemData) {
+            $itemId = (int) ($itemData['id'] ?? 0);
+            if ($itemId <= 0) {
+                continue;
+            }
+            $item = $this->auditChecklistRepository->find($itemId);
+            if ($item === null || $item->getAudit()?->getId() !== $internalAudit->getId()) {
+                continue;
+            }
+            if (isset($itemData['verificationStatus'])) {
+                $item->setVerificationStatus((string) $itemData['verificationStatus']);
+            }
+            if (isset($itemData['auditNotes'])) {
+                $item->setAuditNotes((string) $itemData['auditNotes']);
+            }
+            if (isset($itemData['evidenceFound'])) {
+                $item->setEvidenceFound((string) $itemData['evidenceFound']);
+            }
+            if (isset($itemData['findings'])) {
+                $item->setFindings((string) $itemData['findings']);
+            }
+            if (isset($itemData['recommendations'])) {
+                $item->setRecommendations((string) $itemData['recommendations']);
+            }
+            if (isset($itemData['complianceScore'])) {
+                $item->setComplianceScore((int) $itemData['complianceScore']);
+            }
+            $item->setUpdatedAt(new \DateTimeImmutable());
+            $updated++;
+        }
+        $this->entityManager->flush();
+
+        return new Response(
+            json_encode(['saved' => $updated, 'message' => $this->translator->trans('checklist.flash.saved', ['%count%' => $updated], 'audit')]),
+            Response::HTTP_OK,
+            ['Content-Type' => 'application/json']
+        );
+    }
+
     #[Route('/audit/{id}/delete', name: 'app_audit_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function delete(Request $request, InternalAudit $internalAudit): Response
@@ -262,12 +390,252 @@ class AuditController extends AbstractController
             $this->entityManager->remove($internalAudit);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('audit.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('audit.success.deleted', [], 'audit'));
         }
 
         return $this->redirectToRoute('app_audit_index');
     }
-    #[Route('/audit/{id}/export/pdf', name: 'app_audit_export_pdf', requirements: ['id' => '\d+'])]
+    // ==========================================================================
+    // S3 P0-26 — Audit-Bericht 4-Augen-Approval-Workflow (ISO 27001 Cl. 9.2.2 d)
+    // ==========================================================================
+
+    /**
+     * Submit the audit report. Auditor moves the audit from
+     * `conducted` (or legacy `in_progress`/`completed`) to `reported`.
+     * Audit is read-only for fields after this transition.
+     */
+    #[Route('/audit/{id}/submit-report', name: 'app_audit_submit_report', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    #[IsCsrfTokenValid('audit_submit_report', tokenKey: '_token')]
+    public function submitReport(InternalAudit $internalAudit): Response
+    {
+        if (!$internalAudit->canTransitionTo('reported')) {
+            $this->addFlash('error', $this->translator->trans('audit.error.invalid_transition', [], 'audit'));
+
+            return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+        }
+
+        $currentUser = $this->getCurrentUserOrThrow();
+        $oldStatus = (string) $internalAudit->getStatus();
+
+        $internalAudit->setReportedBy($currentUser);
+        $internalAudit->setReportedAt(new DateTimeImmutable());
+        $internalAudit->setUpdatedAt(new DateTimeImmutable());
+
+        $this->entityManager->flush();
+        $this->lifecycleService->transition($internalAudit, 'internal_audit_lifecycle', 'report', $currentUser);
+
+        $this->auditLogger->logCustom(
+            action: 'audit.report.submitted',
+            entityType: 'InternalAudit',
+            entityId: $internalAudit->getId(),
+            oldValues: ['status' => $oldStatus],
+            newValues: ['status' => 'reported', 'reported_by_id' => $currentUser->getId()],
+            description: sprintf('Audit report submitted by %s', (string) $currentUser->getEmail()),
+        );
+
+        $this->addFlash('success', $this->translator->trans('audit.flash.report_submitted', [], 'audit'));
+
+        return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+    }
+
+    /**
+     * Approve the audit report. Enforces 4-eyes principle server-side:
+     * the approver must differ from the reporter. Requires ROLE_AUDITOR
+     * (or higher in the role hierarchy).
+     */
+    #[Route('/audit/{id}/approve', name: 'app_audit_approve_report', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_AUDITOR')]
+    #[IsCsrfTokenValid('audit_approve_report', tokenKey: '_token')]
+    public function approveReport(InternalAudit $internalAudit): Response
+    {
+        if (!$internalAudit->canTransitionTo('approved')) {
+            $this->addFlash('error', $this->translator->trans('audit.error.invalid_transition', [], 'audit'));
+
+            return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+        }
+
+        $currentUser = $this->getCurrentUserOrThrow();
+
+        // 4-eyes principle: approver must differ from reporter.
+        $reporter = $internalAudit->getReportedBy();
+        if ($reporter instanceof User && $reporter->getId() === $currentUser->getId()) {
+            $this->addFlash('error', $this->translator->trans('audit.error.same_user_approve', [], 'audit'));
+
+            return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+        }
+
+        $internalAudit->setApprovedBy($currentUser);
+        $internalAudit->setApprovedAt(new DateTimeImmutable());
+        // Clear any previous rejection reason — the report is now approved.
+        $internalAudit->setRejectionReason(null);
+        $internalAudit->setUpdatedAt(new DateTimeImmutable());
+
+        $this->entityManager->flush();
+        // 4-eyes context: the prior reporter is the workflow-chain initiator,
+        // $currentUser is the second pair of eyes (the approver). The controller
+        // already enforced reporter ≠ currentUser above; passing them as
+        // (user, four_eyes_approver) lets FourEyesValidator confirm the
+        // approver-role requirement from `config/workflows/internal_audit.yaml`.
+        $this->lifecycleService->transition(
+            $internalAudit,
+            'internal_audit_lifecycle',
+            'approve',
+            $reporter instanceof User ? $reporter : $currentUser,
+            null,
+            $currentUser,
+        );
+
+        $this->auditLogger->logCustom(
+            action: 'audit.report.approved',
+            entityType: 'InternalAudit',
+            entityId: $internalAudit->getId(),
+            oldValues: ['status' => 'reported'],
+            newValues: ['status' => 'approved', 'approved_by_id' => $currentUser->getId()],
+            description: sprintf('Audit report approved by %s (4-eyes vs. reporter %s)', (string) $currentUser->getEmail(), $reporter?->getEmail() ?? '—'),
+        );
+
+        $this->addFlash('success', $this->translator->trans('audit.flash.report_approved', [], 'audit'));
+
+        return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+    }
+
+    /**
+     * Reject the audit report. Requires a textual rejectionReason
+     * (POST body field `rejection_reason`). Moves back to `rejected`
+     * — auditor can revise and resubmit (rejected → reported).
+     */
+    #[Route('/audit/{id}/reject', name: 'app_audit_reject_report', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_AUDITOR')]
+    #[IsCsrfTokenValid('audit_reject_report', tokenKey: '_token')]
+    public function rejectReport(Request $request, InternalAudit $internalAudit): Response
+    {
+        if (!$internalAudit->canTransitionTo('rejected')) {
+            $this->addFlash('error', $this->translator->trans('audit.error.invalid_transition', [], 'audit'));
+
+            return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+        }
+
+        $reason = trim((string) $request->request->get('rejection_reason', ''));
+        if ($reason === '') {
+            $this->addFlash('error', $this->translator->trans('audit.error.rejection_reason_required', [], 'audit'));
+
+            return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+        }
+
+        $currentUser = $this->getCurrentUserOrThrow();
+
+        $internalAudit->setRejectionReason($reason);
+        // approvedBy/approvedAt stay null — a rejection is not an approval.
+        $internalAudit->setUpdatedAt(new DateTimeImmutable());
+
+        $this->entityManager->flush();
+        $this->lifecycleService->transition($internalAudit, 'internal_audit_lifecycle', 'reject', $currentUser, $reason);
+
+        $this->auditLogger->logCustom(
+            action: 'audit.report.rejected',
+            entityType: 'InternalAudit',
+            entityId: $internalAudit->getId(),
+            oldValues: ['status' => 'reported'],
+            newValues: ['status' => 'rejected', 'rejection_reason' => $reason],
+            description: sprintf('Audit report rejected by %s', (string) $currentUser->getEmail()),
+        );
+
+        $this->addFlash('warning', $this->translator->trans('audit.flash.report_rejected', [], 'audit'));
+
+        return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+    }
+
+    /**
+     * Resubmit a previously rejected report (rejected → reported).
+     * Sets reportedBy/reportedAt to the current user/time so the
+     * 4-eyes-check against the *current* submitter is meaningful.
+     */
+    #[Route('/audit/{id}/resubmit', name: 'app_audit_resubmit_report', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    #[IsCsrfTokenValid('audit_resubmit_report', tokenKey: '_token')]
+    public function resubmitReport(InternalAudit $internalAudit): Response
+    {
+        if (!$internalAudit->canTransitionTo('reported')) {
+            $this->addFlash('error', $this->translator->trans('audit.error.invalid_transition', [], 'audit'));
+
+            return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+        }
+
+        $currentUser = $this->getCurrentUserOrThrow();
+        $oldStatus = (string) $internalAudit->getStatus();
+
+        $internalAudit->setReportedBy($currentUser);
+        $internalAudit->setReportedAt(new DateTimeImmutable());
+        $internalAudit->setUpdatedAt(new DateTimeImmutable());
+
+        $this->entityManager->flush();
+        // Workflow: rejected → reported via the 'rework' transition (single hop per workflow YAML)
+        $this->lifecycleService->transition($internalAudit, 'internal_audit_lifecycle', 'rework', $currentUser);
+
+        $this->auditLogger->logCustom(
+            action: 'audit.report.resubmitted',
+            entityType: 'InternalAudit',
+            entityId: $internalAudit->getId(),
+            oldValues: ['status' => $oldStatus],
+            newValues: ['status' => 'reported', 'reported_by_id' => $currentUser->getId()],
+            description: sprintf('Audit report resubmitted by %s after rejection', (string) $currentUser->getEmail()),
+        );
+
+        $this->addFlash('success', $this->translator->trans('audit.flash.report_resubmitted', [], 'audit'));
+
+        return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+    }
+
+    /**
+     * Close the audit cycle (approved → closed). Archives the audit;
+     * no further state changes possible.
+     */
+    #[Route('/audit/{id}/close', name: 'app_audit_close', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    #[IsCsrfTokenValid('audit_close', tokenKey: '_token')]
+    public function closeAudit(InternalAudit $internalAudit): Response
+    {
+        if (!$internalAudit->canTransitionTo('closed')) {
+            $this->addFlash('error', $this->translator->trans('audit.error.invalid_transition', [], 'audit'));
+
+            return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+        }
+
+        $currentUser = $this->getCurrentUserOrThrow();
+
+        $internalAudit->setClosedBy($currentUser);
+        $internalAudit->setClosedAt(new DateTimeImmutable());
+        $internalAudit->setUpdatedAt(new DateTimeImmutable());
+
+        $this->entityManager->flush();
+        $this->lifecycleService->transition($internalAudit, 'internal_audit_lifecycle', 'close', $currentUser);
+
+        $this->auditLogger->logCustom(
+            action: 'audit.cycle.closed',
+            entityType: 'InternalAudit',
+            entityId: $internalAudit->getId(),
+            oldValues: ['status' => 'approved'],
+            newValues: ['status' => 'closed', 'closed_by_id' => $currentUser->getId()],
+            description: sprintf('Audit cycle closed by %s', (string) $currentUser->getEmail()),
+        );
+
+        $this->addFlash('success', $this->translator->trans('audit.flash.audit_closed', [], 'audit'));
+
+        return $this->redirectToRoute('app_audit_show', ['id' => $internalAudit->getId()]);
+    }
+
+    private function getCurrentUserOrThrow(): User
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            throw $this->createAccessDeniedException('No authenticated user.');
+        }
+
+        return $user;
+    }
+
+    #[Route('/audit/{id}/export/pdf', name: 'app_audit_export_pdf', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function exportPdf(Request $request, InternalAudit $internalAudit): Response
     {
         // Close session to prevent blocking other requests during PDF generation
@@ -275,6 +643,7 @@ class AuditController extends AbstractController
 
         $pdf = $this->pdfExportService->generatePdf('audit/export_pdf.html.twig', [
             'audit' => $internalAudit,
+            'coverageReport' => $this->crossFrameworkCoverage->buildReport($internalAudit),
         ]);
 
         return new Response($pdf, Response::HTTP_OK, [

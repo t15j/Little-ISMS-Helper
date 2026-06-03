@@ -8,9 +8,16 @@ use App\Entity\Asset;
 use App\Entity\Person;
 use App\Entity\ThreatIntelligence;
 use App\Entity\User;
+use App\Form\Entry\IocEntryType;
+use App\Form\SectionMapInterface;
+use App\Form\Trait\ModuleAwareFormTrait;
+use App\Form\Type\JsonTagsType;
+use App\Service\ModuleConfigurationService;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
@@ -27,8 +34,15 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * This FormType is provided for future web-controller integration and
  * covers all user-editable fields including the Tri-State assignee slot.
  */
-class ThreatIntelligenceType extends AbstractType
+final class ThreatIntelligenceType extends AbstractType implements SectionMapInterface
 {
+    use ModuleAwareFormTrait;
+
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleConfiguration,
+    ) {
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
@@ -65,7 +79,6 @@ class ThreatIntelligenceType extends AbstractType
                 ],
                 'required' => true,
                 'choice_translation_domain' => 'threat',
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('severity', ChoiceType::class, [
                 'label' => 'field.severity',
@@ -78,7 +91,6 @@ class ThreatIntelligenceType extends AbstractType
                 ],
                 'required' => true,
                 'choice_translation_domain' => 'threat',
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('source', TextType::class, [
                 'label' => 'field.source',
@@ -96,8 +108,12 @@ class ThreatIntelligenceType extends AbstractType
                     'placeholder' => 'placeholder.cve_id',
                 ],
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix, Sprint Y.5) ──
+            // Owned by `threat_intelligence_lifecycle`. NIS2 Art. 21(2)e +
+            // ISO 27001 A.5.7. Transitions via LifecycleService only.
             ->add('status', ChoiceType::class, [
                 'label' => 'field.status',
+                'help' => 'field.status_readonly',
                 'choices' => [
                     'status_type.new' => 'new',
                     'status_type.analyzing' => 'analyzing',
@@ -105,9 +121,12 @@ class ThreatIntelligenceType extends AbstractType
                     'status_type.monitoring' => 'monitoring',
                     'status_type.closed' => 'closed',
                 ],
-                'required' => true,
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
                 'choice_translation_domain' => 'threat',
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('detectionDate', DateType::class, [
                 'label' => 'field.detection_date',
@@ -162,7 +181,6 @@ class ThreatIntelligenceType extends AbstractType
                 'multiple' => true,
                 'expanded' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'help.affected_assets',
@@ -174,7 +192,6 @@ class ThreatIntelligenceType extends AbstractType
                 'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
                 'required' => false,
                 'placeholder' => 'placeholder.assigned_to_user',
-                'attr' => ['class' => 'form-select'],
                 'help' => 'help.assigned_to_user',
             ])
             ->add('assignedPerson', EntityType::class, [
@@ -183,7 +200,6 @@ class ThreatIntelligenceType extends AbstractType
                 'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
                 'required' => false,
                 'placeholder' => 'placeholder.assigned_person',
-                'attr' => ['class' => 'form-select'],
                 'help' => 'help.assigned_person',
             ])
             ->add('assignedDeputyPersons', EntityType::class, [
@@ -194,12 +210,132 @@ class ThreatIntelligenceType extends AbstractType
                 'multiple' => true,
                 'expanded' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'help.assigned_deputy_persons',
             ])
         ;
+
+        // ── vulnerability_intel module: TLP / MITRE / IOCs / Confidence ───────
+        if ($this->isModuleActive('vulnerability_intel')) {
+            $builder
+                ->add('tlpClassification', ChoiceType::class, [
+                    'label' => 'threat_intelligence.field.tlp_classification',
+                    'required' => false,
+                    'placeholder' => 'threat_intelligence.placeholder.tlp_classification',
+                    'choices' => [
+                        'threat_intelligence.tlp.red' => 'red',
+                        'threat_intelligence.tlp.amber' => 'amber',
+                        'threat_intelligence.tlp.green' => 'green',
+                        'threat_intelligence.tlp.white' => 'white',
+                    ],
+                    'help' => 'threat_intelligence.help.tlp_classification',
+                ])
+                ->add('threatActorAttribution', TextType::class, [
+                    'label' => 'threat_intelligence.field.threat_actor_attribution',
+                    'required' => false,
+                    'attr' => [
+                        'maxlength' => 255,
+                        'placeholder' => 'threat_intelligence.placeholder.threat_actor_attribution',
+                    ],
+                    'help' => 'threat_intelligence.help.threat_actor_attribution',
+                ])
+                ->add('mitreAttackTactics', JsonTagsType::class, [
+                    'label' => 'threat_intelligence.field.mitre_attack_tactics',
+                    'required' => false,
+                    'placeholder' => 'threat_intelligence.placeholder.mitre_attack_tactics',
+                    'help' => 'threat_intelligence.help.mitre_attack_tactics',
+                ])
+                ->add('mitreAttackTechniques', JsonTagsType::class, [
+                    'label' => 'threat_intelligence.field.mitre_attack_techniques',
+                    'required' => false,
+                    'placeholder' => 'threat_intelligence.placeholder.mitre_attack_techniques',
+                    'help' => 'threat_intelligence.help.mitre_attack_techniques',
+                ])
+                // S5 Bucket 5 — structured per-row entry via IocEntryType
+                // (STIX 2.1 shape: [{type:ip|domain|hash|url|email, value, confidence}]).
+                ->add('iocsList', CollectionType::class, [
+                    'label' => 'threat_intelligence.field.iocs_list',
+                    'required' => false,
+                    'entry_type' => IocEntryType::class,
+                    'entry_options' => ['label' => false],
+                    'allow_add' => true,
+                    'allow_delete' => true,
+                    'by_reference' => false,
+                    'prototype' => true,
+                    'prototype_name' => '__ioc_index__',
+                    'attr' => [
+                        'class' => 'fa-collection fa-collection--iocs',
+                        'data-collection-prototype-name' => '__ioc_index__',
+                    ],
+                    'help' => 'threat_intelligence.help.iocs_list',
+                ])
+                ->add('confidenceLevel', ChoiceType::class, [
+                    'label' => 'threat_intelligence.field.confidence_level',
+                    'required' => false,
+                    'placeholder' => 'threat_intelligence.placeholder.confidence_level',
+                    'choices' => [
+                        'threat_intelligence.confidence.low' => 'low',
+                        'threat_intelligence.confidence.medium' => 'medium',
+                        'threat_intelligence.confidence.high' => 'high',
+                    ],
+                ])
+                ->add('sharedExternally', CheckboxType::class, [
+                    'label' => 'threat_intelligence.field.shared_externally',
+                    'required' => false,
+                    'help' => 'threat_intelligence.help.shared_externally',
+                ])
+            ;
+        }
+    }
+
+    /**
+     * S4 Foundation P-2 SectionPolicy — ISO 27001 A.5.7 · Threat Intelligence.
+     * Module-gated fields (vulnerability_intel) listed to ensure complete coverage.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview' => [
+                'title',
+                'description',
+                'threatType',
+                'severity',
+                'status',
+            ],
+            'intelligence_source' => [
+                'source',
+                'cveId',
+                'cvssScore',
+                'detectionDate',
+                'mitigationDate',
+            ],
+            'threat_classification' => [
+                'affectsOrganization',
+                'tlpClassification',
+                'threatActorAttribution',
+                'confidenceLevel',
+                'mitreAttackTactics',
+                'mitreAttackTechniques',
+                'iocsList',
+                'sharedExternally',
+            ],
+            'affected_assets' => [
+                'affectedAssets',
+            ],
+            'mitigations' => [
+                'mitigationRecommendations',
+                'actionsTaken',
+                'references',
+            ],
+            'audit_metadata' => [
+                'assignedTo',
+                'assignedPerson',
+                'assignedDeputyPersons',
+            ],
+        ];
     }
 
     public function configureOptions(OptionsResolver $resolver): void

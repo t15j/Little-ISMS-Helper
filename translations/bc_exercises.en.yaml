@@ -25,6 +25,7 @@ bc_exercises:
         plan_updates_required: 'Plan Updates Required'
         related_plans: 'Related BC Plans'
         report: Report
+        targets: 'Recovery Targets (RTO/RPO/MTPD)'
     table:
         name: Name
         type: Type
@@ -42,8 +43,17 @@ bc_exercises:
         duration: Duration
         duration_hours: 'Duration (hours)'
         participants: Participants
+        participants_legacy: 'Participants (Free Text, Migration)'
+        participant_persons: 'Participants (Persons)'
         facilitator: 'Facilitator/Lead'
+        facilitator_user: 'Facilitator/Lead (User)'
+        facilitator_person: 'Facilitator/Lead (Person)'
+        facilitator_legacy: 'Facilitator/Lead (Free Text, Migration)'
+        exercise_leader_user: 'Exercise Leader (User)'
+        exercise_leader_person: 'Exercise Leader (Person)'
         observers: Observers
+        observers_legacy: 'Observers (Free Text, Migration)'
+        observer_persons: 'Observers (Persons)'
         status: Status
         results: Results
         what_went_well: 'What Went Well (WWW)'
@@ -55,6 +65,11 @@ bc_exercises:
         success_rating: 'Overall Success Rating (1-5)'
         report_completed: 'Report Completed'
         report_date: 'Report Date'
+        success_criteria: 'Success Criteria (structured)'
+        actual_rto_achieved: 'Actual RTO Achieved (hours)'
+        actual_rpo_achieved: 'Actual RPO Achieved (hours)'
+        bc_plans_tested: 'BC Plans Tested'
+        evidence_artifacts: 'Evidence & Artifacts'
     badge:
         'yes': 'Yes'
         'no': 'No'
@@ -75,8 +90,17 @@ bc_exercises:
         exercise_date: 'Planned date of the exercise'
         duration_hours: 'Planned or actual duration of the exercise in hours'
         participants: 'Which persons/teams are participating in the exercise?'
+        participants_legacy: 'Legacy free-text — read-only for migration. Prefer the persons multi-select.'
+        participant_persons: 'Structured selection from master-data Persons — Data Reuse (P-15).'
         facilitator: 'Person leading and moderating the exercise'
+        facilitator_user: 'Facilitator/lead as an application user.'
+        facilitator_person: 'Facilitator/lead as a master-data Person (e.g. external BCM consultant).'
+        facilitator_legacy: 'Legacy free-text, read-only for migration.'
+        exercise_leader_user: 'Exercise leader with an application login. Optional when leadership is internal and account-tracked.'
+        exercise_leader_person: 'Exercise leader as a master-data Person — typically an external BCM consultant without a system login.'
         observers: 'External observers (e.g. auditors, management)'
+        observers_legacy: 'Legacy free-text, read-only for migration.'
+        observer_persons: 'Structured selection of external observers from master-data Persons.'
         status: 'Current status of the exercise'
         results: 'Summary of exercise results'
         what_went_well: 'What worked well? Document strengths and successes'
@@ -88,6 +112,31 @@ bc_exercises:
         success_rating: 'Overall rating of the exercise on a scale of 1-5'
         report_completed: 'Has the exercise report been completed?'
         report_date: 'Date the exercise report was created'
+        success_criteria_json: 'JSON object with success criteria per ISO 22301 §8.6 c: {"rtoMet":true,"rpoMet":true,"communicationEffective":true,"teamPrepared":true}.'
+        actual_rto_achieved: 'Actual measured recovery time in hours (ISO 22301 §8.6 d). Compare with target RTO.'
+        actual_rpo_achieved: 'Actual measured data loss period in hours (ISO 22301 §8.6 d). Compare with target RPO.'
+        bc_plans_tested: 'BC plans tested in this exercise (ISO 22301 §8.6 a). Multiple selection possible.'
+        evidence_artifacts_json: 'JSON array of audit evidence: [{"type":"photo|log|report|screenshot","reference":"filename/URL","description":"Description"}].'
+        evidence_artifacts: 'Audit evidence per ISO 22301 §8.6 — add one row per artifact (type, name, URL/reference, capture date).'
+    evidence:
+        field:
+            type: 'Type'
+            name: 'Name'
+            url: 'URL / reference'
+            captured_at: 'Captured at'
+        placeholder:
+            type: '-- Select artifact type --'
+            name: 'e.g. Recovery-test signoff'
+            url: 'https://… or filename'
+        type:
+            photo: 'Photo'
+            log: 'Log file'
+            report: 'Report'
+            screenshot: 'Screenshot'
+            video: 'Video recording'
+            transcript: 'Transcript'
+            signoff: 'Signoff document'
+            other: 'Other'
     exercise_type:
         tabletop: 'Tabletop Exercise'
         walkthrough: 'Walkthrough Exercise'
@@ -107,12 +156,46 @@ bc_exercises:
         scenario: 'e.g. Power outage in main building for 24 hours'
         participants: 'e.g. IT team, management, crisis team'
         facilitator: 'Name of exercise leader'
+        facilitator_user: '-- Select user --'
+        facilitator_person: '-- Person from master data --'
+        exercise_leader_user: '-- Select user --'
+        exercise_leader_person: '-- Person from master data --'
         observers: 'e.g. External auditor, ISO officer'
     tooltip:
         scenario: 'Describe the concrete exercise scenario (e.g. "Ransomware attack on production systems"). A realistic scenario increases the learning effect and uncovers gaps in BC plans.'
         exercise_type: 'Select the exercise type per ISO 22301:2019 Cl. 8.5. Tabletop exercises are theoretical; full tests fully simulate a real emergency and require more planning effort.'
         success_criteria: 'Define measurable criteria by which the success of the exercise is evaluated (e.g. RTO met, all communication channels working, no data loss).'
         success_rating: 'Overall rating of the exercise on a scale of 1 (failed) to 5 (excellent). Serves as a KPI for BC exercise history and audit evidence per ISO 22301.'
-bc_plans:
-    message:
-        readiness_score: 'Readiness Score'
+    success_criteria:
+        aria: 'Success criteria — structured editor'
+        add: 'Add criterion'
+        remove: 'Remove criterion'
+        apply_prefill: 'Apply suggestions'
+        prefill_applied: 'RTO/RPO suggestions from tested BC plans applied. Fields can be overridden.'
+        empty: 'No success criteria defined yet. Define measurable criteria (e.g. RTO met, communication functional).'
+        col:
+            criterion: 'Criterion'
+            target: 'Target'
+            actual: 'Actual'
+            met: 'Met'
+            actions: 'Actions'
+        met:
+            unknown: '— Open —'
+            'yes': 'Met'
+            'no': 'Not met'
+        placeholder:
+            criterion: 'e.g. RTO met'
+            target: 'e.g. 4h'
+            actual: 'e.g. 3h 12min'
+    json_builder:
+        raw_toggle: 'Edit as JSON'
+        raw_label: 'Raw JSON (power-user)'
+        raw_help: 'Warning: raw editing can corrupt data. Schema must match entity definition.'
+    error:
+        facilitator_required_user_or_person: 'Please select a facilitator (user OR person). ISO 22301 Cl. 8.5 requires every BC exercise to have a named responsible.'
+
+# Junior-ISB-Audit-2026-05-22 P-12 rollout — 9001-bridge keys for BC-Exercise forms.
+    clone:
+        success: 'BC-Exercise has been duplicated. Reschedule.'
+iso_9001_bridge:
+    exercise: 'In ISO 9001 a BC exercise is part of performance evaluation (Clause 9.1) and the treatment of risks/opportunities (6.1). ISO 22301 8.5 explicitly requires periodic testing of the BC plan — Lessons-Learned feed back into improvement via 10.2 (Nonconformity & Corrective Action).'

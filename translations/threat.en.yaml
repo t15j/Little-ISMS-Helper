@@ -1,5 +1,45 @@
 threat:
-    title: 'Threat Intelligence'
+    title:
+        index: 'Threat Intelligence'
+        new: 'New Threat'
+        edit: 'Edit Threat'
+        show: Details
+    subtitle:
+        index: 'Overview of all detected threats and CVEs'
+    kpi:
+        total: Total
+        critical: Critical
+        high: High
+        open: Open
+    label:
+        assignee: 'Assignee'
+    action:
+        create: 'New Threat'
+        update: 'Save Changes'
+        list: 'Back to List'
+        created_flash: 'Threat has been created successfully.'
+        updated_flash: 'Threat has been updated successfully.'
+        deleted_flash: 'Threat has been deleted.'
+    section:
+        basic: 'Basic Information'
+        details: 'Details & CVE'
+        impact: 'Impact & Mitigations'
+        assignment: 'Assignment'
+        resulting_incidents: 'Resulting Incidents'
+        overview: Overview
+        intelligence_source: 'Source & CVE Details'
+        classification: 'Classification & Source'
+        threat_classification: 'Classification & MITRE'
+        affected_assets: 'Affected Assets'
+        mitigations: 'Mitigations & Recommendations'
+        audit_metadata: 'Responsible Assignment'
+    empty:
+        title: 'No threats found'
+        description: 'No threat intelligence records yet. Create a new threat to get started.'
+    confirm:
+        delete: 'Are you sure you want to permanently delete this threat?'
+    warning:
+        delete_irreversible: 'Deleting this threat is irreversible. All associated data will be lost.'
     name: Threat
     threat_type: 'Threat Type'
     severity: Severity
@@ -150,3 +190,58 @@ status_type:
     mitigated: Mitigated
     monitoring: Monitoring
     closed: Closed
+
+# ── vulnerability_intel module fields (gated) ─────────────────────────────
+threat_intelligence:
+    field:
+        tlp_classification: 'TLP Classification'
+        threat_actor_attribution: 'Threat Actor Attribution'
+        mitre_attack_tactics: 'MITRE ATT&CK Tactics'
+        mitre_attack_techniques: 'MITRE ATT&CK Techniques'
+        iocs_list: 'Indicators of Compromise (IOCs)'
+        confidence_level: 'Confidence Level'
+        shared_externally: 'Shared Externally (NIS2 Art. 30)'
+    placeholder:
+        tlp_classification: '-- Select TLP level --'
+        threat_actor_attribution: 'e.g. APT28, Lazarus Group'
+        mitre_attack_tactics: 'e.g. TA0001, TA0002 (one per line or comma-separated)'
+        mitre_attack_techniques: 'e.g. T1059, T1566 (one per line or comma-separated)'
+        confidence_level: '-- Select confidence level --'
+    tlp:
+        red: 'RED — Not for disclosure'
+        amber: 'AMBER — Limited sharing'
+        green: 'GREEN — Community sharing'
+        white: 'WHITE — Unlimited sharing'
+    confidence:
+        low: 'Low'
+        medium: 'Medium'
+        high: 'High'
+    help:
+        tlp_classification: 'FIRST.org Traffic Light Protocol — controls information sharing scope (NIS2 Art. 30).'
+        threat_actor_attribution: 'APT group or crime group responsible (MITRE ATT&CK threat actors).'
+        mitre_attack_tactics: 'MITRE ATT&CK Tactic IDs (TA0001–TA0043). Enter JSON array or comma-separated.'
+        mitre_attack_techniques: 'MITRE ATT&CK Technique IDs (T1xxx). Enter JSON array or comma-separated.'
+        iocs_list_json: 'STIX 2.1 format: [{type: ip|domain|hash|url|email, value: "...", context: "..."}]'
+        iocs_list: 'STIX 2.1 indicators — add one row per IoC (type, value, confidence 1-5).'
+        shared_externally: 'Check if this intelligence was shared with a CERT/CSIRT (NIS2 Art. 30 obligation).'
+    ioc:
+        field:
+            type: 'Type'
+            value: 'Value'
+            confidence: 'Confidence'
+        placeholder:
+            type: '-- Select IoC type --'
+            value: 'e.g. 192.0.2.1, evil.example.com, sha256:…'
+            confidence: '-- Confidence (1-5) --'
+        type:
+            ip: 'IP address'
+            domain: 'Domain'
+            hash: 'File hash'
+            url: 'URL'
+            email: 'Email address'
+        confidence:
+            1: '1 — Very low'
+            2: '2 — Low'
+            3: '3 — Medium'
+            4: '4 — High'
+            5: '5 — Very high'

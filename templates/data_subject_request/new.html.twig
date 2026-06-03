@@ -1,5 +1,6 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'data_subject_request' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'dsr.page.new_title'|trans({}, 'data_subject_request') }}{% endblock %}
 
@@ -7,20 +8,20 @@
 <div class="container-fluid mt-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'dsr.breadcrumb.privacy'|trans({}, 'data_subject_request'), icon: 'bi-shield-lock' },
+            { label: 'dsr.breadcrumb.privacy'|trans({}, 'data_subject_request'), icon: 'nav-shield-lock' },
             { label: 'dsr.breadcrumb.data_subject_requests'|trans({}, 'data_subject_request'), url: path('app_data_subject_request_index') },
             { label: 'dsr.page.new_title'|trans({}, 'data_subject_request') }
         ]
     } only %}
 
-    {% include '_components/_page_header.html.twig' with {
+    {{ _fa_page_header.render({
         title: 'dsr.page.new_title'|trans({}, 'data_subject_request'),
         subtitle: 'dsr.page.new_subtitle'|trans({}, 'data_subject_request'),
-        icon: 'bi-person-raised-hand',
+        badge: { icon: 'ui-person', label: '' },
         actions: [
-            { label: 'common.cancel'|trans({}, 'messages'), url: path('app_data_subject_request_index'), variant: 'secondary', icon: 'bi-x-lg' }
+            { label: 'common.cancel'|trans({}, 'messages'), href: path('app_data_subject_request_index'), variant: 'secondary', icon: 'ui-close' }
         ]
-    } only %}
+    }) }}
 
     <div class="row">
         <div class="col-lg-8">
@@ -49,7 +50,11 @@
                                 },
                                 'assignment': {
                                     'label': '<i class="fa-icon fa-icon--role" aria-hidden="true"></i> ' ~ 'dsr.section.assignment'|trans({}, 'data_subject_request'),
-                                    'fields': ['assignedTo', 'assignedPerson', 'assignedDeputyPersons', 'processingActivity']
+                                    'fields': ['assignedTo', 'assignedPerson', 'assignedDeputyPersons', 'dpoPerson', 'processingActivity']
+                                },
+                                'response_tracking': {
+                                    'label': '<i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> ' ~ 'dsr.section.response_tracking'|trans({}, 'data_subject_request'),
+                                    'fields': ['responseAt', 'responseMethod', 'responseDocument', 'extendedDeadlineAt', 'extensionReason', 'rejectionReason']
                                 },
                                 'internal': {
                                     'label': '<i class="fa-icon fa-icon--nav-journal" aria-hidden="true"></i> ' ~ 'dsr.section.internal_notes'|trans({}, 'data_subject_request'),
@@ -68,7 +73,14 @@
                                 'assignedTo': 6,
                                 'assignedPerson': 6,
                                 'assignedDeputyPersons': 12,
+                                'dpoPerson': 6,
                                 'processingActivity': 6,
+                                'responseAt': 6,
+                                'responseMethod': 6,
+                                'responseDocument': 12,
+                                'extendedDeadlineAt': 6,
+                                'extensionReason': 6,
+                                'rejectionReason': 12,
                                 'notes': 12
                             },
                             'translation_domain': 'data_subject_request'

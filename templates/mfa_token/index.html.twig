@@ -16,7 +16,7 @@
     } %}
 
     {{ _fa_page_header.render({
-        badge: { icon: 'shield-lock', label: 'nav.mfa'|trans({}, 'nav') },
+        badge: { icon: 'nav-shield-lock', label: 'nav.mfa'|trans({}, 'nav') },
         title: 'mfa_token.title'|trans({}, 'mfa'),
         subtitle: 'mfa_token.subtitle'|trans({}, 'mfa')
     }) }}
@@ -40,7 +40,7 @@
                 {% block card_body %}
                     <div class="text-center">
                         <h3 class="text-primary">{{ totp_count }}</h3>
-                        <p class="mb-0"><i class="bi bi-phone" aria-hidden="true"></i> TOTP</p>
+                        <p class="mb-0"><i class="fa-icon fa-icon--asset-endpoint" aria-hidden="true"></i> TOTP</p>
                     </div>
                 {% endblock %}
             {% endembed %}
@@ -69,7 +69,7 @@
 
     {# Users with MFA Tokens #}
     {% if tokens_by_user|length == 0 %}
-        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-info-circle' } } %}
+        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-info' } } %}
             {% block alert_body %}{{ 'mfa_token.empty'|trans({}, 'mfa') }}{% endblock %}
         {% endembed %}
     {% else %}
@@ -114,16 +114,16 @@
                                 <tr class="{{ token.isActive ? '' : 'table-secondary' }}">
                                     <td>
                                         {% if token.isActive %}
-                                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle', title: 'mfa_token.status.active'|trans({}, 'mfa') } %}
+                                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'status-ok', title: 'mfa_token.status.active'|trans({}, 'mfa') } %}
                                         {% else %}
-                                            {% include '_components/_badge.html.twig' with { variant: 'secondary', icon: 'bi-dash-circle', title: 'mfa_token.status.inactive'|trans({}, 'mfa') } %}
+                                            {% include '_components/_badge.html.twig' with { variant: 'secondary', icon: 'ui-x', title: 'mfa_token.status.inactive'|trans({}, 'mfa') } %}
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% include '_components/_badge.html.twig' with { variant: 'primary', icon: token.tokenType == 'totp' ? 'bi-phone' : 'bi-key', content: ('mfa_token.type.' ~ token.tokenType)|trans({}, 'mfa') } %}
+                                        {% include '_components/_badge.html.twig' with { variant: 'primary', icon: token.tokenType == 'totp' ? 'phone' : 'ui-key', content: ('mfa_token.type.' ~ token.tokenType)|trans({}, 'mfa') } %}
                                     </td>
                                     <td>
-                                        <i class="bi bi-{{ token.tokenType == 'totp' ? 'phone' : 'key' }}" aria-hidden="true"></i>
+                                        <i class="fa-icon fa-icon--{{ token.tokenType == 'totp' ? 'phone' : 'ui-key' }}" aria-hidden="true"></i>
                                         {{ token.deviceName ?? 'N/A' }}
                                     </td>
                                     <td>
@@ -163,7 +163,7 @@
                                                     <button type="submit"
                                                             class="fa-cyber-btn fa-cyber-btn--warning"
                                                             title="{{ 'mfa_token.action.disable'|trans({}, 'mfa') }}" aria-label="{{ 'mfa_token.action.disable'|trans({}, 'mfa') }}">
-                                                        <i class="bi bi-pause-circle" aria-hidden="true"></i>
+                                                        <i class="fa-icon fa-icon--status-pending" aria-hidden="true"></i>
                                                     </button>
                                                 </form>
                                             {% endif %}

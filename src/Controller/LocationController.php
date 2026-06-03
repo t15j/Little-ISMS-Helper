@@ -25,7 +25,7 @@ class LocationController extends AbstractController
         private readonly TranslatorInterface $translator,
         private readonly Security $security
     ) {}
-    #[Route('/location/', name: 'app_location_index')]
+    #[Route('/location', name: 'app_location_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(): Response
     {
@@ -38,7 +38,7 @@ class LocationController extends AbstractController
             'top_level' => $topLevel,
         ]);
     }
-    #[Route('/location/new', name: 'app_location_new')]
+    #[Route('/location/new', name: 'app_location_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
@@ -57,16 +57,20 @@ class LocationController extends AbstractController
             $this->entityManager->persist($location);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('location.success.created'));
+            $this->addFlash('success', $this->translator->trans('location.success.created', [], 'messages'));
             return $this->redirectToRoute('app_location_show', ['id' => $location->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('location/new.html.twig', [
             'location' => $location,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/location/{id}', name: 'app_location_show', requirements: ['id' => '\d+'])]
+    #[Route('/location/{id}', name: 'app_location_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(Location $location): Response
     {
@@ -81,7 +85,7 @@ class LocationController extends AbstractController
             'assets' => $assets,
         ]);
     }
-    #[Route('/location/{id}/edit', name: 'app_location_edit', requirements: ['id' => '\d+'])]
+    #[Route('/location/{id}/edit', name: 'app_location_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, Location $location): Response
     {
@@ -91,14 +95,18 @@ class LocationController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('location.success.updated'));
+            $this->addFlash('success', $this->translator->trans('location.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_location_show', ['id' => $location->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('location/edit.html.twig', [
             'location' => $location,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/location/{id}/delete', name: 'app_location_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -108,7 +116,7 @@ class LocationController extends AbstractController
             $this->entityManager->remove($location);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('location.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('location.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_location_index');

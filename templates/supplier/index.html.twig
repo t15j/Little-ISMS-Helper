@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% import '_components/_fa_filter_select.html.twig' as _fa_filter_select %}
 {% trans_default_domain 'suppliers' %}
@@ -18,16 +19,52 @@
 } %}
 
 {% set supplierActions = [
-    { label: 'supplier.action.add_new'|trans({}, 'suppliers'), variant: 'primary', icon: 'plus-lg', href: path('app_supplier_new') }
+    { label: 'supplier.action.add_new'|trans({}, 'suppliers'), variant: 'primary', icon: 'plus', href: path('app_supplier_new') }
 ] %}
 {% if doraActive ?? false %}
-    {% set supplierActions = [{ label: 'dora.register_export.button'|trans({}, 'dora'), variant: 'ghost', icon: 'download', href: path('app_dora_register_export_csv') }] | merge(supplierActions) %}
+    {# Async DORA ROI export — opens dispatch modal (Phase 3 async-jobs rollout) #}
+    {% set supplierActions = [{ label: 'dora.register_export.button'|trans({}, 'dora'), variant: 'ghost', icon: 'download', href: '#', attrs: { 'data-controller': 'fa-modal-dispatcher', 'data-action': 'click->fa-modal-dispatcher#open', 'data-fa-modal-id': 'doraRegisterExportModal' } }] | merge(supplierActions) %}
+{% endif %}
+{% if is_granted('ROLE_MANAGER') %}
+    {% set supplierActions = [{ label: 'supplier.action.lksg_export'|trans({}, 'suppliers'), variant: 'ghost', icon: 'download', href: path('app_supplier_lksg_annual_report_csv') }] | merge(supplierActions) %}
+    {% set supplierActions = supplierActions | merge([{ label: 'filtered_export.button.label'|trans({}, 'filtered_export'), href: path('app_filtered_export_entity', { entityType: 'supplier', format: 'xlsx' }) ~ (app.request.queryString ? '?' ~ app.request.queryString : ''), variant: 'ghost', icon: 'nav-file-earmark-spreadsheet' }]) %}
 {% endif %}
 {{ _fa_page_header.render({
     badge: { icon: 'truck', label: 'nav.suppliers'|trans({}, 'nav') },
     title: 'supplier.page.title'|trans({}, 'suppliers'),
     actions: supplierActions
 }) }}
+
+{% if doraActive ?? false %}
+{# Async DORA ROI export dispatch modal #}
+<div class="fa-modal fa-modal--confirm fa-modal--neutral" id="doraRegisterExportModal"
+     data-controller="fa-modal" data-fa-modal-mode-value="confirm" data-fa-modal-tone-value="neutral"
+     role="dialog" aria-modal="true" aria-labelledby="doraRegisterExportModalLabel" aria-hidden="true">
+    <div class="fa-modal__backdrop" data-fa-modal-target="backdrop" data-action="click->fa-modal#backdropClick" aria-hidden="true"></div>
+    <div class="fa-modal__container" data-fa-modal-target="dialog"><header class="fa-modal__header"><span class="fa-modal__icon" aria-hidden="true"><i class="fa-icon fa-icon--nav-download"></i></span><div class="fa-modal__heading"><h2 class="fa-modal__title" id="doraRegisterExportModalLabel">{{ 'dora.register_export.modal.title'|trans({}, 'dora') }}</h2></div><button type="button" class="fa-modal__close" data-action="fa-modal#cancel" aria-label="Close"><i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i></button></header>
+            <div class="fa-modal__body">
+                <p class="mb-0">{{ 'dora.register_export.modal.body'|trans({}, 'dora') }}</p>
+            </div>
+            <footer class="fa-modal__footer">
+                <button type="button" class="fa-cyber-btn fa-cyber-btn--ghost" data-action="fa-modal#cancel">{{ 'common.cancel'|trans({}, 'messages') }}</button>
+                <form method="post" action="{{ path('app_dora_register_export_csv_dispatch') }}" data-turbo="false" class="d-inline" data-fa-modal-target="form">
+                    <input type="hidden" name="_token" value="{{ csrf_token('dora_register_export_dispatch') }}">
+                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary">
+                        <i class="fa-icon fa-icon--nav-download" aria-hidden="true"></i>
+                        {{ 'dora.register_export.modal.start'|trans({}, 'dora') }}
+                    </button>
+                </form></div>
+</div>
+</div>
+{% endif %}
+
+{% set _global_hints = alva_hints('supplier_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 
 <main class="fa-aurora-surface">
 <div class="container">
@@ -40,7 +77,7 @@
                     <label for="view-filter" class="mb-0 fw-bold">
                         <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i> {{ 'common.view'|trans({}, 'messages') }}:
                     </label>
-                    <select class="form-select form-select-sm w-auto" id="view-filter" name="view" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                    <select class="form-select fa-cyber-input__field form-select-sm w-auto" id="view-filter" name="view" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                         <option value="own" {{ inheritanceInfo.currentView == 'own' ? 'selected' : '' }}>
                             {{ 'corporate.view.own_only'|trans({}, 'messages') }}
                         </option>
@@ -122,7 +159,7 @@
     {# Search-first Filter: URL-persisted state (UXC-11 / UXC-12) #}
     {% embed '_components/_search_filter_form.html.twig' with {
         action: path('app_supplier_index'),
-        filter_keys: ['criticality', 'status', 'iso27001', 'view', 'tag'],
+        filter_keys: ['criticality', 'status', 'iso27001', 'lksg_risk', 'dora_relevant', 'view', 'tag'],
         form_id: 'supplier-filter-form'
     } %}
         {% block filters %}
@@ -132,7 +169,7 @@
             {% endif %}
             <div class="col-md-4">
                 <label for="filter-criticality" class="form-label">{{ 'supplier.table.criticality'|trans({}, 'suppliers') }}</label>
-                <select class="form-select" id="filter-criticality" name="criticality">
+                <select class="form-select fa-cyber-input__field" id="filter-criticality" name="criticality">
                     <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                     <option value="critical" {{ app.request.query.get('criticality') == 'critical' ? 'selected' : '' }}>{{ 'supplier.criticality.critical'|trans({}, 'suppliers') }}</option>
                     <option value="high" {{ app.request.query.get('criticality') == 'high' ? 'selected' : '' }}>{{ 'supplier.criticality.high'|trans({}, 'suppliers') }}</option>
@@ -153,12 +190,32 @@
             </div>
             <div class="col-md-4">
                 <label for="filter-iso27001" class="form-label">{{ 'supplier.table.iso27001'|trans({}, 'suppliers') }}</label>
-                <select class="form-select" id="filter-iso27001" name="iso27001">
+                <select class="form-select fa-cyber-input__field" id="filter-iso27001" name="iso27001">
                     <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                     <option value="1" {{ app.request.query.get('iso27001') == '1' ? 'selected' : '' }}>{{ 'common.yes'|trans({}, 'messages') }}</option>
                     <option value="0" {{ app.request.query.get('iso27001') == '0' ? 'selected' : '' }}>{{ 'common.no'|trans({}, 'messages') }}</option>
                 </select>
             </div>
+            <div class="col-md-4">
+                {{ _fa_filter_select.render({
+                    name: 'lksg_risk',
+                    label: 'supplier.field.lksg_risk_category'|trans({}, 'suppliers'),
+                    values: ['low', 'medium', 'high', 'critical'],
+                    prefix: 'supplier.lksg_risk.',
+                    domain: 'suppliers',
+                    selected: app.request.query.get('lksg_risk'),
+                    all_label: 'common.all'|trans({}, 'messages')
+                }) }}
+            </div>
+            {% if is_module_active('nis2_dora') %}
+            <div class="col-md-4">
+                <label for="filter-dora-relevant" class="form-label">DORA</label>
+                <select class="form-select fa-cyber-input__field" id="filter-dora-relevant" name="dora_relevant">
+                    <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
+                    <option value="1" {{ app.request.query.get('dora_relevant') == '1' ? 'selected' : '' }}>{{ 'supplier.field.is_dora_relevant'|trans({}, 'suppliers') }}</option>
+                </select>
+            </div>
+            {% endif %}
         {% endblock %}
     {% endembed %}
 
@@ -174,7 +231,7 @@
     {% endif %}
 
     {% embed '_components/_card.html.twig' %}
-        {% block card_attrs %}data-controller="bulk-actions" data-bulk-actions-endpoint-value="/supplier"{% endblock %}
+        {% block card_attrs %}data-controller="bulk-actions" data-bulk-actions-endpoint-value="/{{ app.request.locale }}/supplier"{% endblock %}
         {% block card_header %}
             <div class="card-header">
                 {%- set supplierCount = suppliers|length -%}
@@ -186,16 +243,17 @@
             {% if suppliers|length > 0 %}
             {% embed '_components/_table.html.twig' with {
                 'wrapperClass': 'card-body',
+                'class': 'table-bulk-selectable',
                 'noMargin': true
             } %}
                 {% block table_head %}
                     <tr>
-                        <th scope="col" class="w-40px">
+                        <th scope="col" class="bulk-select-column">
                             <input type="checkbox"
                                    class="form-check-input"
                                    data-action="bulk-actions#selectAll"
                                    data-bulk-actions-target="selectAllCheckbox"
-                                   aria-label="{{ 'common.select_all'|trans({}, 'messages') }}">
+                                   aria-label="{{ 'bulk_actions.select_all'|trans({}, 'messages') }}">
                         </th>
                         <th scope="col">{{ 'supplier.table.name'|trans({}, 'suppliers') }}</th>
                         <th scope="col">{{ 'supplier.table.service_provided'|trans({}, 'suppliers') }}</th>
@@ -210,7 +268,7 @@
                     {% import '_macros/inheritance_badge.html.twig' as inheritance %}
                     {% for supplier in suppliers %}
                     <tr data-supplier-id="{{ supplier.id }}">
-                        <td>
+                        <td class="bulk-select-column">
                             <input type="checkbox"
                                    class="form-check-input"
                                    data-bulk-actions-target="item"
@@ -221,6 +279,9 @@
                         <td>
                             <a href="{{ path('app_supplier_show', {id: supplier.id}) }}">{{ supplier.name }}</a>
                             {{ inheritance.small_badge(supplier, currentTenant) }}
+                            {% if supplier.isDoraRelevant %}
+                                {% include '_components/_badge.html.twig' with { variant: 'info', content: 'DORA', title: 'supplier.field.is_dora_relevant'|trans({}, 'suppliers') } %}
+                            {% endif %}
                         </td>
                         <td>{{ supplier.serviceProvided|slice(0, 50) }}...</td>
                         <td>{% include '_components/_badge.html.twig' with { variant: supplier.criticality == 'critical' ? 'danger' : (supplier.criticality == 'high' ? 'warning' : (supplier.criticality == 'medium' ? 'info' : 'secondary')), content: supplier.criticality|upper } %}</td>
@@ -231,7 +292,7 @@
                         </td>
                         <td>
                             {% if supplier.hasISO27001 %}
-                                <i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i>
+                                <i class="fa-icon text-success fa-icon--status-ok" aria-hidden="true"></i>
                             {% else %}
                                 <i class="fa-icon fa-icon--status-critical text-secondary" aria-hidden="true"></i>
                             {% endif %}
@@ -245,13 +306,35 @@
                 {% endblock %}
             {% endembed %}
             {% else %}
+            {% set _system_templates = system_templates('App\\Entity\\Supplier') %}
             {{ _fa_empty_state.render({
                 mood: 'sleeping',
                 title: 'supplier.empty.message'|trans({}, 'suppliers'),
                 actions: [
-                    { label: 'supplier.empty.add_first'|trans({}, 'suppliers'), variant: 'primary', icon: 'plus-circle', href: path('app_supplier_new') }
+                    { label: 'supplier.empty.add_first'|trans({}, 'suppliers'), variant: 'primary', icon: 'plus', href: path('app_supplier_new') }
                 ]
             }) }}
+            {# Foundation P-14 — Hyperscaler / SaaS starter set #}
+            {% if _system_templates|length > 0 %}
+                <div class="text-center mt-3">
+                    <button type="button" class="btn btn-outline-primary"
+                            data-controller="fa-modal-dispatcher"
+                            data-action="click->fa-modal-dispatcher#open"
+                            data-fa-modal-id="systemTemplateModalSupplier">
+                        <i class="fa-icon fa-icon--nav-collection" aria-hidden="true"></i>
+                        {{ 'system_templates.cta.button'|trans({}, 'system_templates') }}
+                    </button>
+                    <div class="form-text small">
+                        {{ 'system_templates.cta.hint'|trans({}, 'system_templates') }}
+                    </div>
+                </div>
+                {% include '_components/_system_template_selector.html.twig' with {
+                    templates: _system_templates,
+                    entity_class: 'App\\Entity\\Supplier',
+                    redirect_to: 'app_supplier_index',
+                    modal_id: 'systemTemplateModalSupplier'
+                } %}
+            {% endif %}
             {% endif %}
 
             {# Bulk Action Bar #}

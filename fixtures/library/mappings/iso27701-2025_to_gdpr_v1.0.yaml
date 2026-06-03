@@ -2,7 +2,7 @@ schema_version: '1.1'
 library:
   type: mapping
   id: 'iso27701-2025_to_gdpr_v1.0'
-  source_framework: 'ISO27701-2025'
+  source_framework: 'ISO27701'
   target_framework: 'GDPR'
   version: 1
   effective_from: '2025-08-01'
@@ -35,8 +35,8 @@ library:
 
 mappings:
   - source: '7.2.1'
-    target: 'Art.5'
-    relationship: 'equivalent'
+    target: 'GDPR-5.1.a'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klausel 7.2.1 "Identify and document purpose" verlangt die
@@ -47,7 +47,7 @@ mappings:
     audit_evidence_hint: 'PIMS-Zweckverzeichnis (7.2.1) plus DSGVO-konformes RoPA mit Zwecken und Rechtsgrundlagen.'
 
   - source: '7.2.2'
-    target: 'Art.6'
+    target: 'GDPR-6'
     relationship: 'equivalent'
     confidence: 'high'
     rationale: |
@@ -59,8 +59,8 @@ mappings:
     audit_evidence_hint: 'PIMS-Rechtsgrundlagen-Register (7.2.2) und DSGVO-RoPA-Eintrag pro Verarbeitung.'
 
   - source: '7.2.3'
-    target: 'Art.7'
-    relationship: 'equivalent'
+    target: 'GDPR-7'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klausel 7.2.3 "Determine when and how consent is to be
@@ -71,8 +71,8 @@ mappings:
     audit_evidence_hint: 'Consent-Management-System (7.2.3) mit Nachweis-Protokollen für Art. 7.'
 
   - source: '7.3.2'
-    target: 'Art.13'
-    relationship: 'equivalent'
+    target: 'GDPR-13'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klausel 7.3.2 "Determining information for PII principals"
@@ -83,8 +83,8 @@ mappings:
     audit_evidence_hint: 'PIMS-Informationskatalog (7.3.2) und versionierte Datenschutzerklärung (Art. 13/14).'
 
   - source: '7.3.3'
-    target: 'Art.15'
-    relationship: 'equivalent'
+    target: 'GDPR-15'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klausel 7.3.3 "Providing mechanisms to modify or withdraw
@@ -94,8 +94,8 @@ mappings:
       Daten — direkt durch die 7.3.3-Mechanismen umgesetzt.
 
   - source: '7.3.6'
-    target: 'Art.17'
-    relationship: 'equivalent'
+    target: 'GDPR-17'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klausel 7.3.6 "Access, correction and/or erasure" verlangt
@@ -106,7 +106,7 @@ mappings:
     audit_evidence_hint: 'Lösch-Konzept (7.3.6), Löschprotokolle, Backup-Lösch-Strategie.'
 
   - source: '7.3.7'
-    target: 'Art.20'
+    target: 'GDPR-20'
     relationship: 'equivalent'
     confidence: 'high'
     rationale: |
@@ -117,8 +117,8 @@ mappings:
       strukturierten Format an Betroffene oder andere Verantwortliche.
 
   - source: '7.4.1'
-    target: 'Art.25'
-    relationship: 'equivalent'
+    target: 'GDPR-25'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klauseln 7.4.1 "Limit collection" und 7.4.2 "Limit
@@ -129,8 +129,8 @@ mappings:
     cross_refs: ['7.4.2', '7.4.3']
 
   - source: '8.5.1'
-    target: 'Art.28'
-    relationship: 'equivalent'
+    target: 'GDPR-28'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klauseln 8.5.1 "Customer agreement" und 8.5.2
@@ -142,7 +142,7 @@ mappings:
     audit_evidence_hint: 'PIMS-AVV-Vorlagen (8.5.1) und DSGVO-konformes AVV-Register pro Auftragsverarbeiter.'
 
   - source: '7.2.8'
-    target: 'Art.30'
+    target: 'GDPR-30'
     relationship: 'equivalent'
     confidence: 'high'
     rationale: |
@@ -154,7 +154,7 @@ mappings:
     audit_evidence_hint: 'PIMS-Records (7.2.8) als Basis für DSGVO-RoPA mit allen Pflichtfeldern.'
 
   - source: '6.5'
-    target: 'Art.32'
+    target: 'GDPR-32'
     relationship: 'superset'
     confidence: 'medium'
     rationale: |
@@ -167,7 +167,7 @@ mappings:
     cross_refs: ['ISO27001:A.8.7', 'ISO27001:A.8.16']
 
   - source: '6.13.1'
-    target: 'Art.33'
+    target: 'GDPR-33'
     relationship: 'equivalent'
     confidence: 'high'
     rationale: |
@@ -179,7 +179,7 @@ mappings:
     audit_evidence_hint: 'PIMS-Breach-Notification-Prozess (6.13.1) mit 72-h-SLA-Tracking nach Art. 33.'
 
   - source: '6.13.2'
-    target: 'Art.34'
+    target: 'GDPR-34'
     relationship: 'equivalent'
     confidence: 'high'
     rationale: |
@@ -189,7 +189,7 @@ mappings:
       Benachrichtigung der Betroffenen in klarer und einfacher Sprache.
 
   - source: '7.2.5'
-    target: 'Art.35'
+    target: 'GDPR-35'
     relationship: 'equivalent'
     confidence: 'high'
     rationale: |
@@ -201,8 +201,8 @@ mappings:
     audit_evidence_hint: 'PIMS-PIA-Register (7.2.5) als DPIA-Nachweis nach Art. 35 für jede Hochrisiko-Verarbeitung.'
 
   - source: '6.3.1'
-    target: 'Art.37'
-    relationship: 'equivalent'
+    target: 'GDPR-37'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klauseln 6.3.1 "PII protection officer" und 6.3.2
@@ -213,8 +213,8 @@ mappings:
     cross_refs: ['6.3.2']
 
   - source: '7.5.1'
-    target: 'Art.44'
-    relationship: 'equivalent'
+    target: 'GDPR-44'
+    relationship: 'subset'
     confidence: 'high'
     rationale: |
       ISO 27701 Klauseln 7.5.1 "Identify basis for PII transfer between

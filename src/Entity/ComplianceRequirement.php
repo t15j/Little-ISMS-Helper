@@ -144,7 +144,7 @@ class ComplianceRequirement
         return $this->requirementId;
     }
 
-    public function setRequirementId(string $requirementId): static
+    public function setRequirementId(?string $requirementId): static
     {
         $this->requirementId = $requirementId;
         return $this;
@@ -155,7 +155,7 @@ class ComplianceRequirement
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -166,7 +166,7 @@ class ComplianceRequirement
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -188,7 +188,7 @@ class ComplianceRequirement
         return $this->priority;
     }
 
-    public function setPriority(string $priority): static
+    public function setPriority(?string $priority): static
     {
         $this->priority = $priority;
         return $this;
@@ -292,7 +292,7 @@ class ComplianceRequirement
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -344,6 +344,21 @@ class ComplianceRequirement
     public function getFulfillmentPercentage(): float
     {
         return (float) $this->calculateFulfillmentFromControls();
+    }
+
+    /**
+     * Implementation status derived from the fulfilment percentage, using the
+     * vocabulary the gap-analysis export expects.
+     */
+    public function getStatus(): string
+    {
+        $pct = $this->getFulfillmentPercentage();
+
+        return match (true) {
+            $pct >= 100.0 => 'implemented',
+            $pct > 0.0 => 'partially_implemented',
+            default => 'not_implemented',
+        };
     }
 
     public function getRequirementType(): string
@@ -423,24 +438,6 @@ class ComplianceRequirement
     #[ORM\Column(length: 20, nullable: true)]
     private ?string $absicherungsStufe = null;
 
-    /**
-     * TISAX VDA ISA Assessment Level tag ('AL1' | 'AL2' | 'AL3').
-     * Null for non-TISAX requirements.
-     */
-    #[ORM\Column(length: 10, nullable: true)]
-    private ?string $assessmentLevel = null;
-
-    public function getAssessmentLevel(): ?string
-    {
-        return $this->assessmentLevel;
-    }
-
-    public function setAssessmentLevel(?string $assessmentLevel): static
-    {
-        $this->assessmentLevel = $assessmentLevel;
-        return $this;
-    }
-
     // ── WS-6: consultant-seeded baseline effort in FTE-days (0..999) ───────
     #[ORM\Column(nullable: true)]
     private ?int $baseEffortDays = null;
@@ -503,6 +500,121 @@ class ComplianceRequirement
     {
         $this->maturityReviewedAt = $maturityReviewedAt;
         return $this;
+    }
+
+    // ── TISAX per-tier assessment value (Tier 2 + Tier 3) ───────────────────
+    //
+    // Tier 1 (IS) uses maturityCurrent (int-mapped string, 'incomplete'…'optimising').
+    // Tier 2 (Prototype Protection) uses: 'compliant' | 'not_compliant' | 'na'
+    // Tier 3 (Data Protection/GDPR)  uses: 'in_place' | 'partial' | 'not_in_place' | 'na'
+    //
+    // NULL = not yet assessed.
+
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $assessmentValue = null;
+
+    public function getAssessmentValue(): ?string
+    {
+        return $this->assessmentValue;
+    }
+
+    public function setAssessmentValue(?string $assessmentValue): static
+    {
+        $this->assessmentValue = $assessmentValue;
+        return $this;
+    }
+
+    // ── TISAX BYO VDA-ISA import ─────────────────────────────────────────────
+
+    /**
+     * Discriminator: 'system' (shipped with the app) or 'tenant_upload' (parsed
+     * from a customer-supplied VDA-ISA workbook).
+     */
+    #[ORM\Column(name: 'requirement_source', length: 20, nullable: true, options: ['default' => 'system'])]
+    private ?string $requirementSource = 'system';
+
+    /**
+     * Data Protection (Chapter 9) tristate compliance state.
+     *
+     * Applicable ONLY to requirements whose category = 'data_protection'.
+     * NULL for IS/PP tier requirements (those use maturityCurrent instead).
+     *
+     * Valid values: 'not_applicable' | 'compliant' | 'non_compliant'
+     * Maps to ENX VDA-ISA 6 workbook Ch. 9 column "DSGVO-Konformitaet"
+     * which uses a 3-state NA / OK / Nicht OK scale — NOT Reifegrad 0-5.
+     */
+    #[ORM\Column(name: 'assessment_state_dp', length: 20, nullable: true)]
+    private ?string $assessmentStateDp = null;
+
+    /**
+     * Tenant that uploaded this requirement.
+     * NULL for global system rows; always set for tenant_upload rows.
+     */
+    #[ORM\ManyToOne(targetEntity: Tenant::class)]
+    #[ORM\JoinColumn(name: 'upload_tenant_id', nullable: true, onDelete: 'SET NULL')]
+    private ?Tenant $uploadTenant = null;
+
+    public function getRequirementSource(): ?string
+    {
+        return $this->requirementSource;
+    }
+
+    public function setRequirementSource(?string $requirementSource): static
+    {
+        $this->requirementSource = $requirementSource;
+        return $this;
+    }
+
+    public function getUploadTenant(): ?Tenant
+    {
+        return $this->uploadTenant;
+    }
+
+    public function setUploadTenant(?Tenant $uploadTenant): static
+    {
+        $this->uploadTenant = $uploadTenant;
+        return $this;
+    }
+
+    // ── Data Protection tristate assessment (Chapter 9) ──────────────────────
+
+    /**
+     * Get the tristate DP compliance state.
+     *
+     * Returns one of: 'not_applicable' | 'compliant' | 'non_compliant' | null
+     */
+    public function getAssessmentStateDp(): ?string
+    {
+        return $this->assessmentStateDp;
+    }
+
+    /**
+     * Set the tristate DP compliance state.
+     *
+     * @param string|null $state  'not_applicable' | 'compliant' | 'non_compliant' | null
+     * @throws \InvalidArgumentException for values outside the allowed set
+     */
+    public function setAssessmentStateDp(?string $state): static
+    {
+        if ($state !== null && !in_array($state, ['not_applicable', 'compliant', 'non_compliant'], true)) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Invalid DP assessment state "%s". Must be not_applicable, compliant, or non_compliant.',
+                    $state,
+                ),
+            );
+        }
+        $this->assessmentStateDp = $state;
+        return $this;
+    }
+
+    /**
+     * Returns true if this requirement belongs to the data_protection tier.
+     * Used to decide which assessment model (Reifegrad vs tristate) applies.
+     */
+    public function isDataProtectionTier(): bool
+    {
+        return $this->category === 'data_protection';
     }
 
     // BSI IT-Grundschutz fields

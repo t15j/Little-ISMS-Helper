@@ -4,35 +4,49 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use Symfony\Component\Console\Attribute\Option;
 use App\Entity\ComplianceFramework;
 use App\Entity\ComplianceRequirement;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * @deprecated since 3.5.0 — superseded by app:load-bsi-grundschutz-catalogue
+ * which reads the canonical YAML tree at fixtures/library/catalogues/
+ * bsi-it-grundschutz-2023/. Kept as Compat-Layer.
+ */
 #[AsCommand(
     name: 'app:load-bsi-requirements',
-    description: 'Load BSI IT-Grundschutz requirements including core building blocks and BCM with ISO mappings'
+    description: '[DEPRECATED — use app:load-bsi-grundschutz-catalogue] Legacy BSI IT-Grundschutz loader (Compat-Layer).'
 )]
-class LoadBsiRequirementsCommand
+class LoadBsiRequirementsCommand extends Command
 {
     public function __construct(private readonly EntityManagerInterface $entityManager)
     {
+        parent::__construct();
     }
 
-    public function __invoke(#[Option(name: 'update', shortcut: 'u', description: 'Update existing requirements instead of skipping them')]
-    bool $update = false, ?SymfonyStyle $symfonyStyle = null): int
+    protected function configure(): void
     {
+        $this->addOption('update', 'u', InputOption::VALUE_NONE, 'Update existing requirements instead of skipping them');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $update = (bool) $input->getOption('update');
+        $symfonyStyle = new SymfonyStyle($input, $output);
         // Create or get BSI framework
         $framework = $this->entityManager->getRepository(ComplianceFramework::class)
-            ->findOneBy(['code' => 'BSI-Grundschutz']);
+            ->findOneBy(['code' => 'BSI_GRUNDSCHUTZ']);
         $isNew = !$framework instanceof ComplianceFramework;
         if ($isNew) {
             $framework = new ComplianceFramework();
         }
-        $framework->setCode('BSI-Grundschutz')
+        $framework->setCode('BSI_GRUNDSCHUTZ')
             ->setName('BSI IT-Grundschutz')
             ->setDescription('BSI IT-Grundschutz: Comprehensive IT security standard with building blocks (Bausteine) for organization, infrastructure, systems, and applications')
             ->setVersion('2023')

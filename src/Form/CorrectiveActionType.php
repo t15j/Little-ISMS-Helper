@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\AuditFinding;
+use App\Entity\Control;
 use App\Entity\CorrectiveAction;
 use App\Entity\Person;
 use App\Entity\User;
+use App\Enum\CorrectiveActionStatus;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
+use App\Form\SectionMapInterface;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
@@ -19,8 +22,18 @@ use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
-class CorrectiveActionType extends AbstractType
+final class CorrectiveActionType extends AbstractType implements SectionMapInterface
 {
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview'       => ['finding', 'title', 'description', 'actionType', 'status'],
+            'root_cause'     => ['rootCauseAnalysis', 'relatedControls'],
+            'action_plan'    => ['responsiblePersonUser', 'responsiblePerson', 'responsibleDeputyPersons', 'plannedCompletionDate', 'actualCompletionDate'],
+            'verification'   => ['effectivenessReviewDate', 'effectivenessNotes', 'effectivenessEvidence'],
+        ];
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
@@ -30,7 +43,6 @@ class CorrectiveActionType extends AbstractType
                 'choice_label' => fn(AuditFinding $f): string => ($f->getFindingNumber() ?? '#' . $f->getId()) . ' — ' . ($f->getTitle() ?? ''),
                 'placeholder' => 'corrective_action.placeholder.finding',
                 'required' => true,
-                'attr' => ['class' => 'form-select'],
                 'disabled' => $options['finding_locked'],
             ])
             ->add('title', TextType::class, [
@@ -50,18 +62,49 @@ class CorrectiveActionType extends AbstractType
                 'attr' => ['rows' => 4],
                 'help' => 'corrective_action.help.root_cause_analysis',
             ])
+            // Junior-ISB-Audit C4-02 — multi-control linkage.
+            // ISO 27001 Cl. 10.1 + A.8.15/A.8.16: a corrective action
+            // routinely touches >1 control. Multiple-EntityType keeps
+            // the user from silently dropping context.
+            ->add('relatedControls', EntityType::class, [
+                'label' => 'corrective_action.field.related_controls',
+                'class' => Control::class,
+                'choice_label' => fn(Control $c): string => ($c->getControlId() ?? '') . ' — ' . ($c->getName() ?? ''),
+                'multiple' => true,
+                'required' => false,
+                'help' => 'corrective_action.help.related_controls',
+            ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix) ──────────────
+            // Owned by `corrective_action_lifecycle`. YAML 4-eyes on
+            // `verify_effective`. Transitions via LifecycleService only.
             ->add('status', ChoiceType::class, [
                 'label' => 'corrective_action.field.status',
+                'help' => 'corrective_action.help.status_readonly',
                 'choices' => [
-                    'corrective_action.status.planned' => CorrectiveAction::STATUS_PLANNED,
-                    'corrective_action.status.in_progress' => CorrectiveAction::STATUS_IN_PROGRESS,
-                    'corrective_action.status.completed' => CorrectiveAction::STATUS_COMPLETED,
-                    'corrective_action.status.verified_effective' => CorrectiveAction::STATUS_VERIFIED_EFFECTIVE,
-                    'corrective_action.status.verified_ineffective' => CorrectiveAction::STATUS_VERIFIED_INEFFECTIVE,
+                    'corrective_action.status.planned' => CorrectiveActionStatus::Planned->value,
+                    'corrective_action.status.in_progress' => CorrectiveActionStatus::InProgress->value,
+                    'corrective_action.status.completed' => CorrectiveActionStatus::Completed->value,
+                    'corrective_action.status.verified_effective' => CorrectiveActionStatus::VerifiedEffective->value,
+                    'corrective_action.status.verified_ineffective' => CorrectiveActionStatus::VerifiedIneffective->value,
                 ],
                 'choice_translation_domain' => 'audits',
-                'required' => true,
-                'attr' => ['class' => 'form-select'],
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
+            ])
+            ->add('actionType', ChoiceType::class, [
+                'label' => 'audits.field.action_type',
+                'required' => false,
+                'placeholder' => 'audits.placeholder.action_type',
+                'choices' => [
+                    'audits.action_type.corrective' => CorrectiveAction::ACTION_TYPE_CORRECTIVE,
+                    'audits.action_type.preventive' => CorrectiveAction::ACTION_TYPE_PREVENTIVE,
+                    'audits.action_type.improvement' => CorrectiveAction::ACTION_TYPE_IMPROVEMENT,
+                ],
+                'choice_translation_domain' => 'audits',
+                'help' => 'audits.help.action_type',
             ])
             ->add('responsiblePersonUser', EntityType::class, [
                 'label' => 'corrective_action.field.responsible_person_user',
@@ -69,7 +112,6 @@ class CorrectiveActionType extends AbstractType
                 'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
                 'placeholder' => 'corrective_action.placeholder.responsible_person_user',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('responsiblePerson', EntityType::class, [
                 'label' => 'corrective_action.field.responsible_person',
@@ -77,7 +119,6 @@ class CorrectiveActionType extends AbstractType
                 'choice_label' => 'fullName',
                 'placeholder' => 'corrective_action.placeholder.responsible_person',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('responsibleDeputyPersons', EntityType::class, [
                 'label' => 'corrective_action.field.responsible_deputy_persons',
@@ -85,7 +126,6 @@ class CorrectiveActionType extends AbstractType
                 'choice_label' => 'fullName',
                 'multiple' => true,
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('plannedCompletionDate', DateType::class, [
                 'label' => 'corrective_action.field.planned_completion_date',
@@ -112,6 +152,15 @@ class CorrectiveActionType extends AbstractType
                 'attr' => ['rows' => 3],
                 'help' => 'corrective_action.help.effectiveness_notes',
             ])
+            // S3 P0-32: Pflicht-Beleg der Wirksamkeitsbewertung. Form-required wird
+            // server-side im Lifecycle-Service erzwungen; auf dem Form selbst bleibt
+            // das Feld optional, damit Draft-States ohne Evidence speicherbar sind.
+            ->add('effectivenessEvidence', TextareaType::class, [
+                'label' => 'corrective_action.field.effectiveness_evidence',
+                'required' => false,
+                'attr' => ['rows' => 3],
+                'help' => 'corrective_action.help.effectiveness_evidence',
+            ])
         ;
     }
 
@@ -137,6 +186,24 @@ class CorrectiveActionType extends AbstractType
             $context->buildViolation('audits.error.owner_required_user_or_person')
                 ->atPath('responsiblePersonUser')
                 ->addViolation();
+        }
+
+        // S3 P0-32 — when the form is saved with a verified_* status, the
+        // effectiveness evidence becomes mandatory (Cl. 10.1). The
+        // LifecycleService also enforces this on programmatic transitions;
+        // duplicating the guard at the form level makes the error visible
+        // inline instead of as a 500.
+        $verifyStatuses = [
+            CorrectiveActionStatus::VerifiedEffective->value,
+            CorrectiveActionStatus::VerifiedIneffective->value,
+        ];
+        if (in_array($entity->getStatus(), $verifyStatuses, true)) {
+            $evidence = $entity->getEffectivenessEvidence();
+            if ($evidence === null || trim($evidence) === '') {
+                $context->buildViolation('corrective_action.error.evidence_required')
+                    ->atPath('effectivenessEvidence')
+                    ->addViolation();
+            }
         }
     }
 }

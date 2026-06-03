@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Enum\ComplianceRequirementFulfillmentStatus;
 use App\Repository\ComplianceRequirementFulfillmentRepository;
 use App\Service\OwnerResolver;
 use DateTimeImmutable;
@@ -11,7 +12,6 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
-use InvalidArgumentException;
 
 /**
  * Compliance Requirement Fulfillment
@@ -136,6 +136,17 @@ class ComplianceRequirementFulfillment
     #[ORM\JoinColumn(name: 'fulfillment_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
     #[ORM\InverseJoinColumn(name: 'person_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
     private Collection $responsibleDeputyPersons;
+
+    /**
+     * Person-Rollout Phase B2 — yearly attestation owner. Distinct from
+     * `responsiblePerson` (day-to-day implementation owner) — the
+     * attestation owner signs off on the formal compliance attestation
+     * and may be a different governance role-holder (CISO, Compliance
+     * Officer, external Auditor).
+     */
+    #[ORM\ManyToOne(targetEntity: Person::class)]
+    #[ORM\JoinColumn(name: 'attestation_owner_person_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?Person $attestationOwnerPerson = null;
 
     /**
      * Implementation status
@@ -332,23 +343,55 @@ class ComplianceRequirementFulfillment
         );
     }
 
+    public function getAttestationOwnerPerson(): ?Person
+    {
+        return $this->attestationOwnerPerson;
+    }
+
+    public function setAttestationOwnerPerson(?Person $attestationOwnerPerson): static
+    {
+        $this->attestationOwnerPerson = $attestationOwnerPerson;
+        return $this;
+    }
+
+    /**
+     * Effective attestation-owner display: prefer the new
+     * `attestationOwnerPerson.fullName`, fall back to the
+     * day-to-day responsible person (User then Person), then null.
+     */
+    public function getEffectiveAttestationOwnerName(): ?string
+    {
+        return $this->attestationOwnerPerson?->getFullName()
+            ?? $this->responsiblePersonUser?->getFullName()
+            ?? $this->responsiblePerson?->getFullName();
+    }
+
     public function getStatus(): string
     {
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(ComplianceRequirementFulfillmentStatus|string $status): static
     {
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $value = is_string($status) ? $status : $status->value;
         $allowedStatuses = ['not_started', 'in_progress', 'implemented', 'verified'];
-        if (!in_array($status, $allowedStatuses)) {
-            throw new InvalidArgumentException(sprintf(
+        if (!in_array($value, $allowedStatuses)) {
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException(sprintf(
                 'Invalid status "%s". Allowed: %s',
-                $status,
+                $value,
                 implode(', ', $allowedStatuses)
             ));
         }
-        $this->status = $status;
+        $this->status = $value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?ComplianceRequirementFulfillmentStatus
+    {
+        return ComplianceRequirementFulfillmentStatus::tryFrom($this->status);
     }
 
     public function getCreatedAt(): ?DateTimeImmutable
@@ -464,5 +507,25 @@ class ComplianceRequirementFulfillment
             return $this->adjustedEffortDays;
         }
         return $this->requirement?->getBaseEffortDays();
+    }
+
+    // ── F4 Evidence-Versioning ────────────────────────────────────────────────
+
+    /**
+     * F4 — set to true by EvidenceCascadeInvalidationService when a linked
+     * DocumentVersion is superseded. Reset when the reverification task is completed.
+     */
+    #[ORM\Column(name: 'evidence_outdated', type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $evidenceOutdated = false;
+
+    public function isEvidenceOutdated(): bool
+    {
+        return $this->evidenceOutdated;
+    }
+
+    public function setEvidenceOutdated(bool $evidenceOutdated): self
+    {
+        $this->evidenceOutdated = $evidenceOutdated;
+        return $this;
     }
 }

@@ -1,0 +1,79 @@
+{% extends 'base.html.twig' %}
+{% trans_default_domain 'eu_authorities' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+
+{% block title %}{{ 'eu_authorities.nis2_registration.page.edit_title'|trans }}{% endblock %}
+
+{% block body %}
+<div class="container-fluid mt-4">
+    {% include '_components/_breadcrumb.html.twig' with {
+        breadcrumbs: [
+            { label: 'eu_authorities.page.title'|trans({}, 'eu_authorities'), icon: 'nav-building-check' },
+            { label: 'eu_authorities.nis2_registration.page.title'|trans, url: path('nis2_registration_index') },
+            { label: 'eu_authorities.nis2_registration.page.edit_title'|trans }
+        ]
+    } %}
+
+    {{ _fa_page_header.render({
+        badge:    { icon: 'ui-edit', label: 'NIS-2' },
+        title:    'eu_authorities.nis2_registration.page.edit_title'|trans,
+        subtitle: 'eu_authorities.nis2_registration.page.edit_subtitle'|trans,
+        actions: [
+            {
+                label: 'common.cancel'|trans({}, 'messages'),
+                href:  path('nis2_registration_index'),
+                icon:  'x-circle',
+                variant: 'outline-secondary'
+            }
+        ]
+    }) }}
+
+    {{ form_start(form, { attr: { novalidate: 'novalidate', 'aria-label': 'eu_authorities.nis2_registration.page.edit_title'|trans } }) }}
+    {% include '_components/_auto_form.html.twig' with {
+        'form': form,
+        'layout': 'outline-rail',
+        'eyebrow': 'NIS-2 Art. 3 · Registrierungspflicht',
+        'title': 'eu_authorities.nis2_registration.page.edit_title'|trans,
+        'subtitle': 'eu_authorities.nis2_registration.page.edit_subtitle'|trans,
+        'sections': {
+            'overview': {
+                'label': 'eu_authorities.nis2_registration.section.organization'|trans,
+                'fields': ['organizationLegalName', 'organizationLegalForm']
+            },
+            'registration': {
+                'label': 'eu_authorities.nis2_registration.section.registration'|trans({}, 'eu_authorities'),
+                'fields': ['commercialRegisterCity', 'commercialRegisterNumber', 'vatId']
+            },
+            'entity_classification': {
+                'label': 'eu_authorities.nis2_registration.section.nis2'|trans,
+                'fields': ['nis2Sector', 'nis2EntityCategory', 'affectedHeadcount', 'affectedAnnualTurnoverEur', 'ictDependencyDescription']
+            },
+            'contact': {
+                'label': 'eu_authorities.nis2_registration.section.contacts'|trans,
+                'fields': ['incidentReportingContact', 'securityResponsibleContact', 'backupSecurityContact']
+            }
+        },
+        'col_widths': {
+            'organizationLegalName': 8,
+            'organizationLegalForm': 4,
+            'commercialRegisterCity': 6,
+            'commercialRegisterNumber': 4,
+            'vatId': 2,
+            'nis2Sector': 6,
+            'nis2EntityCategory': 3,
+            'affectedHeadcount': 3,
+            'affectedAnnualTurnoverEur': 6,
+            'ictDependencyDescription': 12,
+            'incidentReportingContact': 4,
+            'securityResponsibleContact': 4,
+            'backupSecurityContact': 4
+        },
+        'translation_domain': 'eu_authorities',
+        'actions': {
+            'close': { 'label': 'common.cancel'|trans({}, 'messages'), 'variant': 'ghost' },
+            'submit': { 'label': 'common.save'|trans({}, 'messages'), 'variant': 'primary', 'icon': 'ui-save' }
+        }
+    } %}
+    {{ form_end(form) }}
+</div>
+{% endblock %}

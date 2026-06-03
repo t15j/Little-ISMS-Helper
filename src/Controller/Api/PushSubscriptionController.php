@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Controller\Api;
 
+use App\Entity\User;
 use App\Service\TenantContext;
 use App\Service\WebPushService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
@@ -18,6 +20,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  *
  * Handles PWA push notification subscription management.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/api/push')]
 class PushSubscriptionController extends AbstractController
 {
@@ -31,7 +34,7 @@ class PushSubscriptionController extends AbstractController
      * Get VAPID public key for client-side subscription
      */
     #[Route('/vapid-public-key', name: 'api_push_vapid_key', methods: ['GET'])]
-    #[IsGranted('IS_AUTHENTICATED_FULLY')]
+    #[IsGranted('IS_AUTHENTICATED_REMEMBERED')]
     public function getVapidPublicKey(): JsonResponse
     {
         $publicKey = $this->webPushService->getVapidPublicKey();
@@ -51,9 +54,11 @@ class PushSubscriptionController extends AbstractController
      * Subscribe to push notifications
      */
     #[Route('/subscribe', name: 'api_push_subscribe', methods: ['POST'])]
-    #[IsGranted('IS_AUTHENTICATED_FULLY')]
-    public function subscribe(Request $request): JsonResponse
-    {
+    #[IsGranted('IS_AUTHENTICATED_REMEMBERED')]
+    public function subscribe(
+        Request $request,
+        #[CurrentUser] User $user,
+    ): JsonResponse {
         $data = json_decode($request->getContent(), true);
 
         if (!$data) {
@@ -75,7 +80,6 @@ class PushSubscriptionController extends AbstractController
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        $user = $this->getUser();
         $tenant = $this->tenantContext->getCurrentTenant();
 
         if (!$tenant) {
@@ -111,7 +115,7 @@ class PushSubscriptionController extends AbstractController
      * Unsubscribe from push notifications
      */
     #[Route('/unsubscribe', name: 'api_push_unsubscribe', methods: ['POST'])]
-    #[IsGranted('IS_AUTHENTICATED_FULLY')]
+    #[IsGranted('IS_AUTHENTICATED_REMEMBERED')]
     public function unsubscribe(Request $request): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
@@ -135,10 +139,9 @@ class PushSubscriptionController extends AbstractController
      */
     #[Route('/test', name: 'api_push_test', methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
-    public function testPush(): JsonResponse
-    {
-        $user = $this->getUser();
-
+    public function testPush(
+        #[CurrentUser] User $user,
+    ): JsonResponse {
         $count = $this->webPushService->sendToUser(
             $user,
             'Test Notification',

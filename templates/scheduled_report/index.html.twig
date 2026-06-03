@@ -6,19 +6,20 @@
 {% block body %}
 {% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
+{% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
 
 {% include '_components/_breadcrumb.html.twig' with {
     breadcrumbs: [
-        { label: 'nav.reports'|trans({}, 'nav'), path: 'app_reports_index' },
+        { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_index') },
         { label: 'scheduled_report.title'|trans({}, 'scheduled_reports') }
     ]
 } %}
 
 {{ _fa_page_header.render({
-    badge: { icon: 'clock-history', label: 'nav.reports'|trans({}, 'nav') },
+    badge: { icon: 'nav-clock-history', label: 'nav.reports'|trans({}, 'nav') },
     title: 'scheduled_report.title'|trans({}, 'scheduled_reports'),
     actions: [
-        { label: 'scheduled_report.action.new'|trans({}, 'scheduled_reports'), variant: 'primary', icon: 'plus-lg', href: path('app_scheduled_report_new') }
+        { label: 'scheduled_report.action.new'|trans({}, 'scheduled_reports'), variant: 'primary', icon: 'plus', href: path('app_scheduled_report_new') }
     ]
 }) }}
 
@@ -28,40 +29,36 @@
     {# Statistics #}
     <div class="row mb-4">
         <div class="col-md-3">
-            {% embed '_components/_card.html.twig' with { 'class': 'text-center h-100 bg-primary text-white' } %}
-                {% block card_body %}
-                    <i class="fa-icon fa-icon--ui-calendar-event fs-1" aria-hidden="true"></i>
-                    <h3 class="display-5">{{ statistics.total }}</h3>
-                    <small>{{ 'scheduled_report.stats.total'|trans({}, 'scheduled_reports') }}</small>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_feature_card.render({
+                label:   'scheduled_report.stats.total'|trans({}, 'scheduled_reports'),
+                value:   statistics.total,
+                variant: 'primary',
+                icon:    'ui-calendar-event'
+            }) }}
         </div>
         <div class="col-md-3">
-            {% embed '_components/_card.html.twig' with { 'class': 'text-center h-100 bg-success text-white' } %}
-                {% block card_body %}
-                    <i class="fa-icon fa-icon--status-ok fs-1" aria-hidden="true"></i>
-                    <h3 class="display-5">{{ statistics.active }}</h3>
-                    <small>{{ 'scheduled_report.stats.active'|trans({}, 'scheduled_reports') }}</small>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_feature_card.render({
+                label:   'scheduled_report.stats.active'|trans({}, 'scheduled_reports'),
+                value:   statistics.active,
+                variant: 'success',
+                icon:    'status-ok'
+            }) }}
         </div>
         <div class="col-md-3">
-            {% embed '_components/_card.html.twig' with { 'class': 'text-center h-100 bg-secondary text-white' } %}
-                {% block card_body %}
-                    <i class="bi bi-pause-circle fs-1" aria-hidden="true"></i>
-                    <h3 class="display-5">{{ statistics.inactive }}</h3>
-                    <small>{{ 'scheduled_report.stats.inactive'|trans({}, 'scheduled_reports') }}</small>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_feature_card.render({
+                label:   'scheduled_report.stats.inactive'|trans({}, 'scheduled_reports'),
+                value:   statistics.inactive,
+                variant: 'primary',
+                icon:    'status-pending'
+            }) }}
         </div>
         <div class="col-md-3">
-            {% embed '_components/_card.html.twig' with { 'class': 'text-center h-100 bg-warning-subtle text-warning' } %}
-                {% block card_body %}
-                    <i class="fa-icon fa-icon--ui-hourglass fs-1" aria-hidden="true"></i>
-                    <h3 class="display-5">{{ due_reports|length }}</h3>
-                    <small>{{ 'scheduled_report.stats.due'|trans({}, 'scheduled_reports') }}</small>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_feature_card.render({
+                label:   'scheduled_report.stats.due'|trans({}, 'scheduled_reports'),
+                value:   due_reports|length,
+                variant: 'warning',
+                icon:    'ui-hourglass'
+            }) }}
         </div>
     </div>
 
@@ -82,78 +79,72 @@
     </div>
     {% endif %}
 
-    {# Reports Table #}
+    {# Reports Table — V3 W3-UX: migrated to fa-table Aurora pattern #}
     {% if reports|length > 0 %}
-    {% embed '_components/_card.html.twig' with { 'class': 'shadow-sm' } %}
-        {% block card_body %}
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th scope="col">{{ 'scheduled_report.table.name'|trans({}, 'scheduled_reports') }}</th>
-                            <th scope="col">{{ 'scheduled_report.table.type'|trans({}, 'scheduled_reports') }}</th>
-                            <th scope="col">{{ 'scheduled_report.table.schedule'|trans({}, 'scheduled_reports') }}</th>
-                            <th scope="col">{{ 'scheduled_report.table.format'|trans({}, 'scheduled_reports') }}</th>
-                            <th scope="col">{{ 'scheduled_report.table.status'|trans({}, 'scheduled_reports') }}</th>
-                            <th scope="col">{{ 'scheduled_report.table.next_run'|trans({}, 'scheduled_reports') }}</th>
-                            <th scope="col">{{ 'scheduled_report.table.recipients'|trans({}, 'scheduled_reports') }}</th>
-                            <th scope="col">{{ 'scheduled_report.table.actions'|trans({}, 'scheduled_reports') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for report in reports %}
-                        <tr>
-                            <td>
-                                <a href="{{ path('app_scheduled_report_show', {id: report.id}) }}">
-                                    <strong>{{ report.name }}</strong>
-                                </a>
-                            </td>
-                            <td>
-                                {% include '_components/_badge.html.twig' with { variant: 'info', content: ('scheduled_report.type.' ~ report.reportType)|trans({}, 'scheduled_reports') } %}
-                            </td>
-                            <td>{{ ('scheduled_report.schedule.' ~ report.schedule)|trans({}, 'scheduled_reports') }}</td>
-                            <td>
-                                {% if report.format == 'pdf' %}
-                                {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'bi-file-pdf', content: 'PDF' } %}
-                                {% else %}
-                                {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-file-excel', content: 'Excel' } %}
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if report.active %}
-                                {% include '_components/_badge.html.twig' with { variant: 'success', content: 'scheduled_report.status.active'|trans({}, 'scheduled_reports') } %}
-                                {% else %}
-                                {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'scheduled_report.status.inactive'|trans({}, 'scheduled_reports') } %}
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if report.nextRunAt %}
-                                {{ report.nextRunAt|date('Y-m-d H:i') }}
-                                {% if report.isDue() %}
+    {% embed '_components/_fa_table.html.twig' with { hover: true, sortable: true } %}
+        {% block table_head %}
+            <tr>
+                <th class="fa-table__th fa-table__th--sortable" data-sort-key="name" tabindex="0" role="columnheader" aria-sort="none" data-action="click->fa-table-sort#sort keydown.enter->fa-table-sort#sort keydown.space->fa-table-sort#sort">{{ 'scheduled_report.table.name'|trans({}, 'scheduled_reports') }}</th>
+                <th class="fa-table__th">{{ 'scheduled_report.table.type'|trans({}, 'scheduled_reports') }}</th>
+                <th class="fa-table__th">{{ 'scheduled_report.table.schedule'|trans({}, 'scheduled_reports') }}</th>
+                <th class="fa-table__th">{{ 'scheduled_report.table.format'|trans({}, 'scheduled_reports') }}</th>
+                <th class="fa-table__th">{{ 'scheduled_report.table.status'|trans({}, 'scheduled_reports') }}</th>
+                <th class="fa-table__th fa-table__th--sortable" data-sort-key="next_run" tabindex="0" role="columnheader" aria-sort="none" data-action="click->fa-table-sort#sort keydown.enter->fa-table-sort#sort keydown.space->fa-table-sort#sort">{{ 'scheduled_report.table.next_run'|trans({}, 'scheduled_reports') }}</th>
+                <th class="fa-table__th">{{ 'scheduled_report.table.recipients'|trans({}, 'scheduled_reports') }}</th>
+                <th class="fa-table__th fa-table__th--actions">{{ 'scheduled_report.table.actions'|trans({}, 'scheduled_reports') }}</th>
+            </tr>
+        {% endblock %}
+        {% block table_body %}
+            {% for report in reports %}
+                <tr class="fa-table__row">
+                    <td class="fa-table__cell" data-sort-value="{{ report.name }}">
+                        <a href="{{ path('app_scheduled_report_show', {id: report.id}) }}">
+                            <strong>{{ report.name }}</strong>
+                        </a>
+                    </td>
+                    <td class="fa-table__cell">
+                        {% include '_components/_badge.html.twig' with { variant: 'info', content: ('scheduled_report.type.' ~ report.reportType)|trans({}, 'scheduled_reports') } %}
+                    </td>
+                    <td class="fa-table__cell">{{ ('scheduled_report.schedule.' ~ report.schedule)|trans({}, 'scheduled_reports') }}</td>
+                    <td class="fa-table__cell">
+                        {% if report.format == 'pdf' %}
+                            {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'nav-file-pdf', content: 'PDF' } %}
+                        {% else %}
+                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'nav-file-earmark-spreadsheet', content: 'Excel' } %}
+                        {% endif %}
+                    </td>
+                    <td class="fa-table__cell">
+                        {% if report.active %}
+                            {% include '_components/_badge.html.twig' with { variant: 'success', content: 'scheduled_report.status.active'|trans({}, 'scheduled_reports') } %}
+                        {% else %}
+                            {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'scheduled_report.status.inactive'|trans({}, 'scheduled_reports') } %}
+                        {% endif %}
+                    </td>
+                    <td class="fa-table__cell" data-sort-value="{{ report.nextRunAt ? report.nextRunAt|date('Y-m-d H:i') : '' }}">
+                        {% if report.nextRunAt %}
+                            {{ report.nextRunAt|date('Y-m-d H:i') }}
+                            {% if report.isDue() %}
                                 {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'scheduled_report.status.due'|trans({}, 'scheduled_reports') } %}
-                                {% endif %}
-                                {% else %}
-                                <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% include '_components/_badge.html.twig' with { variant: 'primary', content: report.recipients|length } %}
-                            </td>
-                            <td>
-                                <div class="btn-group btn-group-sm">
-                                    <a href="{{ path('app_scheduled_report_show', {id: report.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" title="{{ 'scheduled_report.action.view'|trans({}, 'scheduled_reports') }}">
-                                        <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i>
-                                    </a>
-                                    <a href="{{ path('app_scheduled_report_edit', {id: report.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" title="{{ 'scheduled_report.action.edit'|trans({}, 'scheduled_reports') }}">
-                                        <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="fa-table__cell">
+                        {% include '_components/_badge.html.twig' with { variant: 'primary', content: report.recipients|length } %}
+                    </td>
+                    <td class="fa-table__cell fa-table__cell--actions">
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ path('app_scheduled_report_show', {id: report.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" title="{{ 'scheduled_report.action.view'|trans({}, 'scheduled_reports') }}">
+                                <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i>
+                            </a>
+                            <a href="{{ path('app_scheduled_report_edit', {id: report.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" title="{{ 'scheduled_report.action.edit'|trans({}, 'scheduled_reports') }}">
+                                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+            {% endfor %}
         {% endblock %}
     {% endembed %}
     {% else %}
@@ -165,7 +156,7 @@
                 title: 'scheduled_report.empty.title'|trans({}, 'scheduled_reports'),
                 text: 'scheduled_report.empty.text'|trans({}, 'scheduled_reports'),
                 actions: [
-                    { label: 'scheduled_report.action.new'|trans({}, 'scheduled_reports'), variant: 'primary', icon: 'plus-circle', href: path('app_scheduled_report_new') }
+                    { label: 'scheduled_report.action.new'|trans({}, 'scheduled_reports'), variant: 'primary', icon: 'plus', href: path('app_scheduled_report_new') }
                 ]
             }) }}
         {% endblock %}

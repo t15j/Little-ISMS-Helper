@@ -33,12 +33,13 @@
     <div aria-live="polite" class="visually-hidden"
          data-controller="inheritance-queue"
          data-inheritance-queue-count-value="{{ pending_count }}"
+         data-inheritance-queue-poll-url-value="{{ path('app_compliance_inheritance_pending_count') }}"
          data-inheritance-queue-interval-value="{{ poll_interval_ms|default(60000) }}">
         {{ 'compliance_inheritance.queue.aria_count'|trans({ '%count%': pending_count }, 'compliance_inheritance') }}
     </div>
 
     {% if logs is empty %}
-        <div class="alert alert-info" role="status">
+        <div class="fa-alert fa-alert--info" role="status">
             {{ 'compliance_inheritance.queue.empty'|trans({}, 'compliance_inheritance') }}
         </div>
     {% else %}

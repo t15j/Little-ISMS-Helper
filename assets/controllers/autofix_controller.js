@@ -31,7 +31,7 @@ export default class extends Controller {
         // Disable button and show loading state
         const originalHtml = button.innerHTML;
         button.disabled = true;
-        button.innerHTML = `<i class="bi bi-hourglass-split" aria-hidden="true"></i> ${this.processingTextValue}`;
+        button.innerHTML = `<i class="fa-icon fa-icon--ui-hourglass" aria-hidden="true"></i> ${this.processingTextValue}`;
 
         // Find result container
         const resultContainer = this.hasResultTarget
@@ -52,6 +52,21 @@ export default class extends Controller {
                 }
             });
 
+            if (!response.ok) {
+                const msg = response.status === 403
+                    ? 'Keine Berechtigung'
+                    : `Fehler ${response.status}`;
+                window.faToast(msg, 'danger');
+                if (resultContainer) {
+                    resultContainer.innerHTML = `
+                        <div class="alert alert-danger fix-result">
+                            <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> ${msg}
+                        </div>
+                    `;
+                }
+                return;
+            }
+
             const result = await response.json();
 
             if (result.success) {
@@ -64,7 +79,7 @@ export default class extends Controller {
                     }
                     resultContainer.innerHTML = `
                         <div class="alert alert-success fix-result fairy-magic-glow">
-                            <i class="bi bi-stars fairy-icon-sparkle" aria-hidden="true"></i> ${result.message}
+                            <i class="fa-icon fa-icon--ui-stars fairy-icon-sparkle" aria-hidden="true"></i> ${result.message}
                             ${detailsHtml}
                             <div class="mt-1 small text-muted opacity-75">Die Cyberpunk Fee hat das für dich erledigt!</div>
                         </div>
@@ -81,7 +96,7 @@ export default class extends Controller {
                 if (resultContainer) {
                     resultContainer.innerHTML = `
                         <div class="alert alert-danger fix-result">
-                            <i class="bi bi-x-circle" aria-hidden="true"></i> ${result.message}
+                            <i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i> ${result.message}
                         </div>
                     `;
                 }
@@ -90,7 +105,7 @@ export default class extends Controller {
             if (resultContainer) {
                 resultContainer.innerHTML = `
                     <div class="alert alert-danger fix-result">
-                        <i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Error: ${error.message}
+                        <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> Error: ${error.message}
                     </div>
                 `;
             }

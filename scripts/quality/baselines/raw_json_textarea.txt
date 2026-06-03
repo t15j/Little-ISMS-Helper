@@ -1,0 +1,2 @@
+# check_raw_json_textarea.py baseline
+# Format: <FormType-path>:<line>:<property>

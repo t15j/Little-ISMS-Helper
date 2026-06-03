@@ -13,16 +13,23 @@ use App\Repository\AssetRepository;
 use App\Repository\ControlRepository;
 use App\Repository\IncidentRepository;
 use App\Repository\RiskRepository;
+use App\Risk\RiskMatrixThresholds;
 use App\Service\AssetCriticalityService;
 use App\Service\ComplianceAnalyticsService;
 use App\Service\ControlEffectivenessService;
 use App\Service\RiskForecastService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsCsrfTokenValid;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Contracts\Translation\TranslatorInterface;
+use App\Util\CsvSanitizer;
 
 /**
  * Analytics Controller
@@ -30,6 +37,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  * Phase 7B: Advanced Analytics Dashboards with multi-framework compliance,
  * control effectiveness, and predictive risk analytics.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/analytics')]
 class AnalyticsController extends AbstractController
 {
@@ -43,7 +51,7 @@ class AnalyticsController extends AbstractController
         private readonly RiskForecastService $riskForecastService,
         private readonly AssetCriticalityService $assetCriticalityService,
     ) {}
-    #[Route('', name: 'app_analytics_dashboard')]
+    #[Route('', name: 'app_analytics_dashboard', methods: ['GET'])]
     public function dashboard(): Response
     {
         return $this->render('analytics/dashboard.html.twig');
@@ -52,7 +60,7 @@ class AnalyticsController extends AbstractController
     /**
      * Phase 7B: Advanced Analytics Hub with tabbed navigation
      */
-    #[Route('/advanced', name: 'app_analytics_advanced')]
+    #[Route('/advanced', name: 'app_analytics_advanced', methods: ['GET'])]
     #[IsGranted('ROLE_MANAGER')]
     public function advancedDashboard(): Response
     {
@@ -66,7 +74,7 @@ class AnalyticsController extends AbstractController
     /**
      * Phase 7B: Multi-Framework Compliance Dashboard
      */
-    #[Route('/compliance/frameworks', name: 'app_analytics_compliance_frameworks')]
+    #[Route('/compliance/frameworks', name: 'app_analytics_compliance_frameworks', methods: ['GET'])]
     #[IsGranted('ROLE_MANAGER')]
     public function complianceFrameworks(): Response
     {
@@ -80,7 +88,7 @@ class AnalyticsController extends AbstractController
     /**
      * Phase 7B: Control Effectiveness Dashboard
      */
-    #[Route('/controls/effectiveness', name: 'app_analytics_control_effectiveness')]
+    #[Route('/controls/effectiveness', name: 'app_analytics_control_effectiveness', methods: ['GET'])]
     #[IsGranted('ROLE_MANAGER')]
     public function controlEffectiveness(): Response
     {
@@ -94,7 +102,7 @@ class AnalyticsController extends AbstractController
     /**
      * Phase 7B: Risk Forecast Dashboard
      */
-    #[Route('/risk/forecast', name: 'app_analytics_risk_forecast')]
+    #[Route('/risk/forecast', name: 'app_analytics_risk_forecast', methods: ['GET'])]
     #[IsGranted('ROLE_MANAGER')]
     public function riskForecast(): Response
     {
@@ -109,7 +117,7 @@ class AnalyticsController extends AbstractController
     /**
      * Phase 7B: Asset Criticality Dashboard
      */
-    #[Route('/assets/criticality', name: 'app_analytics_asset_criticality')]
+    #[Route('/assets/criticality', name: 'app_analytics_asset_criticality', methods: ['GET'])]
     #[IsGranted('ROLE_MANAGER')]
     public function assetCriticality(): Response
     {
@@ -123,9 +131,13 @@ class AnalyticsController extends AbstractController
 
     // ========== API Endpoints for Charts ==========
 
-    #[Route('/api/heat-map', name: 'app_analytics_heat_map_data')]
+    #[Route('/api/heat-map', name: 'app_analytics_heat_map_data', methods: ['GET'])]
     public function getHeatMapData(): JsonResponse
     {
+        // Junior-ISB-Audit-2026-05-22 Polish: Aurora-rework Risk-Heatmap
+        // Emits `band` (low/medium/high/critical) per cell so the frontend can
+        // drive Aurora .isms-risk-cell[data-level] styling — replaces hand-rolled
+        // hex colors. SSoT: App\Risk\RiskMatrixThresholds (ISO 27001 Cl. 6.1.2 b).
         $risks = $this->riskRepository->findAll();
 
         // Create 5x5 matrix (Probability x Impact)
@@ -148,30 +160,28 @@ class AnalyticsController extends AbstractController
         $heatMapData = [];
         for ($impact = 5; $impact >= 1; $impact--) {
             for ($probability = 1; $probability <= 5; $probability++) {
-                $risks = $matrix[$impact][$probability];
-                $count = count($risks);
+                $cellRisks = $matrix[$impact][$probability];
+                $count = count($cellRisks);
                 $score = $probability * $impact;
-
-                // Determine color based on score
-                $color = $this->getRiskColor($score);
+                $band = RiskMatrixThresholds::classify($score);
 
                 $heatMapData[] = [
                     'x' => $probability,
                     'y' => $impact,
                     'count' => $count,
                     'score' => $score,
-                    'color' => $color,
-                    'risks' => $risks
+                    'band' => $band,
+                    'risks' => $cellRisks,
                 ];
             }
         }
 
         return new JsonResponse([
             'matrix' => $heatMapData,
-            'total_risks' => count($risks)
+            'total_risks' => count($risks),
         ]);
     }
-    #[Route('/api/compliance-radar', name: 'app_analytics_compliance_radar_data')]
+    #[Route('/api/compliance-radar', name: 'app_analytics_compliance_radar_data', methods: ['GET'])]
     public function getComplianceRadarData(): JsonResponse
     {
         $controls = $this->controlRepository->findAll();
@@ -216,7 +226,7 @@ class AnalyticsController extends AbstractController
             'overall_compliance' => $this->calculateOverallCompliance($radarData)
         ]);
     }
-    #[Route('/api/trends', name: 'app_analytics_trends_data')]
+    #[Route('/api/trends', name: 'app_analytics_trends_data', methods: ['GET'])]
     public function getTrendsData(Request $request): JsonResponse
     {
         $period = $request->query->get('period', '12'); // months
@@ -236,7 +246,113 @@ class AnalyticsController extends AbstractController
             'incidents' => $incidentTrend
         ]);
     }
-    #[Route('/api/export/{type}', name: 'app_analytics_export')]
+    /**
+     * Async wrapper around {@see self::exportData()}: dispatches an
+     * {@see \App\Job\ExportAnalyticsJob} that writes the analytics CSV
+     * (risks / assets / compliance slice) to var/exports/<jobId>.csv in
+     * the background and renders a polling progress page with a Download
+     * CTA once the worker reports succeeded.
+     *
+     * The legacy sync GET route is kept for back-compat (bookmarks, links
+     * embedded in saved reports). New UI traffic should use this dispatch
+     * endpoint to avoid PHP-FPM timeouts on large datasets.
+     *
+     * Phase 3 of the async admin-jobs rollout.
+     */
+    #[Route('/export/{type}/dispatch', name: 'app_analytics_export_dispatch', methods: ['POST'])]
+    #[IsCsrfTokenValid('analytics_export_dispatch')]
+    public function exportDataDispatch(
+        Request $request,
+        string $type,
+        \App\Service\Job\JobStatusService $jobStatusService,
+        \App\Service\Job\JobDispatcher $jobDispatcher,
+        TranslatorInterface $translator,
+    ): Response {
+        if (!in_array($type, ['risks', 'assets', 'compliance'], true)) {
+            throw $this->createNotFoundException(sprintf('Unsupported analytics export type "%s".', $type));
+        }
+
+        $jobId = $jobStatusService->create('analytics.export', [
+            'type' => $type,
+            '_label' => $translator->trans('analytics.export.progress_title', [], 'analytics'),
+            '_subtitle' => $translator->trans('analytics.export.progress_subtitle', [], 'analytics'),
+            '_download_label' => $translator->trans('analytics.export.download_button', [], 'analytics'),
+        ]);
+        // Patch the download URL once the UUID is known (chicken-and-egg
+        // with JobStatusService::create — UUID is minted inside the method).
+        $jobStatusService->updatePayload($jobId, [
+            '_download_url' => $this->generateUrl('app_analytics_export_download', ['id' => $jobId, 'type' => $type]),
+        ]);
+
+        $progressResponse = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('app_analytics_dashboard'),
+        ], Response::HTTP_SEE_OTHER);
+
+        // Dispatch through the configured runner (in_request by default —
+        // runs in this request, no worker needed; messenger mode queues it).
+        return $jobDispatcher->dispatch(
+            \App\Job\ExportAnalyticsJob::class,
+            ['type' => $type],
+            $jobId,
+            $progressResponse,
+            $request->getSession(),
+        );
+    }
+
+    /**
+     * Streams the file produced by {@see \App\Job\ExportAnalyticsJob} and
+     * removes it from disk afterwards. The job ID UUID-v4 is the canonical
+     * filename stem so we can derive the path without any user-controlled
+     * string.
+     */
+    #[Route('/export/{type}/download/{id}', name: 'app_analytics_export_download', methods: ['GET'])]
+    public function exportDownload(
+        string $type,
+        string $id,
+        \App\Service\Job\JobStatusService $jobStatusService,
+        KernelInterface $kernel,
+        TranslatorInterface $translator,
+    ): Response {
+        if (!in_array($type, ['risks', 'assets', 'compliance'], true)) {
+            throw $this->createNotFoundException('Unsupported analytics export type.');
+        }
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $id)) {
+            throw $this->createNotFoundException('Invalid export ID.');
+        }
+        if (!$jobStatusService->exists($id)) {
+            throw $this->createNotFoundException(
+                $translator->trans('analytics.export.file_not_found', [], 'analytics'),
+            );
+        }
+        $record = $jobStatusService->read($id);
+        if (($record['status'] ?? '') !== 'succeeded') {
+            throw $this->createNotFoundException(
+                $translator->trans('analytics.export.file_not_found', [], 'analytics'),
+            );
+        }
+
+        $path = $kernel->getProjectDir() . '/var/exports/' . $id . '.csv';
+        if (!is_file($path)) {
+            throw $this->createNotFoundException(
+                $translator->trans('analytics.export.file_not_found', [], 'analytics'),
+            );
+        }
+
+        $filename = sprintf('analytics_%s_%s.csv', $type, date('Y-m-d'));
+
+        $response = new BinaryFileResponse($path);
+        $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
+        $response->setContentDisposition(
+            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            $filename,
+        );
+        $response->deleteFileAfterSend(true);
+
+        return $response;
+    }
+
+    #[Route('/api/export/{type}', name: 'app_analytics_export', methods: ['GET'])]
     public function exportData(Request $request, string $type): Response
     {
         $data = [];
@@ -266,18 +382,8 @@ class AnalyticsController extends AbstractController
         return $response;
     }
     // Helper methods
-    private function getRiskColor(int $score): string
-    {
-        if ($score >= 15) {
-            return '#fecaca'; // Critical (15-25) - Light Red
-        } elseif ($score >= 8) {
-            return '#fed7aa'; // High (8-14) - Light Orange
-        } elseif ($score >= 4) {
-            return '#fef3c7'; // Medium (4-7) - Light Yellow
-        } else {
-            return '#d1fae5'; // Low (1-3) - Light Green
-        }
-    }
+    // Junior-ISB-Audit-2026-05-22 Polish: Aurora-rework Risk-Heatmap removed
+    // getRiskColor() hex helper — frontend now uses Aurora .isms-risk-cell[data-level].
     private function extractAnnex(string $controlId): string
     {
         // Extract annex from control ID (e.g., "A.5.1" -> "A.5")
@@ -430,7 +536,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Framework Comparison Data
      */
-    #[Route('/api/frameworks/comparison', name: 'app_analytics_api_framework_comparison')]
+    #[Route('/api/frameworks/comparison', name: 'app_analytics_api_framework_comparison', methods: ['GET'])]
     public function getFrameworkComparisonData(): JsonResponse
     {
         return new JsonResponse($this->complianceAnalyticsService->getFrameworkComparison());
@@ -439,7 +545,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Framework Overlap Data
      */
-    #[Route('/api/frameworks/overlap', name: 'app_analytics_api_framework_overlap')]
+    #[Route('/api/frameworks/overlap', name: 'app_analytics_api_framework_overlap', methods: ['GET'])]
     public function getFrameworkOverlapData(): JsonResponse
     {
         return new JsonResponse($this->complianceAnalyticsService->getFrameworkOverlap());
@@ -448,7 +554,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Control Coverage Matrix
      */
-    #[Route('/api/controls/coverage', name: 'app_analytics_api_control_coverage')]
+    #[Route('/api/controls/coverage', name: 'app_analytics_api_control_coverage', methods: ['GET'])]
     public function getControlCoverageData(): JsonResponse
     {
         return new JsonResponse($this->complianceAnalyticsService->getControlCoverageMatrix());
@@ -457,7 +563,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Gap Analysis Data
      */
-    #[Route('/api/compliance/gaps', name: 'app_analytics_api_compliance_gaps')]
+    #[Route('/api/compliance/gaps', name: 'app_analytics_api_compliance_gaps', methods: ['GET'])]
     public function getGapAnalysisData(): JsonResponse
     {
         return new JsonResponse($this->complianceAnalyticsService->getGapAnalysis());
@@ -466,7 +572,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Transitive Compliance Data
      */
-    #[Route('/api/compliance/transitive', name: 'app_analytics_api_transitive_compliance')]
+    #[Route('/api/compliance/transitive', name: 'app_analytics_api_transitive_compliance', methods: ['GET'])]
     public function getTransitiveComplianceData(): JsonResponse
     {
         return new JsonResponse($this->complianceAnalyticsService->getTransitiveCompliance());
@@ -475,7 +581,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Compliance Roadmap Data
      */
-    #[Route('/api/compliance/roadmap', name: 'app_analytics_api_compliance_roadmap')]
+    #[Route('/api/compliance/roadmap', name: 'app_analytics_api_compliance_roadmap', methods: ['GET'])]
     public function getComplianceRoadmapData(): JsonResponse
     {
         return new JsonResponse($this->complianceAnalyticsService->getComplianceRoadmap());
@@ -484,7 +590,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Control Effectiveness Data
      */
-    #[Route('/api/controls/effectiveness', name: 'app_analytics_api_control_effectiveness')]
+    #[Route('/api/controls/effectiveness', name: 'app_analytics_api_control_effectiveness', methods: ['GET'])]
     public function getControlEffectivenessData(): JsonResponse
     {
         return new JsonResponse($this->controlEffectivenessService->getEffectivenessDashboard());
@@ -493,7 +599,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Control Category Performance
      */
-    #[Route('/api/controls/categories', name: 'app_analytics_api_control_categories')]
+    #[Route('/api/controls/categories', name: 'app_analytics_api_control_categories', methods: ['GET'])]
     public function getControlCategoryData(): JsonResponse
     {
         return new JsonResponse($this->controlEffectivenessService->getCategoryPerformance());
@@ -502,7 +608,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Control-Risk Matrix
      */
-    #[Route('/api/controls/risk-matrix', name: 'app_analytics_api_control_risk_matrix')]
+    #[Route('/api/controls/risk-matrix', name: 'app_analytics_api_control_risk_matrix', methods: ['GET'])]
     public function getControlRiskMatrixData(): JsonResponse
     {
         return new JsonResponse($this->controlEffectivenessService->getControlRiskMatrix());
@@ -511,7 +617,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Risk Forecast Data
      */
-    #[Route('/api/risk/forecast', name: 'app_analytics_api_risk_forecast')]
+    #[Route('/api/risk/forecast', name: 'app_analytics_api_risk_forecast', methods: ['GET'])]
     public function getRiskForecastData(Request $request): JsonResponse
     {
         $months = (int) $request->query->get('months', 6);
@@ -521,7 +627,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Risk Velocity Data
      */
-    #[Route('/api/risk/velocity', name: 'app_analytics_api_risk_velocity')]
+    #[Route('/api/risk/velocity', name: 'app_analytics_api_risk_velocity', methods: ['GET'])]
     public function getRiskVelocityData(): JsonResponse
     {
         return new JsonResponse($this->riskForecastService->getRiskVelocity());
@@ -530,7 +636,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Risk Appetite Compliance
      */
-    #[Route('/api/risk/appetite', name: 'app_analytics_api_risk_appetite')]
+    #[Route('/api/risk/appetite', name: 'app_analytics_api_risk_appetite', methods: ['GET'])]
     public function getRiskAppetiteData(): JsonResponse
     {
         return new JsonResponse($this->riskForecastService->getRiskAppetiteCompliance());
@@ -539,7 +645,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Anomaly Detection
      */
-    #[Route('/api/risk/anomalies', name: 'app_analytics_api_anomalies')]
+    #[Route('/api/risk/anomalies', name: 'app_analytics_api_anomalies', methods: ['GET'])]
     public function getAnomalyData(): JsonResponse
     {
         return new JsonResponse($this->riskForecastService->getAnomalyDetection());
@@ -548,7 +654,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Asset Incident Probability
      */
-    #[Route('/api/assets/incident-probability', name: 'app_analytics_api_asset_probability')]
+    #[Route('/api/assets/incident-probability', name: 'app_analytics_api_asset_probability', methods: ['GET'])]
     public function getAssetProbabilityData(): JsonResponse
     {
         return new JsonResponse($this->assetCriticalityService->getAssetIncidentProbability());
@@ -557,7 +663,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Asset Criticality Dashboard
      */
-    #[Route('/api/assets/criticality', name: 'app_analytics_api_asset_criticality')]
+    #[Route('/api/assets/criticality', name: 'app_analytics_api_asset_criticality', methods: ['GET'])]
     public function getAssetCriticalityData(): JsonResponse
     {
         return new JsonResponse($this->assetCriticalityService->getCriticalityDashboard());
@@ -566,7 +672,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Asset Vulnerability Matrix
      */
-    #[Route('/api/assets/vulnerability-matrix', name: 'app_analytics_api_vulnerability_matrix')]
+    #[Route('/api/assets/vulnerability-matrix', name: 'app_analytics_api_vulnerability_matrix', methods: ['GET'])]
     public function getVulnerabilityMatrixData(): JsonResponse
     {
         return new JsonResponse($this->assetCriticalityService->getVulnerabilityMatrix());
@@ -575,7 +681,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Asset Type Analysis
      */
-    #[Route('/api/assets/type-analysis', name: 'app_analytics_api_type_analysis')]
+    #[Route('/api/assets/type-analysis', name: 'app_analytics_api_type_analysis', methods: ['GET'])]
     public function getTypeAnalysisData(): JsonResponse
     {
         return new JsonResponse($this->assetCriticalityService->getTypeAnalysis());
@@ -584,7 +690,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Supply Chain Risk
      */
-    #[Route('/api/assets/supply-chain', name: 'app_analytics_api_supply_chain')]
+    #[Route('/api/assets/supply-chain', name: 'app_analytics_api_supply_chain', methods: ['GET'])]
     public function getSupplyChainRiskData(): JsonResponse
     {
         return new JsonResponse($this->assetCriticalityService->getSupplyChainRisk());
@@ -593,7 +699,7 @@ class AnalyticsController extends AbstractController
     /**
      * API: Executive Summary
      */
-    #[Route('/api/executive-summary', name: 'app_analytics_api_executive_summary')]
+    #[Route('/api/executive-summary', name: 'app_analytics_api_executive_summary', methods: ['GET'])]
     public function getExecutiveSummaryData(): JsonResponse
     {
         return new JsonResponse($this->complianceAnalyticsService->getExecutiveSummary());
@@ -625,7 +731,7 @@ class AnalyticsController extends AbstractController
         $output = fopen('php://temp', 'r+');
 
         foreach ($data as $row) {
-            fputcsv($output, array_map([$this, 'sanitizeCsvValue'], $row), escape: '\\');
+            fputcsv($output, array_map([CsvSanitizer::class, 'sanitize'], $row), escape: '\\');
         }
 
         rewind($output);
@@ -633,20 +739,5 @@ class AnalyticsController extends AbstractController
         fclose($output);
 
         return $csv;
-    }
-
-    /**
-     * Sanitize a CSV cell value to prevent formula injection (OWASP - Injection).
-     * Prefixes values starting with =, +, -, @, TAB or CR with a single quote.
-     */
-    private function sanitizeCsvValue(mixed $value): mixed
-    {
-        if (!is_string($value)) {
-            return $value;
-        }
-        if ($value !== '' && in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
-            return "'" . $value;
-        }
-        return $value;
     }
 }

@@ -21,7 +21,10 @@ Guidelines for Claude Code in this repository.
 
 **Multi-tenancy:** All entities use `tenant_id` field. `TenantContext` service manages context.
 
-**RBAC:** USER → AUDITOR → MANAGER → ADMIN → SUPER_ADMIN, plus holding-level ROLE_GROUP_CISO and ROLE_KONZERN_AUDITOR. 50+ permissions.
+**RBAC:** USER → AUDITOR → MANAGER → ADMIN → SUPER_ADMIN, plus holding-level
+ROLE_GROUP_CISO + ROLE_KONZERN_AUDITOR, plus persona-roles
+ROLE_CISO / ROLE_RISK_MANAGER / ROLE_DPO / ROLE_COMPLIANCE_MANAGER (each
+gates own dashboard at `/dashboards/<persona>`). 50+ permissions.
 
 ## Essential Commands
 
@@ -49,7 +52,147 @@ php -l src/Service/MyService.php  # syntax check single file
 php bin/console cache:clear
 php bin/console lint:container    # validate service wiring
 php bin/console lint:twig templates/  # validate all templates
+python3 scripts/quality/check_twig_macro_scope.py  # embed-macro-import scope (CI-gate since v3.5)
+python3 scripts/quality/check_translation_issues.py  # i18n quality
 ```
+
+## Operator-UI (CLI-Vermeidung)
+
+Self-hosted-Operator hat `/quick-fix` als Web-UI fuer:
+- Pending-Migrations anwenden (mit Auto-Chain Reconcile bei non-destructive Drift)
+- Schema-Drift reconcilen (mit destructive-Confirm-Checkbox bei DROP/TRUNCATE)
+- DataRepair: Orphans assignen, Tenant-Mismatches fixen, Duplikate bereinigen
+- "Alles-Sicher-Reparieren" Convenience-Button
+
+CLI nur fuer destructive-edge-cases wenn UI-Auto-Recovery scheitert. Doku:
+`docs/user-guide/QUICK_FIX.md`.
+
+## Async Admin Jobs
+
+Long-running admin tasks (> PHP-FPM 30 s limit) run asynchronously and report
+status via `var/jobs/<uuid>.json`. The frontend polls
+`GET /admin/jobs/{uuid}/status` every 3 s (Stimulus `async-job` controller).
+
+**Two execution strategies, chosen by the `app.async_job.runner` parameter:**
+
+| Strategy            | Use when                              | Worker needed? |
+|---------------------|---------------------------------------|----------------|
+| `in_request` (default) | Shared hosting / no shell access     | No — uses `fastcgi_finish_request()` |
+| `messenger` (opt-in) | Multi-server / dedicated worker box  | Yes — `messenger:consume async` |
+
+Switch via env: `APP_ASYNC_JOB_RUNNER=messenger`.
+
+### In-request runner (default — shared-hosting friendly)
+
+The runner flushes the response to the browser, calls
+`fastcgi_finish_request()` (or `litespeed_finish_request()`), then keeps the
+PHP-FPM worker executing the job until completion. Falls back to synchronous
+execution under CLI / non-FPM SAPIs so phpunit + console commands work
+unchanged.
+
+`InRequestJobRunner` lives at `src/Service/Job/InRequestJobRunner.php`.
+The detach helper is shared with the setup-wizard via
+`App\Controller\Trait\DetachableResponseTrait`.
+
+### Adding a new async admin job
+
+1. Create `src/Job/MyJob.php` implementing `App\Job\AsyncJobInterface`
+2. Inject services via constructor (autowired automatically)
+3. Implement `run(JobContext $ctx)` — call `$ctx->progress()` and `$ctx->message()`
+4. In the controller — use the **`AsyncJobDispatcher` facade** (P-16, since
+   2026-05-23) for the canonical PRG-redirect pattern:
+   ```php
+   return $this->asyncJobDispatcher->dispatchWithProgress(
+       request: $request,
+       jobClass: MyJob::class,
+       jobArgs: ['myArg' => $val],
+       jobName: 'admin.my_job',
+       payload: ['_label' => '…', '_subtitle' => '…'],
+       returnUrl: $this->generateUrl('admin_my_index'),
+   );
+   ```
+   For the rare case where you need direct template rendering (non-Turbo /
+   XHR JSON envelope / payload-patching with the freshly-minted UUID), drop
+   to the lower-level primitives:
+   ```php
+   $jobId = $this->jobStatusService->create('admin.my_job', $payload);
+   $response = $this->render('...progress.html.twig', [
+       'jobId' => $jobId, 'cancelUrl' => '...',
+   ]);
+   return $this->jobDispatcher->dispatch(
+       MyJob::class,
+       ['myArg' => $val],
+       $jobId,
+       $response,
+       $request->getSession(),  // released early so polling does not block
+   );
+   ```
+5. Include `_async_job_progress.html.twig` in the progress template (only
+   needed for the rare direct-render variant — `dispatchWithProgress()`
+   redirects to the shared `admin_job_progress_page` route).
+
+**Critical ordering invariant:** `$this->render(...)` MUST come before
+`$jobDispatcher->dispatch()` — the response body must exist when the runner
+flushes it.
+
+**Jobs must NOT depend on request-bound services** (Session, Request,
+FlashBag, TenantContext-via-request). After `fastcgi_finish_request()` the
+session is read-only and the original request is gone. Pass everything you
+need (tenantId, userId, …) through `$args` at dispatch time — see
+`ExportRisksJob` as the reference pattern. The shared EntityManager
+keeps working after detach.
+
+### Advanced — Messenger worker (opt-in, for dedicated infra)
+
+Set `APP_ASYNC_JOB_RUNNER=messenger` to route `ExecuteJobMessage` through
+the doctrine async transport. Worker start:
+
+**When running in Messenger mode:** Worker-Health-UI at
+`/admin/queue-status` (route `admin_queue_status`) shows queue depth + last
+heartbeat + "Process queue now" emergency-trigger button. Shared-hosting
+users without shell access can use the cron pattern documented in
+`docs/user-guide/HOSTING_WORKER.md`. **Default in-request runner needs none
+of this — only Messenger mode does.**
+
+```bash
+# Dev
+php bin/console messenger:consume async --time-limit=300 -vv
+
+# Production — systemd unit
+# /etc/systemd/system/isms-worker.service
+[Unit]
+Description=Little ISMS Helper Messenger Worker
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/var/www/isms-helper
+ExecStart=/usr/bin/php bin/console messenger:consume async --time-limit=3600 -vv
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl enable isms-worker && systemctl start isms-worker
+```
+
+### Key files
+
+- `src/Service/Job/AsyncJobDispatcher.php` — P-16 boilerplate-reduction facade (use this for new endpoints — replaces the 5-step ritual with one call)
+- `src/Service/Job/JobDispatcher.php` — lower-level dispatch primitive controllers inject
+- `src/Service/Job/InRequestJobRunner.php` — default strategy (FCGI detach)
+- `src/Service/Job/MessengerJobRunner.php` — opt-in Messenger strategy
+- `src/Service/Job/JobStatusService.php` — file-based status store
+- `src/Job/AsyncJobInterface.php` + `JobContext.php` — contract + context
+- `src/Message/Job/ExecuteJobMessage.php` — Messenger envelope (opt-in path)
+- `src/MessageHandler/Job/ExecuteJobHandler.php` — worker handler
+- `src/Controller/Admin/JobStatusController.php` — polling endpoint
+- `src/Controller/Trait/DetachableResponseTrait.php` — buffer-drain + FCGI helper
+- `templates/_components/_async_job_progress.html.twig` — progress partial
+- `assets/controllers/async_job_controller.js` — Stimulus polling controller
 
 ## Architecture Quick Guide
 
@@ -68,8 +211,10 @@ php bin/console lint:twig templates/  # validate all templates
 - `AuditLogger` - Compliance audit trail
 - `BackupService`, `RestoreService` - Data backup/restore
 - `TenantContext` - Multi-tenant scoping
-- `WorkflowService` - Workflow instance management
-- `WorkflowAutoProgressionService` - Event-driven workflow progression
+- `WorkflowService` - Workflow instance management (facade — stable public API)
+- `FieldCompletionAutoTransition` - Event-driven auto-progression listener (canonical since Y.1)
+- ~~`WorkflowAutoProgressionService`~~ - @deprecated since Y.1; bridges to FieldCompletionAutoTransition
+- `ModuleConfigurationService` - Module activation check (per tenant)
 
 **Core Entities:** Asset, Risk, Control (93 ISO 27001 controls), Incident, Document, ComplianceFramework, User, Tenant, Role, Permission, Workflow, WorkflowInstance, WorkflowStep, DataBreach
 
@@ -83,6 +228,30 @@ php bin/console lint:twig templates/  # validate all templates
 5. Templates → `templates/`
 6. Translations → `translations/[domain].{de,en}.yaml` (see Translation Domains below)
 7. Tests → `tests/`
+
+**Status fields are first-class lifecycle fields.** When an entity has a
+`status` column (e.g. `draft`, `in_review`, `approved`, `published`,
+`archived`), wire bulk-status-change support via the canonical
+`_bulk_action_bar.html.twig` with `actions: ['status_change', 'approve']`
+(emits `.fa-bulk-btn` BEM classes; add `variant: 'brand'` for hero lists).
+The server enforces a 5-transition matrix: `draft→in_review`,
+`in_review→approved`, `in_review→draft`, `approved→published`,
+`published→archived`, `archived→published`. Do not allow arbitrary
+status targets; validate the transition server-side.
+
+**SectionPolicy (FormType convention, S4 Foundation P-2).** Non-trivial
+FormTypes (anything with >6 fields, or any FormType where some fields are
+regulatorily critical) implement `App\Form\SectionMapInterface` and declare
+an explicit `getSectionMap()` returning `section-key => [field, ...]`. The
+`_auto_form.html.twig` renderer uses this map to group fields into named
+sections (`overview`, `recovery`, `team`, `communication`, `resources`,
+`activation`, `testing`, `audit_metadata`, `results`, `lessons_learned`,
+`details`, `contact`). Section labels resolve to `form.section.<key>` in
+the `messages` domain. Fields not covered by any section leak into a
+deprecation-flagged "Sonstiges" bucket in dev — `scripts/quality/check_form_sections.py`
+CI-gates parity between builder and section-map. The convention exists
+because the previous catch-all silently buried ISO 22301 Cl. 8.2.2 RTO/RPO
+fields and BC-Exercise result-fields among unrelated data.
 
 **Modal Pattern (Important):**
 Bootstrap loaded async via ES Module. For inline scripts:
@@ -128,7 +297,7 @@ Available domains (90 total):
 - **Access Control:** mfa, role_management, session, user, security, four_eyes
 - **ISMS Core:** assets, risk, control, incident, audits, audit_log, audit_freeze, soa, context, risk_appetite, risk_treatment_plan
 - **BCM:** bcm, bc_plans, bc_exercises, crisis_team, business_process
-- **Compliance:** compliance, compliance_import, compliance_inheritance, compliance_policy, compliance_wizard, privacy, interested_parties, objective, consent, data_subject_request, dora, nis2
+- **Compliance:** compliance, compliance_import, compliance_inheritance, compliance_policy, compliance_wizard, policy_wizard, policy_approval, privacy, interested_parties, objective, consent, data_subject_request, dora, nis2
 - **Management:** tenant, admin, management_review, analytics, reports, management_reports, kpi
 - **Operations:** document, workflows, training, change_requests, patches, notifications, scheduled_reports, tags
 - **Reports:** gap_report, group_report, portfolio_report, security_reports, report_builder
@@ -158,59 +327,163 @@ Translation Quality:
 - Run before commits to maintain translation quality
 - See `scripts/README.md` for details
 
-## Workflow System (Event-Driven Approvals)
+## Lifecycle (Symfony Workflow Foundation P-4b)
 
-**Overview:**
-Event-driven workflow system where workflows automatically progress based on user actions. Instead of explicit approvals, workflows advance when relevant entity fields are completed.
+Every entity with a `status` field that goes through staged transitions uses **Symfony Workflow** as the canonical state-machine engine. The `LifecycleService` facade exposes `transition($entity, $workflowName, $transitionName, $user, $reason)` — call-sites MUST go through this facade, NOT through direct `setStatus()`.
 
-**Generate Regulatory Workflows:**
-```bash
-# Generate all pre-configured regulatory workflows
-php bin/console app:generate-regulatory-workflows
+**Two-layer config:**
+- Static baseline: `config/workflows/<entity>.yaml` (places + transition wiring — immutable at runtime)
+- Tenant overrides: `lifecycle_config` DB-table (admin UI at `/admin/lifecycle-overrides`) — overrides `roles`, `reason_required`, `four_eyes`, `module` metadata per tenant
 
-# Generate specific workflow (data-breach, incident-high, incident-low, risk-treatment, dpia)
-php bin/console app:generate-regulatory-workflows --workflow=data-breach
+**Effective metadata resolution:** `LifecycleConfigResolver::resolve()` merges YAML + DB-overrides. Voter / Guards / Listeners ALWAYS read via Resolver, never from YAML directly.
+
+**Existing workflows** (as of 2026-05-17):
+- `document_lifecycle` (5 stages: draft → in_review → approved → published → archived)
+- `processing_activity_lifecycle` (5 stages, GDPR-gated — `privacy` module required)
+- `isms_objective_lifecycle` (5 custom stages: in_progress / achieved / delayed / cancelled)
+- `policy_template_lifecycle` (5 stages, isActive-sync on publish/archive)
+- `asset_lifecycle` (7 stages: active / in_use / returned / retired / disposed + 4-eyes on disposal)
+
+**Adding a new entity to the lifecycle:**
+1. `config/workflows/<entity>.yaml` — workflow definition (copy document.yaml as template)
+2. Add to `config/packages/workflow.yaml` imports
+3. Add slug to `src/Lifecycle/EntityTypeRegistry.php` MAP constant
+4. Refactor existing `setStatus()` call-sites to `LifecycleService::transition()`
+5. Add `#[ORM\Version] private int $lockVersion = 0;` to entity + migration (`isTransactional()=false`)
+6. Smoke tests in `tests/Lifecycle/`
+
+**Anti-pattern — never do this:**
+```php
+$entity->setStatus('approved'); // direct setter bypasses audit-log, RBAC, tenant-guard
+$em->flush();
 ```
 
-**Available Workflows:**
-- **GDPR Data Breach** (Art. 33/34) - 72h notification deadline, 6 steps with auto-progression
-- **Incident Response** (High/Critical) - ISO 27001, 6 steps from CISO response to post-incident review
-- **Incident Response** (Low/Medium) - ISO 27001, 4 steps standard incident handling
-- **Risk Treatment** - ISO 27001 Clause 6.1.3, multi-tier approval based on risk value
-- **DPIA** - GDPR Art. 35/36, 6-step data protection impact assessment
-
-**Auto-Progression:**
-Workflows auto-progress when entity fields are completed:
-
+**Correct pattern:**
 ```php
-// Example: DPO fills DataBreach fields
-$dataBreach->setSeverity('high');
-$dataBreach->setAffectedDataSubjectsCount(150);
-$dataBreach->setDataCategories(['PII']);
-$dataBreach->setNotificationRequired(true);
+$lifecycleService->transition($entity, 'foo_lifecycle', 'approve', $user, 'reason'); // facade
+```
 
-// On save → Step 1 "DPO Assessment" auto-approves
-// → Workflow moves to Step 2 "Technical Assessment (CISO)"
+**Spec:** `docs/superpowers/specs/2026-05-17-lifecycle-foundation-pilot-design.md`
+**ADR:** `docs/decisions/2026-05-17-lifecycle-state-machine.md`
+**User-guide:** `docs/user-guide/STATUS_LIFECYCLE.md`
+
+---
+
+## Workflow System (Event-Driven Approvals)
+
+> **Y.4 (2026-06):** YAML is the canonical source of truth for all regulatory
+> workflow definitions. `App\Entity\Workflow` and `App\Entity\WorkflowStep` are
+> `@deprecated`. The PHPStan rule `tools/phpstan/Rule/NoNewWorkflowOrWorkflowStep.php`
+> prevents new instantiations in `src/` outside Repository/Command namespaces.
+> ADR: `docs/decisions/2026-05-17-workflow-yaml-unification.md`
+
+**Source of Truth:** `config/workflows/regulatory/*.yaml` (15 files)
+
+**Overview:**
+Event-driven workflow system where workflows automatically progress based on user actions.
+Auto-progression is handled by `FieldCompletionAutoTransition` (Doctrine `postUpdate` listener)
+— no explicit service calls needed in entity services or controllers.
+
+**Available Regulatory Workflows** (YAML definitions in `config/workflows/regulatory/`):
+- **GDPR Data Breach** — `gdpr_data_breach.yaml` — Art. 33/34, 6 steps, 72h SLA
+- **Incident Response High/Critical** — `incident_high_severity.yaml` — ISO 27001, 6 steps
+- **Incident Response Low/Medium** — `incident_low_severity.yaml` — ISO 27001, 4 steps
+- **Risk Treatment** — `risk_treatment.yaml` — ISO 27001 Cl. 6.1.3, 6 steps
+- **DPIA** — `dpia.yaml` — GDPR Art. 35/36, 6 steps
+- Plus 10 further workflows: DSR, CAPA, Change Request, Management Review, Control Verification, Supplier Assessment, Training Verification, BC Plan Activation, Document Review, Incident Post-Mortem
+
+**Auto-Progression (canonical pattern since Y.1):**
+Auto-progression fires automatically via Doctrine event listener when entity fields are saved.
+Define conditions in the YAML step metadata — no code changes needed:
+
+```yaml
+# config/workflows/regulatory/my_workflow.yaml
+metadata:
+    regulatory_metadata:
+        steps:
+            - name: "Initial Assessment"
+              approver_role: ROLE_DPO
+              auto_progress_conditions:
+                  type: field_completion
+                  entity: DataBreach
+                  fields: [severity, affectedDataSubjectsCount, notificationRequired]
+```
+
+**Verification CLI:**
+```bash
+# Verify all 15 DB workflow rows have YAML equivalents (report-only, safe)
+php bin/console app:migrate-legacy-workflows
+
+# Archive obsolete DB rows with no YAML counterpart (opt-in)
+php bin/console app:migrate-legacy-workflows --archive
 ```
 
 **Advanced Features** (✅ Implemented):
 - ✅ **AND/OR Logic**: Complex conditions like `(severity >= high AND count > 100) OR required = true`
-- ✅ **Time-Based**: Auto-progress after time delay (e.g., "24 hours", "7 days")
+- ✅ **Time-Based**: Auto-progress after time delay via `app:process-timed-workflows` cron
 - ✅ **Entity Coverage**: DataBreach, Incident, Risk, Asset, Control, DPIA, ProcessingActivity
-- ✅ **Cron Support**: `app:process-timed-workflows` for time-based automation
+- ✅ **15 canonical workflows**: All defined in `config/workflows/regulatory/*.yaml`
 
-**Adding Auto-Progression to Entities:**
-
-1. Inject `WorkflowAutoProgressionService` into service/controller
-2. Call after entity update:
-   ```php
-   $this->workflowAutoProgressionService->checkAndProgressWorkflow($entity, $user);
-   ```
-3. Define conditions in workflow step metadata (see command or docs)
+**Do NOT:**
+- Create `new Workflow()` or `new WorkflowStep()` in `src/` outside Repository/Command (PHPStan blocks this)
+- Inject `WorkflowAutoProgressionService` in new code (deprecated — use listener pattern)
+- Edit DB `workflow_steps` rows directly (read-only since Y.4)
 
 **Documentation:**
-- `docs/WORKFLOW_REQUIREMENTS.md` - Regulatory requirements and SLAs
-- `docs/WORKFLOW_AUTO_PROGRESSION.md` - Complete auto-progression guide
+- `docs/WORKFLOW_AUTO_PROGRESSION.md` - Complete auto-progression guide (updated for Y.4)
+- `docs/decisions/2026-05-17-workflow-yaml-unification.md` - ADR with deprecation deadlines
+- `config/workflows/regulatory/` - Canonical YAML definitions
+
+## Module-Awareness
+
+**Every feature that relates to an optional compliance framework MUST be module-gated.**
+Do not add DORA fields to forms without `nis2_dora` gate, do not add GDPR fields without
+`privacy` gate, etc.
+
+Full reference: [`docs/MODULE_GATING_GUIDE.md`](docs/MODULE_GATING_GUIDE.md)
+
+**Key artifacts:**
+- `config/modules.yaml` — 40 module keys + metadata (6 required: core, authentication, documents, audit_logging, workflows, objectives)
+- `config/active_modules.yaml` — per-tenant activation overrides
+- `src/Form/Trait/ModuleAwareFormTrait.php` — FormType helper (`isModuleActive()`)
+- `src/Controller/Trait/ModuleGatedControllerTrait.php` — Controller helper (`checkModuleActive()`)
+- `is_module_active('key')` — Twig global function
+
+**Quick pattern (FormType):**
+```php
+use App\Form\Trait\ModuleAwareFormTrait;
+
+class MyType extends AbstractType {
+    use ModuleAwareFormTrait;
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleConfiguration,
+    ) {}
+
+    public function buildForm(FormBuilderInterface $builder, array $options): void {
+        // Always-visible fields...
+        if ($this->isModuleActive('privacy')) {
+            $builder->add('gdprField', ...); // GDPR Art. X — add norm ref here
+        }
+    }
+}
+```
+
+**Quick pattern (Controller):**
+```php
+use App\Controller\Trait\ModuleGatedControllerTrait;
+// ...
+if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+```
+
+**Quick pattern (Twig):**
+```twig
+{% if is_module_active('nis2_dora') %} ... {% endif %}
+```
+
+User-facing guide: [`docs/user-guide/MODULE_AKTIVIERUNG.md`](docs/user-guide/MODULE_AKTIVIERUNG.md)  
+Compliance audit trail: [`docs/FORM_AUDIT_2026-05.md`](docs/FORM_AUDIT_2026-05.md)
+
+---
 
 ## Coding Standards
 
@@ -270,6 +543,10 @@ Config-Files: `release-please-config.json`, `.release-please-manifest.json`,
 - [ ] Input sanitized via `InputValidationService`
 - [ ] File uploads checked via `FileUploadSecurityService`
 - [ ] Sensitive data excluded from audit logs
+- [ ] Bulk operations use `AuditLogger::logBulk()` (1 batch-entry +
+      N per-entity-entries, returns UUIDv4 batch_id) — never bypass
+      Doctrine lifecycle via raw `executeStatement()` without explicit
+      audit-call. Required by ISO 27001 Clause 7.5.3.
 
 ## Common Pitfalls
 
@@ -312,7 +589,28 @@ Config-Files: `release-please-config.json`, `.release-please-manifest.json`,
    var(--bs-bg-opacity))`. Without the `-rgb` twin of a mapped token, Bootstrap
    falls back to hardcoded defaults and ignores Aurora mapping entirely. All
    color/bg tokens need both `--bs-X` and `--bs-X-rgb` in light AND dark forks.
-9. **Do NOT use Bootstrap `bg-*` / `text-white` on `.card` or `.card-header`** —
+9. *(number reserved — see item 10 below)*
+10. **Twig macro-import in `{% embed %}` needs local re-import** — Twig
+    `{% embed %}` creates a new template scope. File-scope or parent-block
+    imports are NOT visible inside the embed-block. Symptom:
+    `Variable "_fa_X" does not exist`. **Static check:**
+    `python3 scripts/quality/check_twig_macro_scope.py` (CI-gated since
+    v3.5) detects file-scope-import + embed-block-use mismatches. Fix:
+    add `{% import '_components/_fa_X.html.twig' as _fa_X %}` as first
+    line inside the embed-block (or nested-embed-block). Regular
+    `{% block %}` under `{% extends %}` inherits file-scope imports — only
+    `{% embed %}` is the trap.
+10b. **`trans_default_domain` has the same scope-isolation in `{% embed %}`** —
+    A file-level `{% trans_default_domain 'X' %}` directive is NOT inherited
+    inside `{% embed %}` blocks. Symptom: translation keys resolve against the
+    `messages` fallback domain instead of the intended domain, causing silent
+    wrong-language or missing-key lookups (hit in `_operational_baselines.html.twig`
+    crypto_col keys). Fix: either repeat `{% trans_default_domain 'X' %}` as the
+    first line inside every embed-block, or use the explicit domain parameter on
+    every `|trans` call inside the embed (e.g. `|trans({}, 'crypto')`). Regular
+    `{% block %}` under `{% extends %}` inherits the file-scope default domain —
+    only `{% embed %}` is the trap.
+11. **Do NOT use Bootstrap `bg-*` / `text-white` on `.card` or `.card-header`** —
    Aurora's `.card { background: var(--surface) }` and
    `.card > .card-header { background: var(--surface-2) }` (in
    `fairy-aurora-components.css`) win by load-order + equal specificity. The
@@ -339,9 +637,43 @@ copyable snippets at `/dev/design-system` (dev env only).
 | `fa-filter-chip` | Filter chip + chip-group | `_fa_filter_chip.html.twig` |
 | `fa-entity-card` | Listen-Item-Card with entity-icon, title, meta, status — for Findings/Risks/Incidents/Audits/NCs | `_fa_entity_card.html.twig` |
 | `fa-entity-badge` | ISMS-entity marker (10 types: finding/nonconformity/risk/control/evidence/policy/asset/incident/audit/training) | `_fa_entity_badge.html.twig` |
+| `fa-stepper` | Multi-step wizard chrome (Preset → Discovery → Test for SSO; Upload → Map → Preview → Commit for Bulk-Import) | `_fa_stepper.html.twig` |
+| `fa-diff-row` | Old → New value diff visualization for Bulk-Import Delta-Mode + OSCAL-Conflict-Cards | `_fa_diff_row.html.twig` |
+| `fa-condition-builder` | Visual rule-builder (chip-row WHEN/CONDITIONS) for Notification-Rules — replaces raw JSON editing | `_fa_condition_builder.html.twig` |
+| `fa-table` | Aurora-styled data table (replaces raw `<table class="table">`) — 80+ adopted in v3.5 | `_fa_table.html.twig` |
+| `fa-matrix-table` | Multi-axis grid for risk-heatmaps (`mode: 'severity'`, default — ISO-27005 score-based) and compliance-heatmaps (`mode: 'rag'`, framework × cluster). Supports `caption`, `colspan` via grid template, `<th scope="col"/"row">` semantics, optional severity/RAG legend, optional per-cell `href` links, per-cell `severity` override. | `_fa_matrix_table.html.twig` |
+| `fa-settings-table` | Tabular form-grid for `/admin/settings/*` (label / control / status three-col layout). 8 row-kinds: `text/email/number/select/chips/toggle/textarea/widget`. `widget` passes through pre-rendered HTML (e.g. `form_widget()` output) so Symfony FormType controls keep CSRF/validation. Optional `headers: [{label, ...}]` switches to multi-column data-table mode with per-row `trailing` cell — used by Bulk-Import column-mapping wizard. | `_fa_settings_table.html.twig` |
+| `fa-progress` | Aurora progress-bar (replaces hand-rolled `.progress > .progress-bar`) — 54 adopted in v3.5 | `_fa_progress.html.twig` |
+| `fa-action-bar` | Page-level action bar (sticky bottom, top of detail-views). Per-action props: `disabled` (renders `<span>` with `aria-disabled="true"` since `<a>` ignores native `disabled`), `attrs: {key: value}` (data-* / Stimulus wiring), `tag: 'a'\|'button'`. Top-level `controller` + `wrapperAttrs` wire Stimulus on the outer container. | `_fa_action_bar.html.twig` |
+| `fa-bulk-bar` (BEM, canonical) | Canonical Aurora v4 floating bulk-action bar. Use `{% include '_components/_bulk_action_bar.html.twig' with { actions: ['export', 'delete', 'tag', 'assign', 'approve', 'status_change'], variant: 'neutral' } %}`. Props: `actions` array + `variant: 'neutral'\|'brand'` (default `'neutral'`). Use `variant: 'brand'` for hero lists only (risk/document policy workflow). `approve` → quick-approve `.fa-bulk-btn--success` button; `status_change` → dropdown (draft→in_review→approved→published→archived). BEM CSS: `.fa-bulk-bar`, `.fa-bulk-bar--brand`, `.fa-bulk-bar__count`, `.fa-bulk-bar__count-num`, `.fa-bulk-bar__count-label`, `.fa-bulk-bar__divider`, `.fa-bulk-bar__actions`, `.fa-bulk-bar__close`, `.fa-bulk-btn`, `.fa-bulk-btn--success`, `.fa-bulk-btn--danger`, `.fa-bulk-btn.is-loading`. BC-bridge macro `_fa_bulk_action_bar.html.twig` kept for legacy callers — emits new BEM markup. Old `.bulk-action-bar*` class set is a deprecated CSS shim. | `_components/_bulk_action_bar.html.twig` (include, not macro) |
+| `fa-toast` | Aurora toast/flash-message stack (replaces Bootstrap toast-container) — wired in `base.html.twig` | `_fa_toast.html.twig` |
+| `fa-audit-row` | ISMS-Audit-Trail row pattern (compact + full views) | `_fa_audit_row.html.twig` |
+| `fa-form-layout` | Large-form pattern with outline-rail + section-cards + progress-bar (replaces flat _auto_form for 15+ field FormTypes) | `_fa_form_layout.html.twig` |
+| `fa-tabs` | Tab-group for settings-style forms with 3-6 equal groups (TenantType, UserType, Branding-Config). NOT for regulatory forms (use fa-form-layout) or linear flows (use fa-modal--wizard) | `_fa_tabs.html.twig` |
+| `fa-modal` (confirm + settings + wizard) | Canonical unified modal library. 3 modes: `confirm` (destructive/approval, 4 tones), `settings` (preferences/toggles), `wizard` (multi-step). Stimulus shell controller `fa-modal` + dispatcher `fa-modal-dispatcher`. Sub-controllers `fa-confirm` (type-to-confirm + cooldown) compose alongside via `data-controller="fa-modal fa-confirm"`. Open from JS via `document.dispatchEvent(new CustomEvent('fa-modal:request-open', { detail: { id: 'modal-id' } }))` — drop-in replacement for `new bootstrap.Modal()`. **Sweep status (2026-05-22):** 73+ modals across 49 templates migrated (PRs #547/#551/#555/#558 + Wave 4). Out-of-spec intentional exceptions: `_command_palette.html.twig` (⌘P power-user pattern), `_quick_view_modal.html.twig` (info popover), `_gdpr_breach_wizard_modal.html.twig` (uses `fa-prefs-modal` shell — kept for layout-stability, harmonization deferred). | `_fa_modal.html.twig` |
+| `fa-modal--wizard` | High-stakes linear flow modal with step-pips + validation gates (Tenant-Setup, GDPR-Breach-Initial, Compliance-Wizard) — accessible via `_fa_modal.wizard()` delegate or direct `_fa_modal_wizard.render()` | `_fa_modal_wizard.html.twig` |
+| `fa-cyber-field` | Hand-rolled Aurora-Frame inputs (text/textarea/select) | `_fa_cyber_field.html.twig` |
+| `fa-drawer` | Slide-in side-sheet (right default, `--left`, `--sm`, `--lg`). Use `.fa-drawer-backdrop` + `.is-open`. CSS only — no macro yet. | CSS: `fairy-aurora-components.css` |
+| `fa-menu` | Dropdown / overflow-action menu (`fa-menu-anchor` + `.fa-menu.is-open`). Supports groups, icons, shortcuts, danger items, dividers. CSS only. | CSS: `fairy-aurora-components.css` |
+| `fa-pager` | Aurora pagination pill shell with glow + gradient active page. `fa-pager-bar` wraps pager + info + per-page select. CSS only. | CSS: `fairy-aurora-components.css` |
+| `fa-kbd` / `fa-cheatsheet` | Keyboard key `<kbd class="fa-kbd">` + shortcut cheatsheet overlay content. CSS only. | CSS: `fairy-aurora-components.css` |
+| `isms-comment-thread` | Comment-thread for Show-Pages (10 entities whitelisted by CommentController) | `_isms_comment_thread.html.twig` |
+| `isms-approval-stages` | Multi-stage approval visualization (workflow instances) | `_isms_approval_stages.html.twig` |
 | `.fa-aurora-surface` | Opt-in page-level Aurora atmosphere (CSS utility, not macro) | — |
+| `fa-mega-menu-section-header` | Section header inside mega-menu panel (title + norm-ref badge + density-hint + view-all link + count chip) | `_fa_mega_menu_section_header.html.twig` |
+| `fa-quick-action-button` | Pill-style quick-action button for mega-menu Schnellaktionen grid; gates on `module` + `persona` | `_fa_quick_action_button.html.twig` |
+| `fa-onboarding-banner` | New-tenant welcome banner (Alva mood + title + body + CTA row + dismiss form). Requires `app_preferences_dismiss` route. | `_fa_onboarding_banner.html.twig` |
+| `fa-glossary-tooltip` | Acronym tooltip with inline or async-loaded definition (`/api/glossary/{acronym}`). Stimulus: `glossary-tooltip`. | `_fa_glossary_tooltip.html.twig` |
+| `fa-industry-baseline-chip` | Industry-baseline chip showing sector icon, name, desc, linked frameworks. Used in coverage wizard. | `_fa_industry_baseline_chip.html.twig` |
+| `fa-density-toggle` | Compact/Standard/Expert UI-density radio fieldset. Stimulus: `density-toggle`. Persists via `POST /preferences/density`. | `_fa_density_toggle.html.twig` |
+| `fa-persona-cockpit-card` | Persona dashboard entry-card (`--{persona}` BEM modifier, `--persona-color` CSS var, KPI slots). | `_fa_persona_cockpit_card.html.twig` |
+| `fa-coverage-matrix` | Framework × control-domain heat-grid table (`__cell--heat-{0-4}`, trend arrows). | `_fa_coverage_matrix.html.twig` |
+| `fa-reuse-roi-counter` | Animated count-up ROI counter (IntersectionObserver, `prefers-reduced-motion`). Stimulus: `reuse-roi-counter`. | `_fa_reuse_roi_counter.html.twig` |
+| `fa-audit-program-timeline` | Horizontal Gantt-style audit-program timeline (today-line, overdue pulse, milestone pins). | `_fa_audit_program_timeline.html.twig` |
+| `fa-maturity-heat-map` | Inline maturity score widget (0–5 dot row with heat-level BEM modifier). | `_fa_maturity_heat_map.html.twig` |
 
-Import pattern: `{% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}`.
+Import pattern for macros: `{% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}`.
+For the bulk-action bar use `{% include '_components/_bulk_action_bar.html.twig' with { actions: [...], variant: 'neutral' } %}` (it is a plain include, not a macro). `variant: 'brand'` for hero lists (risk, document). The canonical CSS class set is `.fa-bulk-bar*` (BEM); the old `.bulk-action-bar*` is a deprecated shim.
 Legacy `.kpi-card` / `variant:'kpi'` still works for backward-compat but emits
 a dev-env console deprecation warning.
 
@@ -365,3 +697,4 @@ Only fetch additional documentation when:
 - Security-critical implementations
 
 For standard CRUD, forms, templates, and services - this guide plus codebase exploration should suffice.
+

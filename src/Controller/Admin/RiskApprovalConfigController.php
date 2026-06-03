@@ -9,6 +9,7 @@ use App\Entity\Tenant;
 use App\Entity\User;
 use App\Form\Admin\RiskApprovalConfigType;
 use App\Repository\RiskApprovalConfigRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\AuditLogger;
 use App\Service\RiskApprovalConfigResolver;
 use App\Service\TenantContext;
@@ -22,9 +23,15 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
  * Phase 8L.F1 — Admin-UI für Approval-Schwellwerte pro Tenant.
+ *
+ * Phase 4c role-scope migration: ROLE_ADMIN configures own tenant,
+ * SUPER_ADMIN any. The optional `tenant_id` POST param lets
+ * SUPER_ADMIN target an arbitrary tenant via
+ * {@see TenantContext::resolveAdminScope()}.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/admin/risk-governance/approval-thresholds')]
-#[IsGranted('ROLE_ADMIN')]
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
 class RiskApprovalConfigController extends AbstractController
 {
     public function __construct(
@@ -39,7 +46,12 @@ class RiskApprovalConfigController extends AbstractController
     #[Route('', name: 'app_admin_risk_approval_config', methods: ['GET', 'POST'])]
     public function edit(Request $request): Response
     {
-        $tenant = $this->tenantContext->getCurrentTenant();
+        // GET (page-render / hover-prefetch) has no `tenant_id` POST param; for
+        // SUPER_ADMIN the resolveAdminScope(null)-branch returns null which would
+        // 404. Fall back to active tenant context — POST callers may still
+        // override via `tenant_id` body param.
+        $requested = $request->request->get('tenant_id') ?? $this->tenantContext->getCurrentTenantId();
+        $tenant = $this->tenantContext->resolveAdminScope($requested);
         if (!$tenant instanceof Tenant) {
             throw $this->createNotFoundException('No tenant context.');
         }
@@ -91,9 +103,13 @@ class RiskApprovalConfigController extends AbstractController
             return $this->redirectToRoute('app_admin_risk_approval_config');
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/risk_approval_config/edit.html.twig', [
             'form' => $form,
             'config' => $config,
-        ]);
+        ], new Response(status: $status));
     }
 }

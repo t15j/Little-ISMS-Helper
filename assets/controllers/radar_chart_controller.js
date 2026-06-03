@@ -61,6 +61,16 @@ export default class extends Controller {
 
         try {
             const response = await fetch(this.urlValue);
+
+            if (!response.ok) {
+                const msg = response.status === 403
+                    ? 'Keine Berechtigung'
+                    : `Fehler ${response.status}`;
+                window.faToast(msg, 'danger');
+                this.showError();
+                return;
+            }
+
             const data = await response.json();
 
             this.renderRadarChart(data.data);
@@ -226,7 +236,7 @@ export default class extends Controller {
         if (this.hasCanvasTarget) {
             this.canvasTarget.parentElement.innerHTML = `
                 <div class="alert alert-danger">
-                    <i class="bi-exclamation-triangle"></i>
+                    <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i>
                     Failed to load compliance radar data. Please try again.
                 </div>
             `;

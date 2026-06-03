@@ -10,6 +10,7 @@ use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
+use App\Enum\CryptographicOperationStatus;
 use App\Repository\CryptographicOperationRepository;
 use App\State\TenantAwareStateProcessor;
 use Doctrine\DBAL\Types\Types;
@@ -125,7 +126,7 @@ class CryptographicOperation
         return $this->operationType;
     }
 
-    public function setOperationType(string $operationType): static
+    public function setOperationType(?string $operationType): static
     {
         $this->operationType = $operationType;
         return $this;
@@ -136,7 +137,7 @@ class CryptographicOperation
         return $this->algorithm;
     }
 
-    public function setAlgorithm(string $algorithm): static
+    public function setAlgorithm(?string $algorithm): static
     {
         $this->algorithm = $algorithm;
         return $this;
@@ -213,10 +214,18 @@ class CryptographicOperation
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(CryptographicOperationStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?CryptographicOperationStatus
+    {
+        return $this->status === null ? null : CryptographicOperationStatus::tryFrom($this->status);
     }
 
     public function getErrorMessage(): ?string
@@ -235,7 +244,7 @@ class CryptographicOperation
         return $this->timestamp;
     }
 
-    public function setTimestamp(DateTimeInterface $timestamp): static
+    public function setTimestamp(?DateTimeInterface $timestamp): static
     {
         $this->timestamp = $timestamp;
         return $this;
@@ -268,7 +277,7 @@ class CryptographicOperation
         return $this->complianceRelevant;
     }
 
-    public function setComplianceRelevant(bool $complianceRelevant): static
+    public function setComplianceRelevant(?bool $complianceRelevant): static
     {
         $this->complianceRelevant = $complianceRelevant;
         return $this;

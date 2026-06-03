@@ -2,12 +2,33 @@ analytics:
     page:
         title: 'Analytics Dashboard'
         subtitle: 'Erweiterte Datenanalysen und Visualisierungen'
+    anomaly:
+        risk_spikes: 'Risiko-Spitzen'
+        incident_patterns: 'Vorfallsmuster'
+        control_drift: 'Control-Drift'
     action:
         export: Export
         export_risks_csv: 'Risiken als CSV exportieren'
         export_assets_csv: 'Assets als CSV exportieren'
         export_compliance_csv: 'Compliance als CSV exportieren'
         print_dashboard: 'Dashboard drucken'
+        view_dashboard: 'Dashboard öffnen'
+        back_to_basic: 'Zurück zur Basis-Ansicht'
+        back_to_advanced: 'Zurück zur erweiterten Ansicht'
+        filter: Filter
+        refresh: Aktualisieren
+        export_png: 'PNG exportieren'
+        reset_filters: 'Filter zurücksetzen'
+        add_assets: 'Assets hinzufügen'
+    export:
+        progress_title: 'Analytics-Export'
+        progress_subtitle: 'Der Export läuft im Hintergrund. Diese Seite aktualisiert sich automatisch.'
+        download_button: 'CSV herunterladen'
+        file_not_found: 'Export-Datei nicht gefunden (möglicherweise bereits heruntergeladen oder abgelaufen).'
+        badge:
+            risks: 'Risiken-Export'
+            assets: 'Assets-Export'
+            compliance: 'Compliance-Export'
         filter: Filtern
         refresh: Aktualisieren
         export_png: 'Als PNG exportieren'

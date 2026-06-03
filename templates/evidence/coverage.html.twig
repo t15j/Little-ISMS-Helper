@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
 {% trans_default_domain 'evidence' %}
 
@@ -8,24 +9,20 @@
 <div class="container">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.dashboard'|trans({}, 'nav'), url: path('app_dashboard') },
             { label: 'evidence.title'|trans({}, 'evidence'), url: path('app_evidence_index') },
             { label: 'evidence.coverage.title'|trans({}, 'evidence') }
         ]
     } %}
 </div>
 
-<div class="page-header">
-    <div>
-        <h1><i class="fa-icon fa-icon--compliance-shield" aria-hidden="true"></i> {{ 'evidence.coverage.title'|trans({}, 'evidence') }}</h1>
-        <p class="text-muted">{{ 'evidence.coverage.subtitle'|trans({}, 'evidence') }}</p>
-    </div>
-    <div class="button-group">
-        <a href="{{ path('app_evidence_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-            <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> {{ 'common.back'|trans({}, 'messages') }}
-        </a>
-    </div>
-</div>
+{{ _fa_page_header.render({
+    badge: { icon: 'compliance-shield', label: 'nav.evidence'|trans({}, 'nav') },
+    title: 'evidence.coverage.title'|trans({}, 'evidence'),
+    subtitle: 'evidence.coverage.subtitle'|trans({}, 'evidence'),
+    actions: [
+        { label: 'common.back'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_evidence_index') }
+    ]
+}) }}
 
 {# Summary Cards #}
 <div class="row mb-4">
@@ -34,7 +31,7 @@
             label: 'evidence.coverage.total_controls'|trans({}, 'evidence'),
             value: coverage.total_controls,
             variant: 'primary',
-            icon: 'shield-lock'
+            icon: 'nav-shield-lock'
         }) }}
     </div>
     <div class="col-md-3">
@@ -42,7 +39,7 @@
             label: 'evidence.coverage.with_evidence'|trans({}, 'evidence'),
             value: coverage.controls_with_evidence,
             variant: 'success',
-            icon: 'check-circle'
+            icon: 'status-ok'
         }) }}
     </div>
     <div class="col-md-3">
@@ -50,7 +47,7 @@
             label: 'evidence.coverage.without_evidence'|trans({}, 'evidence'),
             value: coverage.total_controls - coverage.controls_with_evidence,
             variant: (coverage.total_controls - coverage.controls_with_evidence) == 0 ? 'success' : 'danger',
-            icon: 'x-circle'
+            icon: 'status-critical'
         }) }}
     </div>
     <div class="col-md-3">
@@ -59,7 +56,7 @@
             value: coverage.coverage_percent,
             unit: '%',
             variant: coverage.coverage_percent >= 80 ? 'success' : (coverage.coverage_percent >= 50 ? 'warning' : 'danger'),
-            icon: 'pie-chart-fill'
+            icon: 'nav-pie-chart'
         }) }}
     </div>
 </div>
@@ -72,7 +69,7 @@
             <div>
                 <button type="button" class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost" id="toggle-missing"
                         onclick="toggleMissing()">
-                    <i class="bi bi-funnel" aria-hidden="true"></i> {{ 'evidence.coverage.missing_only'|trans({}, 'evidence') }}
+                    <i class="fa-icon fa-icon--ui-funnel" aria-hidden="true"></i> {{ 'evidence.coverage.missing_only'|trans({}, 'evidence') }}
                 </button>
             </div>
         </div>
@@ -108,9 +105,9 @@
                     </td>
                     <td>
                         {% if item.hasEvidence %}
-                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle', content: 'evidence.status.has_evidence'|trans({}, 'evidence') } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'status-ok', content: 'evidence.status.has_evidence'|trans({}, 'evidence') } %}
                         {% else %}
-                            {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'bi-x-circle', content: 'evidence.status.missing'|trans({}, 'evidence') } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'danger', icon: 'status-critical', content: 'evidence.status.missing'|trans({}, 'evidence') } %}
                         {% endif %}
                     </td>
                     <td>
@@ -126,8 +123,11 @@
 {% endembed %}
 
 <script>
+// IIFE: Turbo re-eval guard — prevents re-declaration errors on body-swap.
+// toggleMissing is exposed on window because it is called from an inline onclick attribute.
+(function () {
     let showMissingOnly = false;
-    function toggleMissing() {
+    window.toggleMissing = function toggleMissing() {
         showMissingOnly = !showMissingOnly;
         const rows = document.querySelectorAll('.evidence-row');
         const btn = document.getElementById('toggle-missing');
@@ -140,7 +140,8 @@
         });
         btn.classList.toggle('fa-cyber-btn--primary', showMissingOnly);
         btn.classList.toggle('fa-cyber-btn--ghost', !showMissingOnly);
-    }
+    };
+})();
 </script>
 
 <style>

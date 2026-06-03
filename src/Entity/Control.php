@@ -82,34 +82,34 @@ class Control
 
     #[ORM\Column(length: 20)]
     #[Groups(['control:read', 'control:write', 'risk:read'])]
-    #[Assert\NotBlank(message: 'Control ID is required')]
-    #[Assert\Length(max: 20, maxMessage: 'Control ID cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'control.validation.control_id_required')]
+    #[Assert\Length(max: 20, maxMessage: 'control.validation.control_id_max_length')]
     #[Assert\Regex(
-        pattern: '/^\d+\.\d+(\.\d+)?$/',
-        message: 'Control ID must follow ISO 27001 format (e.g., 5.1, 8.3)'
+        pattern: '/^[A-Z]{0,3}\.?\d+\.\d+(\.\d+){0,2}$/',
+        message: 'control.validation.control_id_format'
     )]
     private ?string $controlId = null;
 
     #[ORM\Column(length: 255)]
     #[Groups(['control:read', 'control:write'])]
-    #[Assert\NotBlank(message: 'Control name is required')]
-    #[Assert\Length(max: 255, maxMessage: 'Control name cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'control.validation.name_required')]
+    #[Assert\Length(max: 255, maxMessage: 'control.validation.name_max_length')]
     private ?string $name = null;
 
     #[ORM\Column(type: Types::TEXT)]
     #[Groups(['control:read', 'control:write'])]
-    #[Assert\NotBlank(message: 'Control description is required')]
+    #[Assert\NotBlank(message: 'control.validation.description_required')]
     private ?string $description = null;
 
     #[ORM\Column(length: 100)]
     #[Groups(['control:read', 'control:write'])]
-    #[Assert\NotBlank(message: 'Control category is required')]
-    #[Assert\Length(max: 100, maxMessage: 'Category cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'control.validation.category_required')]
+    #[Assert\Length(max: 100, maxMessage: 'control.validation.category_max_length')]
     private ?string $category = null;
 
     #[ORM\Column(type: Types::BOOLEAN)]
     #[Groups(['control:read', 'control:write'])]
-    #[Assert\NotNull(message: 'Applicable flag is required')]
+    #[Assert\NotNull(message: 'control.validation.applicable_required')]
     private ?bool $applicable = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
@@ -122,10 +122,10 @@ class Control
 
     #[ORM\Column(length: 50)]
     #[Groups(['control:read', 'control:write'])]
-    #[Assert\NotBlank(message: 'Implementation status is required')]
+    #[Assert\NotBlank(message: 'control.validation.implementation_status_required')]
     #[Assert\Choice(
         choices: ['not_started', 'planned', 'in_progress', 'implemented', 'verified'],
-        message: 'Implementation status must be one of: { choices }'
+        message: 'control.validation.implementation_status_invalid'
     )]
     private ?string $implementationStatus = 'not_started';
 
@@ -138,7 +138,7 @@ class Control
     #[Groups(['control:read', 'control:write'])]
     #[Assert\Choice(
         choices: [null, 'standfest', 'degradiert', 'reibung', 'nicht_betroffen'],
-        message: 'Mythos resilience must be one of: standfest, degradiert, reibung, nicht_betroffen'
+        message: 'control.validation.mythos_resilience_invalid'
     )]
     private ?string $mythosResilience = null;
 
@@ -152,7 +152,7 @@ class Control
     #[ORM\Column(type: Types::INTEGER, nullable: true)]
     #[Groups(['control:read', 'control:write'])]
     #[Assert\Range(
-        notInRangeMessage: 'Implementation percentage must be between { min } and { max }',
+        notInRangeMessage: 'control.validation.implementation_percentage_range',
         min: 0,
         max: 100
     )]
@@ -160,7 +160,7 @@ class Control
 
     #[ORM\Column(length: 100, nullable: true)]
     #[Groups(['control:read', 'control:write'])]
-    #[Assert\Length(max: 100, maxMessage: 'Responsible person cannot exceed { limit } characters')]
+    #[Assert\Length(max: 100, maxMessage: 'control.validation.responsible_person_max_length')]
     private ?string $responsiblePerson = null;
 
     #[ORM\Column(type: Types::DATE_MUTABLE, nullable: true)]
@@ -263,7 +263,7 @@ class Control
         return $this->controlId;
     }
 
-    public function setControlId(string $controlId): static
+    public function setControlId(?string $controlId): static
     {
         $this->controlId = $controlId;
         return $this;
@@ -282,7 +282,7 @@ class Control
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -293,7 +293,7 @@ class Control
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -304,7 +304,7 @@ class Control
         return $this->category;
     }
 
-    public function setCategory(string $category): static
+    public function setCategory(?string $category): static
     {
         $this->category = $category;
         return $this;
@@ -315,7 +315,7 @@ class Control
         return $this->applicable;
     }
 
-    public function setApplicable(bool $applicable): static
+    public function setApplicable(?bool $applicable): static
     {
         $this->applicable = $applicable;
         return $this;
@@ -348,7 +348,7 @@ class Control
         return $this->implementationStatus;
     }
 
-    public function setImplementationStatus(string $implementationStatus): static
+    public function setImplementationStatus(?string $implementationStatus): static
     {
         $this->implementationStatus = $implementationStatus;
         return $this;
@@ -456,7 +456,7 @@ class Control
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -849,6 +849,249 @@ class Control
     public function removeEvidenceDocument(Document $document): static
     {
         $this->evidenceDocuments->removeElement($document);
+        return $this;
+    }
+
+    // ── Sprint 6: Effectiveness & Cloud fields ────────────────────────────────
+
+    /**
+     * Control effectiveness rating (ISO 27001 §9.1).
+     * Values: not_assessed | ineffective | partially_effective | effective | highly_effective
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?string $effectiveness = null;
+
+    /**
+     * Control type classification (NIST 800-53).
+     * Values: preventive | detective | corrective | deterrent | recovery
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?string $controlType = null;
+
+    /**
+     * Degree of automation for this control.
+     * Values: manual | semi_automated | fully_automated
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?string $automationLevel = null;
+
+    /**
+     * Process-capability maturity level 1-5 (ISO 27017 + ISO 33001).
+     */
+    #[ORM\Column(type: Types::SMALLINT, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    #[Assert\Range(min: 1, max: 5)]
+    private ?int $controlMaturity = null;
+
+    /**
+     * Date of the most recent effectiveness test.
+     */
+    #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?\DateTimeImmutable $lastEffectivenessTest = null;
+
+    /**
+     * Planned date for the next effectiveness test.
+     */
+    #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?\DateTimeImmutable $nextEffectivenessTest = null;
+
+    /**
+     * Cross-framework references as JSON map.
+     * Example: {iso27001: ['A.5.1'], bsi: ['ORP.1.A1'], nist: ['AC-1'], dora: ['Art. 6']}
+     *
+     * @var array<string, list<string>>|null
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?array $frameworkReferences = null;
+
+    /**
+     * Related risks for cross-linking (ISO 27005 §8.5).
+     * Uses the existing control↔risk join table (control has inversedBy='controls').
+     *
+     * @var Collection<int, Risk>
+     */
+    // NOTE: uses existing join (Control::$risks ↔ Risk::$controls); no new join table needed.
+
+    // ── Cloud-Security fields (gated 'cloud_security' module) ─────────────────
+
+    /**
+     * ISO 27017 cloud-control reference code.
+     */
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?string $cloudControlReference = null;
+
+    /**
+     * ISO 27018 cloud-privacy reference code.
+     */
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?string $cloudPrivacyReference = null;
+
+    /**
+     * ISO 27701 PIMS reference code.
+     */
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?string $pimsReference = null;
+
+    /**
+     * Shared-responsibility model (ISO 27017 §5.1.1).
+     * Values: customer | provider | shared
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['control:read', 'control:write'])]
+    private ?string $customerOrProviderResponsibility = null;
+
+    public function getEffectiveness(): ?string
+    {
+        return $this->effectiveness;
+    }
+
+    public function setEffectiveness(?string $effectiveness): static
+    {
+        $this->effectiveness = $effectiveness;
+        return $this;
+    }
+
+    public function getControlType(): ?string
+    {
+        return $this->controlType;
+    }
+
+    public function setControlType(?string $controlType): static
+    {
+        $this->controlType = $controlType;
+        return $this;
+    }
+
+    public function getAutomationLevel(): ?string
+    {
+        return $this->automationLevel;
+    }
+
+    public function setAutomationLevel(?string $automationLevel): static
+    {
+        $this->automationLevel = $automationLevel;
+        return $this;
+    }
+
+    public function getControlMaturity(): ?int
+    {
+        return $this->controlMaturity;
+    }
+
+    public function setControlMaturity(?int $controlMaturity): static
+    {
+        $this->controlMaturity = $controlMaturity;
+        return $this;
+    }
+
+    public function getLastEffectivenessTest(): ?\DateTimeImmutable
+    {
+        return $this->lastEffectivenessTest;
+    }
+
+    public function setLastEffectivenessTest(?\DateTimeImmutable $lastEffectivenessTest): static
+    {
+        $this->lastEffectivenessTest = $lastEffectivenessTest;
+        return $this;
+    }
+
+    public function getNextEffectivenessTest(): ?\DateTimeImmutable
+    {
+        return $this->nextEffectivenessTest;
+    }
+
+    public function setNextEffectivenessTest(?\DateTimeImmutable $nextEffectivenessTest): static
+    {
+        $this->nextEffectivenessTest = $nextEffectivenessTest;
+        return $this;
+    }
+
+    /** @return array<string, list<string>>|null */
+    public function getFrameworkReferences(): ?array
+    {
+        return $this->frameworkReferences;
+    }
+
+    /** @param array<string, list<string>>|null $frameworkReferences */
+    public function setFrameworkReferences(?array $frameworkReferences): static
+    {
+        $this->frameworkReferences = $frameworkReferences;
+        return $this;
+    }
+
+    public function getCloudControlReference(): ?string
+    {
+        return $this->cloudControlReference;
+    }
+
+    public function setCloudControlReference(?string $cloudControlReference): static
+    {
+        $this->cloudControlReference = $cloudControlReference;
+        return $this;
+    }
+
+    public function getCloudPrivacyReference(): ?string
+    {
+        return $this->cloudPrivacyReference;
+    }
+
+    public function setCloudPrivacyReference(?string $cloudPrivacyReference): static
+    {
+        $this->cloudPrivacyReference = $cloudPrivacyReference;
+        return $this;
+    }
+
+    public function getPimsReference(): ?string
+    {
+        return $this->pimsReference;
+    }
+
+    public function setPimsReference(?string $pimsReference): static
+    {
+        $this->pimsReference = $pimsReference;
+        return $this;
+    }
+
+    public function getCustomerOrProviderResponsibility(): ?string
+    {
+        return $this->customerOrProviderResponsibility;
+    }
+
+    public function setCustomerOrProviderResponsibility(?string $customerOrProviderResponsibility): static
+    {
+        $this->customerOrProviderResponsibility = $customerOrProviderResponsibility;
+        return $this;
+    }
+
+    // ── F4 Evidence-Versioning ────────────────────────────────────────────────
+
+    /**
+     * F4 — set to true by EvidenceCascadeInvalidationService when a linked
+     * DocumentVersion is superseded by a newer upload. Signals the reviewer
+     * queue that this control's evidence needs re-verification.
+     * Reset to false when the reviewer marks the reverification task as completed.
+     */
+    #[ORM\Column(name: 'evidence_outdated', type: Types::BOOLEAN, options: ['default' => false])]
+    #[Groups(['control:read'])]
+    private bool $evidenceOutdated = false;
+
+    public function isEvidenceOutdated(): bool
+    {
+        return $this->evidenceOutdated;
+    }
+
+    public function setEvidenceOutdated(bool $evidenceOutdated): static
+    {
+        $this->evidenceOutdated = $evidenceOutdated;
         return $this;
     }
 

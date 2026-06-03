@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Tenant;
+use App\Entity\User;
 use DateTimeImmutable;
 use Exception;
 use App\Repository\AuditLogRepository;
@@ -24,6 +25,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[IsGranted('ROLE_ADMIN')]
@@ -61,11 +63,10 @@ class AdminDashboardController extends AbstractController
     }
 
     #[Route('/admin', name: 'admin_dashboard', methods: ['GET'])]
-    public function index(): Response
-    {
-        // Get current user's tenant
-        $currentUser = $this->getUser();
-        $currentTenant = $currentUser?->getTenant();
+    public function index(
+        #[CurrentUser] User $currentUser,
+    ): Response {
+        $currentTenant = $currentUser->getTenant();
 
         // System Health Stats
         $stats = $this->getSystemHealthStats($currentTenant);
@@ -391,7 +392,7 @@ class AdminDashboardController extends AbstractController
         ) {
             $alerts[] = [
                 'type' => 'danger',
-                'icon' => 'bi-exclamation-triangle-fill',
+                'icon' => 'status-warning',
                 'message' => 'admin.alert.annex_a_missing',
                 'count' => 93,
                 'action' => $this->generateUrl('app_soa_index'),
@@ -406,7 +407,7 @@ class AdminDashboardController extends AbstractController
         if ($inactiveCount > 0) {
             $alerts[] = [
                 'type' => 'warning',
-                'icon' => 'bi-person-x',
+                'icon' => 'nav-people',
                 'message' => "admin.alert.inactive_users",
                 'count' => $inactiveCount,
                 'action' => $this->generateUrl('user_management_index'),
@@ -418,7 +419,7 @@ class AdminDashboardController extends AbstractController
         if ($unverifiedCount > 0) {
             $alerts[] = [
                 'type' => 'info',
-                'icon' => 'bi-person-check',
+                'icon' => 'nav-people',
                 'message' => "admin.alert.unverified_users",
                 'count' => $unverifiedCount,
                 'action' => $this->generateUrl('user_management_index'),
@@ -430,7 +431,7 @@ class AdminDashboardController extends AbstractController
         if ($dbSize > self::DATABASE_SIZE_WARNING_MB) {
             $alerts[] = [
                 'type' => 'warning',
-                'icon' => 'bi-database-exclamation',
+                'icon' => 'status-warning',
                 'message' => "admin.alert.large_database",
                 'count' => round($dbSize / 1024, 2),
                 'action' => null,

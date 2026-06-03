@@ -32,6 +32,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  *
  * @see docs/CM_JUNIOR_RESPONSE.md CM-8
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/audit-freeze')]
 #[IsGranted('ROLE_MANAGER')]
 class AuditFreezeController extends AbstractController
@@ -114,9 +115,13 @@ class AuditFreezeController extends AbstractController
             return $this->redirectToRoute('app_audit_freeze_show', ['id' => $created->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('audit_freeze/new.html.twig', [
             'form' => $form->createView(),
-        ]);
+        ], new Response(status: $status));
     }
 
     #[Route('/{id}', name: 'app_audit_freeze_show', methods: ['GET'], requirements: ['id' => '\d+'])]

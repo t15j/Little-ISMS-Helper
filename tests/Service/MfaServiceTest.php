@@ -15,6 +15,7 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use Psr\Log\LoggerInterface;
+use App\Exception\InvalidArgument\InvalidArgumentException as AppInvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -42,7 +43,12 @@ class MfaServiceTest extends TestCase
             $this->auditLogger,
             $this->logger,
             $this->mfaEncryptionService,
-            'Test ISMS'
+            'Test ISMS',
+            // Argon2 minimum-cost options — reduces backup-code hashing from
+            // ~125 ms/hash to ~0.5 ms/hash. Algorithm (Argon2id) is unchanged,
+            // so production code-path is still exercised. See
+            // config/packages/test/services.yaml for the container-side override.
+            ['memory_cost' => 1024, 'time_cost' => 1, 'threads' => 1],
         );
     }
 
@@ -147,7 +153,7 @@ class MfaServiceTest extends TestCase
         $user = $this->createUser(1, 'user@example.com');
         $token = $this->createMfaToken(1, $user, 'webauthn', 'secret');
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(AppInvalidArgumentException::class);
         $this->expectExceptionMessage('QR codes can only be generated for TOTP tokens');
 
         $this->service->generateQrCode($token);
@@ -159,7 +165,7 @@ class MfaServiceTest extends TestCase
         $user = $this->createUser(1, 'user@example.com');
         $token = $this->createMfaToken(1, $user, 'backup_code', 'secret');
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(AppInvalidArgumentException::class);
         $this->expectExceptionMessage('Can only verify TOTP tokens');
 
         $this->service->verifyTotp($token, '123456');
@@ -170,8 +176,12 @@ class MfaServiceTest extends TestCase
     {
         $user = $this->createUser(1, 'user@example.com');
 
-        // Create token with recent lastUsedAt to trigger rate limiting
-        $lastUsed = new \DateTimeImmutable('-1 second');
+        // Create token with lastUsedAt = now to deterministically trigger
+        // rate limiting (service requires diff < 2s). Using a relative offset
+        // like '-1 second' was flaky on slow CI runners where the gap between
+        // mock setup and service execution exceeded 2s, missing the rate-limit
+        // window.
+        $lastUsed = new \DateTimeImmutable();
         $token = $this->createMock(MfaToken::class);
         $token->method('getId')->willReturn(1);
         $token->method('getUser')->willReturn($user);

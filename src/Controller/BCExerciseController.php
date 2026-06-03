@@ -5,30 +5,48 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use DateTimeImmutable;
+use App\Controller\Trait\ModuleGatedControllerTrait;
+use App\Controller\Trait\BulkActionTrait;
 use App\Entity\BCExercise;
 use App\Form\BCExerciseType;
 use App\Repository\BCExerciseRepository;
+use App\Service\AuditLogger;
+use App\Service\Clone\BCExerciseCloner;
+use App\Service\ModuleConfigurationService;
 use App\Service\TenantContext;
 use Doctrine\ORM\EntityManagerInterface;
+use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 class BCExerciseController extends AbstractController
 {
+    use ModuleGatedControllerTrait;
+    use BulkActionTrait;
+
     public function __construct(
         private readonly BCExerciseRepository $bcExerciseRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly TranslatorInterface $translator,
-        private readonly TenantContext $tenantContext
+        private readonly TenantContext $tenantContext,
+        private readonly ModuleConfigurationService $moduleService,
+        private readonly Security $security,
+        private readonly ?AuditLogger $auditLogger = null,
+        private readonly ?BCExerciseCloner $bcExerciseCloner = null,
     ) {}
-    #[Route('/bc-exercise/', name: 'app_bc_exercise_index')]
+    #[Route('/bc-exercise', name: 'app_bc_exercise_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(): Response
     {
+        if ($redirect = $this->checkModuleActive('bcm')) return $redirect;
+
         $currentTenant = $this->tenantContext->getCurrentTenant();
         $bcExercises = $currentTenant !== null
             ? $this->bcExerciseRepository->findBy(['tenant' => $currentTenant])
@@ -44,10 +62,12 @@ class BCExerciseController extends AbstractController
             'incomplete_reports' => $incompleteReports,
         ]);
     }
-    #[Route('/bc-exercise/new', name: 'app_bc_exercise_new')]
+    #[Route('/bc-exercise/new', name: 'app_bc_exercise_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
+        if ($redirect = $this->checkModuleActive('bcm')) return $redirect;
+
         $bcExercise = new BCExercise();
         $bcExercise->setTenant($this->tenantContext->getCurrentTenant());
 
@@ -58,27 +78,70 @@ class BCExerciseController extends AbstractController
             $this->entityManager->persist($bcExercise);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('bc_exercise.success.created'));
+            $this->addFlash('success', $this->translator->trans('bc_exercise.success.created', [], 'messages'));
             return $this->redirectToRoute('app_bc_exercise_show', ['id' => $bcExercise->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('bc_exercise/new.html.twig', [
             'bc_exercise' => $bcExercise,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/bc-exercise/{id}', name: 'app_bc_exercise_show', requirements: ['id' => '\d+'])]
+    #[Route('/bc-exercise/{id}', name: 'app_bc_exercise_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(BCExercise $bcExercise): Response
     {
+        if ($redirect = $this->checkModuleActive('bcm')) return $redirect;
+
         return $this->render('bc_exercise/show.html.twig', [
             'bc_exercise' => $bcExercise,
         ]);
     }
-    #[Route('/bc-exercise/{id}/edit', name: 'app_bc_exercise_edit', requirements: ['id' => '\d+'])]
+    /**
+     * Clone a BC-Exercise (C4-C1 — Klon-Funktionen). Open to ROLE_USER. Keeps
+     * planning template (scope, objectives, scenario, facilitator dual-state,
+     * tested BC-Plans, success criteria), resets execution + results.
+     */
+    #[Route('/bc-exercise/{id}/clone', name: 'app_bc_exercise_clone', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function clone(Request $request, BCExercise $bcExercise): Response
+    {
+        if ($redirect = $this->checkModuleActive('bcm')) return $redirect;
+        if (!$this->isCsrfTokenValid('clone_bc_exercise_' . $bcExercise->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+        if ($this->bcExerciseCloner === null) {
+            throw $this->createNotFoundException('BC-Exercise clone service is not available.');
+        }
+
+        $clone = $this->bcExerciseCloner->clone(
+            $bcExercise,
+            null,
+            trim((string) $request->request->get('title_override', '')) ?: null,
+        );
+        $this->entityManager->flush();
+
+        $this->auditLogger?->logCreate(
+            entityType: 'BCExercise',
+            entityId: $clone->getId(),
+            newValues: ['cloned_from_id' => $bcExercise->getId(), 'name' => $clone->getName()],
+            description: 'Cloned from BC-Exercise #' . $bcExercise->getId(),
+        );
+
+        $this->addFlash('success', $this->translator->trans('bc_exercises.clone.success', [], 'bc_exercises'));
+        return $this->redirectToRoute('app_bc_exercise_edit', ['id' => $clone->getId()]);
+    }
+
+    #[Route('/bc-exercise/{id}/edit', name: 'app_bc_exercise_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, BCExercise $bcExercise): Response
     {
+        if ($redirect = $this->checkModuleActive('bcm')) return $redirect;
+
         $form = $this->createForm(BCExerciseType::class, $bcExercise);
         $form->handleRequest($request);
 
@@ -86,26 +149,154 @@ class BCExerciseController extends AbstractController
             $bcExercise->setUpdatedAt(new DateTimeImmutable());
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('bc_exercise.success.updated'));
+            $this->addFlash('success', $this->translator->trans('bc_exercise.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_bc_exercise_show', ['id' => $bcExercise->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('bc_exercise/edit.html.twig', [
             'bc_exercise' => $bcExercise,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/bc-exercise/{id}/delete', name: 'app_bc_exercise_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function delete(Request $request, BCExercise $bcExercise): Response
     {
+        if ($redirect = $this->checkModuleActive('bcm')) return $redirect;
+
         if ($this->isCsrfTokenValid('delete'.$bcExercise->getId(), $request->request->get('_token'))) {
             $this->entityManager->remove($bcExercise);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('bc_exercise.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('bc_exercise.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_bc_exercise_index');
+    }
+
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * BCExercises are terminal — returns empty dependencies.
+     */
+    #[Route('/bc-exercise/bulk-delete-check', name: 'app_bc_exercise_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = (array) ($data['ids'] ?? []);
+        return new JsonResponse(['dependencies' => [], 'checked_count' => count($ids)]);
+    }
+
+    #[Route('/bc-exercise/bulk-delete', name: 'app_bc_exercise_bulk_delete', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDelete(Request $request): JsonResponse
+    {
+        if ($this->checkModuleActive('bcm') instanceof Response) {
+            return $this->json(['error' => 'BCM module not active'], 403);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $ids = $data['ids'] ?? [];
+
+        if (empty($ids)) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->security->getUser()?->getTenant();
+        $deleted = 0;
+        $errors = [];
+
+        foreach ($ids as $id) {
+            try {
+                $exercise = $this->bcExerciseRepository->find($id);
+                if (!$exercise) {
+                    $errors[] = "BCExercise ID $id not found";
+                    continue;
+                }
+                if ($tenant && $exercise->getTenant() !== $tenant) {
+                    $errors[] = "BCExercise ID $id does not belong to your organization";
+                    continue;
+                }
+                $this->entityManager->remove($exercise);
+                $deleted++;
+            } catch (Exception $e) {
+                $errors[] = "Error deleting BCExercise ID $id: " . $e->getMessage();
+            }
+        }
+
+        if ($deleted > 0) {
+            $this->entityManager->flush();
+        }
+
+        return $this->json([
+            'success' => $deleted > 0,
+            'deleted' => $deleted,
+            'errors' => $errors,
+            'message' => "$deleted BC exercises deleted successfully",
+        ]);
+    }
+
+    /**
+     * Bulk CSV export of selected BC exercises.
+     * Module-gated: bcm. ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/bc-exercise/bulk-export', name: 'app_bc_exercise_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        if ($redirect = $this->checkModuleActive('bcm')) {
+            return $redirect;
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->tenantContext->getCurrentTenant();
+
+        $exercises = [];
+        foreach ($ids as $rawId) {
+            $exercise = $this->bcExerciseRepository->find((int) $rawId);
+            if ($exercise === null) {
+                continue;
+            }
+            if ($tenant !== null && $exercise->getTenant() !== $tenant) {
+                continue;
+            }
+            $exercises[] = $exercise;
+        }
+
+        if ($exercises === []) {
+            return $this->json(['error' => 'No exportable BC exercises'], 404);
+        }
+
+        $headers = ['ID', 'Name', 'Type', 'Status', 'Exercise Date', 'Results'];
+
+        return $this->streamCsvExport(
+            $exercises,
+            $headers,
+            static function (BCExercise $e): array {
+                return [
+                    (string) $e->getId(),
+                    (string) $e->getName(),
+                    (string) $e->getExerciseType(),
+                    (string) $e->getStatus(),
+                    $e->getExerciseDate()?->format('Y-m-d') ?? '',
+                    (string) $e->getResults(),
+                ];
+            },
+            'bc-exercises-export',
+            'BCExercise',
+            $this->auditLogger,
+        );
     }
 }

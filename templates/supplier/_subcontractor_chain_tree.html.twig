@@ -6,9 +6,10 @@
  #
  # Expected caller variable: chain (array|null)
  #}
+{% import '_components/_status_pill.html.twig' as pill %}
 {% if chain is null or chain|length == 0 %}
     <p class="text-muted small mb-0">
-        <i class="bi bi-dash-circle" aria-hidden="true"></i>
+        <i class="fa-icon fa-icon--status-pending" aria-hidden="true"></i>
         {{ 'supplier.subcontractor.none'|trans({}, 'suppliers') }}
     </p>
 {% else %}
@@ -26,7 +27,7 @@
         {% for tier, entries in tiers %}
             <li class="mb-2">
                 <div class="small text-muted">
-                    <span class="badge bg-body-secondary border fa-status-pill fa-status-pill--neutral">T{{ tier }}</span>
+                    <span class="border fa-status-pill fa-status-pill--neutral">T{{ tier }}</span>
                     <span class="ms-1">{{ 'supplier.subcontractor.tier'|trans({}, 'suppliers') }} {{ tier }}</span>
                 </div>
                 <ul class="list-unstyled ms-3 mt-1">
@@ -42,12 +43,11 @@
                             <div>
                                 <strong>{{ entry.name|default('—') }}</strong>
                                 {% if entry.country|default('') %}
-                                    <span class="badge bg-body-secondary border fa-status-pill fa-status-pill--neutral ms-1">{{ entry.country }}</span>
+                                    <span class="border fa-status-pill fa-status-pill--neutral ms-1">{{ entry.country }}</span>
                                 {% endif %}
                                 {% if crit %}
-                                    <span class="badge text-bg-{{ crit_variant }} ms-1">
-                                        {{ ('supplier.criticality.' ~ crit)|trans({}, 'suppliers') }}
-                                    </span>
+                                    {% set _crit_tone = crit_variant in ['info'] ? 'primary' : (crit_variant in ['secondary','light','dark'] ? 'neutral' : crit_variant) %}
+                                    {{ pill.render(('supplier.criticality.' ~ crit)|trans({}, 'suppliers'), _crit_tone, {size: 'sm', class: 'ms-1'}) }}
                                 {% endif %}
                             </div>
                             <div class="small text-muted">

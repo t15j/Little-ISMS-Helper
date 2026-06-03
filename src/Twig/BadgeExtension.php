@@ -22,7 +22,7 @@ use Twig\Attribute\AsTwigFunction;
  *
  * @author Claude Code
  */
-class BadgeExtension
+final class BadgeExtension
 {
     /**
      * Severity level to Bootstrap color mapping
@@ -57,7 +57,6 @@ class BadgeExtension
         'investigating' => 'info',
 
         // Generic statuses
-        'active' => 'success',
         'inactive' => 'secondary',
         'pending' => 'warning',
         'approved' => 'success',
@@ -95,6 +94,12 @@ class BadgeExtension
         // Document statuses
         'review' => 'warning',
         'obsolete' => 'danger',
+        'in_review' => 'info',
+        'archived' => 'secondary',
+        // 'active' — legacy document state (S3 P-4 migrated to 'published').
+        // Kept for non-document entities (Supplier, Consent, etc.) that still
+        // use 'active' as their canonical value.
+        'active' => 'secondary',
     ];
 
     /**
@@ -168,6 +173,90 @@ class BadgeExtension
     {
         $auroraVariant = self::BS_TO_AURORA[$bsColor] ?? 'neutral';
         return "badge bg-{$bsColor} fa-status-pill fa-status-pill--{$auroraVariant}";
+    }
+
+    /**
+     * Resolves a Bootstrap color to its Aurora status-pill tone name.
+     *
+     * Used by templates that have migrated from raw <span class="badge bg-*">
+     * to the _status_pill.html.twig macro and need the semantic tone only.
+     */
+    private function resolveAuroraTone(string $bsColor): string
+    {
+        return self::BS_TO_AURORA[$bsColor] ?? 'neutral';
+    }
+
+    /* ─── pill_tone_*() — Aurora tone-name companions ─────────────────── */
+
+    /**
+     * Aurora tone for a severity value.
+     */
+    #[AsTwigFunction('pill_tone_severity')]
+    public function getSeverityTone(string|int|\BackedEnum $severity): string
+    {
+        if ($severity instanceof \BackedEnum) {
+            $severity = $severity->value;
+        }
+        $severity = is_string($severity) ? strtolower($severity) : $severity;
+        return $this->resolveAuroraTone(self::SEVERITY_MAP[$severity] ?? 'secondary');
+    }
+
+    /**
+     * Aurora tone for a status value.
+     */
+    #[AsTwigFunction('pill_tone_status')]
+    public function getStatusTone(string|\BackedEnum $status): string
+    {
+        if ($status instanceof \BackedEnum) {
+            $status = $status->value;
+        }
+        return $this->resolveAuroraTone(self::STATUS_MAP[strtolower($status)] ?? 'secondary');
+    }
+
+    /**
+     * Aurora tone for a NIS2 compliance status.
+     */
+    #[AsTwigFunction('pill_tone_nis2')]
+    public function getNis2Tone(string $nis2Status): string
+    {
+        return $this->resolveAuroraTone(self::NIS2_MAP[strtolower($nis2Status)] ?? 'secondary');
+    }
+
+    /**
+     * Aurora tone for an audit-log action.
+     */
+    #[AsTwigFunction('pill_tone_action')]
+    public function getActionTone(string $action): string
+    {
+        return $this->resolveAuroraTone(self::ACTION_MAP[strtolower($action)] ?? 'secondary');
+    }
+
+    /**
+     * Aurora tone for a data-classification level.
+     */
+    #[AsTwigFunction('pill_tone_classification')]
+    public function getClassificationTone(string $classification): string
+    {
+        return $this->resolveAuroraTone(self::CLASSIFICATION_MAP[strtolower($classification)] ?? 'secondary');
+    }
+
+    /**
+     * Aurora tone for a numeric score.
+     */
+    #[AsTwigFunction('pill_tone_score')]
+    public function getScoreTone(int|float $score, int $dangerThreshold = 4, int $warningThreshold = 3): string
+    {
+        if ($score >= $dangerThreshold) {
+            $color = 'danger';
+        } elseif ($score >= $warningThreshold) {
+            $color = 'warning';
+        } elseif ($score >= 2) {
+            $color = 'info';
+        } else {
+            $color = 'success';
+        }
+
+        return $this->resolveAuroraTone($color);
     }
 
     /**

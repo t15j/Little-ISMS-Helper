@@ -4,11 +4,24 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use InvalidArgumentException;
 use App\Entity\Tenant;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
+/**
+ * @deprecated since 2026-06 — use config/workflows/regulatory/*.yaml step metadata instead.
+ *
+ * WorkflowStep rows are preserved read-only for historical WorkflowInstance display.
+ * New approval-chain step definitions MUST live in the regulatory YAML files under
+ * config/workflows/regulatory/ in the metadata.steps block.
+ * Schema removal is planned no earlier than 2027-06 (see ADR 2026-05-17-workflow-yaml-unification.md).
+ *
+ * DO NOT create new instances of this class in production code.
+ * The PHPStan rule tools/phpstan/Rule/NoNewWorkflowOrWorkflowStep.php enforces this.
+ *
+ * @see config/workflows/regulatory/
+ * @see docs/decisions/2026-05-17-workflow-yaml-unification.md
+ */
 #[ORM\Entity]
 #[ORM\Table(name: 'workflow_steps')]
 class WorkflowStep
@@ -74,13 +87,13 @@ class WorkflowStep
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         if (in_array(trim($name), ['', '0'], true)) {
-            throw new InvalidArgumentException('Step name cannot be empty');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('Step name cannot be empty');
         }
         if (strlen($name) > 255) {
-            throw new InvalidArgumentException('Step name must be 255 characters or less');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('Step name must be 255 characters or less');
         }
         $this->name = $name;
         return $this;
@@ -105,7 +118,7 @@ class WorkflowStep
     public function setStepOrder(int $stepOrder): static
     {
         if ($stepOrder < 0) {
-            throw new InvalidArgumentException('Step order must be non-negative');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('Step order must be non-negative');
         }
         $this->stepOrder = $stepOrder;
         return $this;
@@ -120,7 +133,7 @@ class WorkflowStep
     {
         $allowedTypes = ['approval', 'notification', 'auto_action'];
         if (!in_array($stepType, $allowedTypes, true)) {
-            throw new InvalidArgumentException(sprintf(
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException(sprintf(
                 'Invalid step type "%s". Allowed types: %s',
                 $stepType,
                 implode(', ', $allowedTypes)
@@ -151,7 +164,7 @@ class WorkflowStep
         if ($approverUsers !== null) {
             foreach ($approverUsers as $approverUser) {
                 if (!is_int($approverUser) || $approverUser < 1) {
-                    throw new InvalidArgumentException(sprintf(
+                    throw new \App\Exception\InvalidArgument\InvalidArgumentException(sprintf(
                         'Invalid user ID "%s". User IDs must be positive integers',
                         $approverUser
                     ));
@@ -181,10 +194,10 @@ class WorkflowStep
     public function setDaysToComplete(?int $daysToComplete): static
     {
         if ($daysToComplete !== null && $daysToComplete < 0) {
-            throw new InvalidArgumentException('Days to complete must be non-negative');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('Days to complete must be non-negative');
         }
         if ($daysToComplete !== null && $daysToComplete > 365) {
-            throw new InvalidArgumentException('Days to complete cannot exceed 365');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('Days to complete cannot exceed 365');
         }
         $this->daysToComplete = $daysToComplete;
         return $this;

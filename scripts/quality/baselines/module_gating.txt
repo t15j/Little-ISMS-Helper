@@ -1,0 +1,3 @@
+# check_module_gating.py baseline — generated snapshot.
+# Format: <relative-path>:<line>:<field-name>
+# Remove an entry once the FormType is gated properly.

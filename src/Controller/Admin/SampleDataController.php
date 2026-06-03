@@ -6,6 +6,7 @@ namespace App\Controller\Admin;
 
 use App\Entity\User;
 use App\Repository\SampleDataImportRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\DataImportService;
 use App\Service\ModuleConfigurationService;
 use App\Service\TenantContext;
@@ -13,6 +14,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsCsrfTokenValid;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -21,8 +23,16 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * Admin UI für Beispieldaten-Import/-Entfernung.
  * Jedes Sample-Dataset lässt sich nach Import gezielt wieder entfernen,
  * ohne User-Daten zu gefährden (tracked via SampleDataImport).
+ *
+ * Authorization (Phase 4b of Role-Scope Architecture, spec
+ * `docs/superpowers/specs/2026-05-18-role-scope-architecture.md`):
+ *  - Class-level {@see TenantScopedAdminVoter::ADMIN_OWN_TENANT} —
+ *    ROLE_ADMIN seeds sample data into their own tenant; SUPER_ADMIN
+ *    passes transparently. Tenant always comes from
+ *    {@see TenantContext::getCurrentTenant()} (no cross-tenant form
+ *    field exposed).
  */
-#[IsGranted('ROLE_ADMIN')]
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
 class SampleDataController extends AbstractController
 {
     public function __construct(
@@ -35,7 +45,7 @@ class SampleDataController extends AbstractController
     ) {
     }
 
-    #[Route('/admin/sample-data', name: 'admin_sample_data_index')]
+    #[Route('/admin/sample-data', name: 'admin_sample_data_index', methods: ['GET'])]
     public function index(): Response
     {
         $tenant = $this->tenantContext->getCurrentTenant();
@@ -119,8 +129,10 @@ class SampleDataController extends AbstractController
 
     #[Route('/admin/sample-data/import', name: 'admin_sample_data_import', methods: ['POST'])]
     #[IsCsrfTokenValid('sample_data_import', tokenKey: '_token')]
-    public function import(Request $request): Response
-    {
+    public function import(
+        Request $request,
+        #[CurrentUser] User $user,
+    ): Response {
         $tenant = $this->tenantContext->getCurrentTenant();
         if ($tenant === null) {
             $this->addFlash('error', $this->translator->trans('admin.sample_data.no_tenant', [], 'admin'));
@@ -134,8 +146,6 @@ class SampleDataController extends AbstractController
         }
 
         $activeModules = $this->moduleConfigurationService->getActiveModules();
-        /** @var User|null $user */
-        $user = $this->getUser();
 
         $result = $this->dataImportService->importSampleData($selectedSamples, $activeModules, $tenant, $user);
 
@@ -155,7 +165,7 @@ class SampleDataController extends AbstractController
     public function remove(Request $request, string $sampleKey): Response
     {
         if (!$this->isCsrfTokenValid('sample_data_remove_' . $sampleKey, $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('common.csrf_error'));
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
             return $this->redirectToRoute('admin_sample_data_index');
         }
 

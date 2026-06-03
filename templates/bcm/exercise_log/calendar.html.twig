@@ -1,0 +1,84 @@
+{% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
+
+{% block title %}{{ 'bsi_200_4_exercise.page.calendar_title'|trans({}, 'bsi_200_4_exercise') }}{% endblock %}
+
+{% block body %}
+<div class="container">
+    {% include '_components/_breadcrumb.html.twig' with {
+        breadcrumbs: [
+            { label: 'nav.bcm'|trans({}, 'nav'), url: path('app_bcm_index') },
+            { label: 'bsi_200_4_exercise.nav.exercise_log'|trans({}, 'bsi_200_4_exercise'), url: path('bcm_exercise_log_index') },
+            { label: 'bsi_200_4_exercise.page.calendar_title'|trans({}, 'bsi_200_4_exercise') }
+        ]
+    } %}
+
+    {{ _fa_page_header.render({
+        badge: { icon: 'ui-calendar', label: 'BSI 200-4' },
+        title: 'bsi_200_4_exercise.page.calendar_title'|trans({}, 'bsi_200_4_exercise'),
+        subtitle: 'bsi_200_4_exercise.page.calendar_subtitle'|trans({}, 'bsi_200_4_exercise'),
+        actions: [
+            { label: 'bsi_200_4_exercise.nav.exercise_log'|trans({}, 'bsi_200_4_exercise'), href: path('bcm_exercise_log_index'), variant: 'secondary', icon: 'ui-list' }
+        ]
+    }) }}
+
+    {% if byMonth|length == 0 %}
+        {{ _fa_empty_state.render({
+            icon: 'ui-calendar',
+            title: 'bsi_200_4_exercise.calendar.no_exercises'|trans({}, 'bsi_200_4_exercise'),
+            body: 'bsi_200_4_exercise.calendar.no_exercises'|trans({}, 'bsi_200_4_exercise'),
+            action: {
+                label: 'nav.bc_exercises'|trans({}, 'nav'),
+                href: path('app_bc_exercise_index')
+            }
+        }) }}
+    {% else %}
+        <div class="row g-4">
+            {% for monthKey, exercises in byMonth %}
+                {% set monthDate = (monthKey ~ '-01')|date('Y-m-d') %}
+                <div class="col-md-6 col-lg-4">
+                    <div class="card">
+                        <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                            <span>
+                                <i class="fa-icon fa-icon--nav-calendar-check" aria-hidden="true"></i>
+                                {{ monthKey|date('F Y') }}
+                            </span>
+                            <span class="fa-status-pill fa-status-pill--primary">
+                                {{ 'bsi_200_4_exercise.calendar.exercises_planned'|trans({'%count%': exercises|length}, 'bsi_200_4_exercise') }}
+                            </span>
+                        </div>
+                        <ul class="list-group list-group-flush">
+                            {% for exercise in exercises %}
+                            <li class="list-group-item d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="fw-semibold">{{ exercise.name }}</div>
+                                    <small class="text-muted">
+                                        {{ exercise.exerciseDate ? exercise.exerciseDate|date('d.m.Y') : '—' }}
+                                        {# Junior-ISB-Audit-2026-05-22 S14: render exerciseType via i18n choice-label, not raw enum value. #}
+                                        · <span class="badge bg-secondary">{{ ('exercise_type.' ~ exercise.exerciseType)|trans({}, 'bsi_200_4_exercise') }}</span>
+                                    </small>
+                                </div>
+                                <div class="d-flex flex-column align-items-end gap-1">
+                                    {% if exercise.hasExerciseLog %}
+                                        <a href="{{ path('bcm_exercise_log_show', {id: exercise.exerciseLog.id}) }}"
+                                           class="fa-status-pill fa-status-pill--success text-decoration-none">
+                                            {{ 'bsi_200_4_exercise.calendar.log_exists'|trans({}, 'bsi_200_4_exercise') }}
+                                        </a>
+                                    {% else %}
+                                        <a href="{{ path('bcm_exercise_log_new', {exerciseId: exercise.id}) }}"
+                                           class="fa-status-pill fa-status-pill--warning text-decoration-none">
+                                            {{ 'bsi_200_4_exercise.calendar.log_missing'|trans({}, 'bsi_200_4_exercise') }}
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

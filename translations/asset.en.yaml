@@ -1,5 +1,12 @@
 asset:
   title: Title
+  success:
+    created: 'Asset has been created.'
+    updated: 'Asset has been updated.'
+    deleted: 'Asset has been deleted.'
+    cloned: 'Asset has been duplicated. File binary may need re-upload.'
+  clone:
+    success: 'Asset has been duplicated. File binary may need re-upload.'
   preview:
     title: Asset Information
   action:
@@ -20,10 +27,15 @@ asset:
   section:
     basic_info: Basic Information
     assignment: Assignment
+    location: Location
+    overview: Overview
+    ownership: 'Owner & Assignment'
     financial: Financial Information
     classification: Classification & Status
     cia_values: CIA assessment (protection needs)
     policies: Policies & Instructions
+    ai_agent: 'AI Agent (EU AI Act)'
+    other: 'Other Fields'
     valuation: Valuation
     compliance: Compliance
     cia_triad: CIA triad
@@ -33,12 +45,14 @@ asset:
     protecting_controls: Protecting controls
     related_risks: Related risks
     related_incidents: Related incidents
+    processing_activities: Linked processing activities (RoPA)
     history: History
     business_impact: Business Impact
     rto_analysis: Rto Analysis
     critical_assets: Critical Assets
     dependency_insights: Dependency Insights
     inherited_protection: Inherited protection need (BSI 3.6)
+    dependency_graph: Dependency graph (DORA RT_05)
   field:
     name: Name
     type: Asset type
@@ -59,7 +73,6 @@ asset:
     rpo: RPO (Recovery Point Objective)
     recovery_strategy: Recovery Strategy
     avg_rto: Average RTO
-    monetary_value: Monetary Value
     classification: Classification
     data_classification: Data Classification
     acceptable_use_policy: Acceptable Use Policy
@@ -70,6 +83,8 @@ asset:
     owner_person: Owner (Person from master data)
     owner_deputies: Deputies (Persons)
     depends_on: Dependencies (upstream)
+    processing_activities: Linked processing activities (RoPA)
+    is_dora_relevant: 'DORA-relevant (Art. 28 ICT-Asset)'
   help:
     name: Unique name of the asset
     type: Category of the asset (hardware, software, data, etc.)
@@ -86,12 +101,12 @@ asset:
       3=high, 4=very high, 5=critical — e.g. financial data, medical records)'
     availability: 'Availability: reachability when needed (1=>24h downtime tolerable,
       2=8h, 3=4h, 4=1h, 5=<15 min / 24×7)'
-    monetary_value: Estimated monetary value of the asset in EUR
     data_classification: Classification of data by protection requirements
     acceptable_use_policy: Guidelines for acceptable use of this asset
     handling_instructions: Special instructions for handling this asset
     return_date: Date of planned return (for temporarily assigned assets)
     status: Current usage status of the asset
+    status_readonly: 'Status is managed via the lifecycle (Active → In Use → Returned → Retired → Disposed). Use the status actions on the asset detail page (4-eyes principle for "Disposed").'
     owner_user: Owner from user management. If the person has no system login,
       pick them from the "Person" master-data list or use the legacy free-text field.
     owner_person: Owner from master-data Person records (also external stakeholders
@@ -99,6 +114,12 @@ asset:
     owner_deputies: Additional persons sharing ownership or deputising. Multiple selection possible.
     depends_on: 'Assets this one depends on. BSI 3.6 Maximumprinzip: highest CIA values
       are inherited.'
+    processing_activities: 'Processing activities (Art. 30 GDPR / RoPA) that touch
+      this asset. When the asset has data classification "confidential" or "restricted",
+      the link auto-triggers a DPIA suggestion (Art. 35 GDPR).'
+    is_dora_relevant: 'This asset qualifies as an ICT asset under DORA Art. 28 and will
+      be included in the Register of Information (RoI) XBRL export. Only flagged assets
+      appear in the RoI export.'
   protection:
     recommended: Recommended
     overall_level: Overall Protection Level
@@ -113,10 +134,6 @@ asset:
     current_value: '<strong>Current Book Value</strong><br>What is the asset worth
       today? (after depreciation)<br><br><em>Examples:</em><br>• 3-year-old server:
       ~€3,000<br>• Fully depreciated hardware: €1'
-    monetary_value: <strong>💰 Damage Value (IMPORTANT!)</strong><br>What would it
-      cost if this asset fails or is compromised?<br><br><em>Consider:</em><br>• Production
-      loss per hour<br>• Data loss costs<br>• Reputation damage<br>• Contract penalties<br><br><em>This
-      value is used for risk assessment!</em>
     confidentiality: '<strong>🔒 Confidentiality</strong><br><em>Question: Who may
       see this data?</em><br><br><strong>1</strong> = Public (website, press releases)<br><strong>2</strong>
       = Internal (all employees)<br><strong>3</strong> = Confidential (specific departments
@@ -156,6 +173,27 @@ asset:
     internal: Internal
     confidential: Confidential
     restricted: Restricted
+  dependency:
+    type:
+      requires: Requires
+      backs_up: Backs up
+      shares_data: Shares data
+      redundant_with: Redundant with
+    criticality_impact:
+      cascade: Full (cascade)
+      isolated: Isolated
+      partial: Partial
+    section:
+      title: Asset dependency graph (DORA RT_05)
+      subtitle: Upstream assets this asset depends on. Edge classification (type +
+        cascade behaviour) feeds the DORA RoI XBRL export (B_03.03).
+      no_dependencies: No upstream dependencies recorded.
+      column:
+        target: Upstream asset
+        type: Dependency type
+        criticality_impact: Cascade behaviour
+        notes: Notes
+      default_classification: Default (requires / cascade)
   confirm:
     delete: Really delete this asset?
   warning:
@@ -197,6 +235,7 @@ asset:
         controls: Controls
         actions: Actions
   status:
+    draft: Draft
     active: Active
     inactive: Inactive
     in_use: In Use
@@ -215,14 +254,14 @@ asset:
     owner_user: -- Select owner --
     owner_person: -- Select Person from master data --
   type:
-    information: Information
-    software: Software
-    hardware: Hardware
-    service: Service
-    personnel: Personnel
-    physical: Physical
-    ai_agent: AI Agent
-    data: Data
+    information: 'Information'
+    software: 'Software (application, library, OS)'
+    hardware: 'Hardware (server, workstation, network device)'
+    service: 'Service (cloud, SaaS, external provider)'
+    personnel: 'Personnel'
+    physical: 'Physical (building, room, lock)'
+    ai_agent: 'AI Agent (EU AI Act)'
+    data: 'Data'
     network: Network
     facility: Facility
     other: Other
@@ -290,6 +329,21 @@ asset:
     inherited: Inherited value
     driven_by: Driven by
   ai_agent:
+    flash:
+      no_tenant: 'No organization assigned — AI Agent inventory requires an organization context.'
+    show:
+      classification: 'Risk classification'
+      classification_unclassified: '— not classified —'
+      provider: 'Provider'
+      model_version: 'Model version'
+      purpose: 'Intended purpose'
+      data_sources: 'Data governance'
+      oversight: 'Human oversight'
+      capability_scope: 'Capability scope'
+      threat_model_doc: 'Threat model doc'
+      threat_model_link: 'Document #%id%'
+      threat_model_missing: '— not on file —'
+      extension_allowlist: 'Extension allowlist'
     section:
       title: AI Agent Inventory
       subtitle: EU AI Act / ISO 42001 / MRIS MHC-13
@@ -349,6 +403,9 @@ asset:
         injection, data leak, hallucination, privilege escalation).'
       extension_allowlist: 'List of approved plugins / extensions / MCP servers.
         Prevents supply-chain attacks via compromised marketplaces.'
+iso_9001_bridge:
+  asset: 'In ISO 9001 assets are part of resource management (Clause 7.1). ISO 27001 A.5.9/A.5.10 extend this to information assets and owners; ISO 22301 §8.1 requires resource lists for BCM baseline supply.'
+
 qr:
   label:
     title: Asset Label
@@ -365,7 +422,7 @@ qr:
   no_assets: No assets selected for printing
   error:
     owner_required_user_or_person: 'Owner: User or master-data Person required (free-text alone is not sufficient).'
-asset_management:
-  title: Title
-  description: Description
-  active_assets: Active Assets
+  validation:
+    ai_prohibited_must_be_inactive: 'Prohibited AI systems (EU AI Act Art. 5) must not be in operational use. Status must be inactive or archived.'
+  clone:
+    success: 'Asset has been duplicated. File binary may need re-upload.'

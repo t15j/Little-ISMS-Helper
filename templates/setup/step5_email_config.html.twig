@@ -28,14 +28,14 @@
                 {% block card_header %}
                     <div class="card-header">
                         <h1 class="h3 mb-0">
-                            <i class="bi bi-envelope me-2" aria-hidden="true"></i>
+                            <i class="fa-icon me-2 fa-icon--ui-send" aria-hidden="true"></i>
                             {{ 'setup.email.header'|trans({}, 'setup') }}
                         </h1>
                     </div>
                 {% endblock %}
                 {% block card_body %}
                     <div class="p-4">
-                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-info-circle', class: 'mb-4' } } %}
+                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-info', class: 'mb-4' } } %}
                             {% block alert_body %}<strong>{{ 'setup.email.optional.title'|trans({}, 'setup') }}</strong> <p class="mb-0">{{ 'setup.email.optional.message'|trans({}, 'setup') }}</p>{% endblock %}
                         {% endembed %}
 
@@ -118,14 +118,14 @@
                         {# Navigation #}
                         <div class="d-flex justify-content-between mt-4">
                             <a href="{{ path('setup_step4_admin_user') }}" class="btn btn-outline-secondary">
-                                <i class="bi bi-arrow-left me-2" aria-hidden="true"></i>
+                                <i class="fa-icon me-2 fa-icon--util-arrow-left" aria-hidden="true"></i>
                                 {{ 'setup.navigation.back'|trans({}, 'setup') }}
                             </a>
 
                             <div class="btn-group" role="group" aria-label="{{ 'setup.common.actions'|trans({}, 'setup') }}">
                                 <button type="submit" class="btn btn-primary">
                                     {{ 'setup.navigation.next'|trans({}, 'setup') }}
-                                    <i class="bi bi-arrow-right ms-2" aria-hidden="true"></i>
+                                    <i class="fa-icon ms-2 fa-icon--util-arrow-right" aria-hidden="true"></i>
                                 </button>
                             </div>
                         </div>
@@ -139,7 +139,7 @@
                                   data-wizard-busy-message-value="{{ 'setup.alva.busy.default'|trans({}, 'setup') }}">
                                 <input type="hidden" name="_token" value="{{ csrf_token('setup_email_skip') }}">
                                 <button type="submit" class="btn btn-sm btn-outline-secondary">
-                                    <i class="bi bi-skip-forward me-1" aria-hidden="true"></i>
+                                    <i class="fa-icon me-1 fa-icon--util-arrow-right" aria-hidden="true"></i>
                                     {{ 'setup.email.skip_button'|trans({}, 'setup') }}
                                 </button>
                             </form>
@@ -152,7 +152,7 @@
             {% embed '_components/_card.html.twig' with { 'class': 'mt-4 border-info' } %}
                 {% block card_body %}
                     <p class="h5 mb-3">
-                        <i class="bi bi-lightbulb text-info me-2" aria-hidden="true"></i>
+                        <i class="fa-icon text-info me-2 fa-icon--ui-lightbulb" aria-hidden="true"></i>
                         {{ 'setup.email.info.title'|trans({}, 'setup') }}
                     </p>
                     <p class="text-muted mb-2">
@@ -170,8 +170,11 @@
 </div>
 
 <script>
-// Toggle SMTP fields based on transport selection
-document.addEventListener('DOMContentLoaded', function() {
+// Toggle SMTP fields based on transport selection.
+// turbo:load (not DOMContentLoaded): under Turbo Drive the body is swapped on
+// navigation without firing DOMContentLoaded; turbo:load fires on initial load
+// and every Turbo visit, so the toggle binds whichever way the step is reached.
+document.addEventListener('turbo:load', function() {
     const transportSelect = document.querySelector('select[name="email_configuration[transport]"]');
     const smtpConfig = document.getElementById('smtp-config');
 

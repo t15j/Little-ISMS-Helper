@@ -7,7 +7,7 @@
 {% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {{ _fa_page_header.render({
-    badge: { icon: 'share', label: 'share.title'|trans({}, 'messages') },
+    badge: { icon: 'ui-send', label: 'share.title'|trans({}, 'messages') },
     title: 'share.title'|trans({}, 'messages')
 }) }}
 
@@ -18,10 +18,10 @@
             {% embed '_components/_card.html.twig' %}
                 {% block card_header %}
                     <div class="card-header">
-                        <h1 class="h5 mb-0">
+                        <h2 class="h5 mb-0">
                             <i class="fa-icon fa-icon--delegate me-2" aria-hidden="true"></i>
                             {{ 'share.title'|trans({}, 'messages') }}
-                        </h1>
+                        </h2>
                     </div>
                 {% endblock %}
                 {% block card_body %}
@@ -62,7 +62,7 @@
                             <ul class="list-unstyled mb-0">
                                 {% for file in files %}
                                 <li>
-                                    <i class="bi bi-file-earmark me-1" aria-hidden="true"></i>
+                                    <i class="fa-icon me-1 fa-icon--nav-document" aria-hidden="true"></i>
                                     {{ file.name }}
                                     <small class="text-muted">({{ (file.size / 1024)|number_format(1) }} KB)</small>
                                 </li>
@@ -82,6 +82,7 @@
                     <h2 class="h6 mb-3">{{ 'share.select_action'|trans({}, 'messages') }}</h2>
 
                     <form action="{{ path('app_share_process') }}" method="post">
+                        <input type="hidden" name="_token" value="{{ csrf_token('share_process') }}">
                         <input type="hidden" name="title" value="{{ title }}">
                         <input type="hidden" name="text" value="{{ text }}">
                         <input type="hidden" name="url" value="{{ url }}">
@@ -94,9 +95,10 @@
                             <button type="submit"
                                     name="action"
                                     value="{{ action.id }}"
-                                    class="btn btn-{{ action.highlight|default(false) ? 'primary' : 'outline-secondary' }} btn-lg text-start">
+                                    class="fa-cyber-btn fa-cyber-btn--lg {{ action.highlight|default(false) ? 'fa-cyber-btn--primary' : 'fa-cyber-btn--ghost' }} text-start">
                                 <div class="d-flex align-items-center">
-                                    <i class="bi {{ action.icon }} fs-4 me-3" aria-hidden="true"></i>
+                                    {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+                                    <i class="fa-icon fa-icon--{{ (action.icon starts with 'bi-') ? action.icon[3:] : action.icon }} fs-4 me-3" aria-hidden="true"></i>
                                     <div>
                                         <strong>{{ action.label|trans({}, 'messages') }}</strong>
                                         <br>

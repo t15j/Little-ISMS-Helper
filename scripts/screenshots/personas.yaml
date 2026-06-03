@@ -1,0 +1,258 @@
+# Persona-driven screenshot catalogue
+# Each persona has its own output directory (var/screenshots/<persona>/<theme>/).
+# Routes derived from the persona-* skills (.claude/skills/persona-*).
+# Paths verified against `php bin/console debug:router`.
+#
+# DEDUPE RULE: Each URL is captured by exactly one persona (the canonical
+# owner). Other persona walkthroughs cross-reference the canonical image
+# in markdown rather than triggering a second capture of the same screen.
+#
+# Field semantics:
+#   path           — URL path (locale-prefixed where applicable)
+#   wait           — CSS selector to wait for before screenshot (defaults to body)
+#   full_page      — true = capture full scroll height, false = viewport only (default true)
+
+config:
+  themes: [light, dark]
+  locale: de
+  viewport:
+    width: 1440
+    height: 900
+  default_wait: 'body'
+  default_full_page: true
+
+personas:
+
+  # ─────────────────────────────────────────────────────────────────
+  # ISB / Security Officer — operative ISO 27001 practice
+  # Canonical owner of: dashboard, SoA, risk register, asset register,
+  # control effectiveness, incident register, document register.
+  # Notification ops (channels/rules/templates) belong to isb-practitioner.
+  # ─────────────────────────────────────────────────────────────────
+  isb-practitioner:
+    label: "ISB / Security Officer"
+    description: "Operative ISO-27001-Praxis, Audit-Trail, SoA, Risikoregister"
+    screens:
+      - { name: dashboard,             path: /de/dashboard }
+      - { name: my-day,                path: /de/my-day }
+      - { name: activity-feed,         path: /de/activity-feed }
+      - { name: soa,                   path: /de/soa/ }
+      - { name: risk-register,         path: /de/risk/ }
+      - { name: risk-treatment-plan,   path: /de/risk-treatment-plan/ }
+      - { name: risk-appetite,         path: /de/risk-appetite/ }
+      - { name: assets,                path: /de/asset/ }
+      - { name: incidents,             path: /de/incident/ }
+      - { name: control-effectiveness, path: /de/analytics/controls/effectiveness }
+      - { name: documents,             path: /de/document/ }
+      - { name: management-review,     path: /de/management-review/ }
+      - { name: kpi-dashboard,         path: /de/analytics }
+      - { name: audit-findings,        path: /de/audit-finding/ }
+      - { name: bsi-grundschutz-check, path: /de/bsi-grundschutz-check, full_page: false }
+      # Notification ops — channels/rules/templates (admin role required)
+      - { name: notification-channels, path: /de/admin/notification/channel }
+      - { name: notification-rules,    path: /de/admin/notification/rule }
+      - { name: notification-templates, path: /de/admin/notification/template }
+
+  # ─────────────────────────────────────────────────────────────────
+  # CISO / Executive — heatmaps, trends, board reporting
+  # Canonical owner of: ciso/board dashboards, analytics overviews,
+  # management reports, scheduled reports, dora cockpit, FTE tracking.
+  # ─────────────────────────────────────────────────────────────────
+  ciso-executive:
+    label: "CISO / Executive"
+    description: "C-Level-Sicht, Heatmap, Reifegrad-Trend, NIS2-Geschäftsleiter-Nachweis"
+    screens:
+      - { name: dashboard-selector,    path: /de/dashboards }
+      - { name: ciso-dashboard,        path: /de/dashboards/ciso }
+      - { name: board-dashboard,       path: /de/dashboards/board }
+      - { name: analytics-advanced,    path: /de/analytics/advanced }
+      - { name: risk-forecast,         path: /de/analytics/risk/forecast }
+      - { name: asset-criticality,     path: /de/analytics/assets/criticality, full_page: false }
+      - { name: compliance-frameworks-radar, path: /de/analytics/compliance/frameworks }
+      # FTE Tracking (FteTrackingDashboardController — CISO analytics scope)
+      - { name: fte-tracking,          path: /de/dashboard/fte-tracking }
+      - { name: fte-calibration,       path: /de/dashboard/fte-tracking/calibration }
+      - { name: fte-board-report,      path: /de/dashboard/fte-tracking/board-report }
+      - { name: management-reports,    path: /de/reports/management/ }
+      - { name: portfolio-report,      path: /de/reports/management/portfolio }
+      - { name: executive-report,      path: /de/reports/management/executive }
+      - { name: bcm-management-report, path: /de/reports/management/bcm }
+      - { name: scheduled-reports,     path: /de/reports/scheduled/ }
+      - { name: dora-dashboard,        path: /de/dora-compliance }
+      - { name: certification-bundle,  path: /de/certification-bundle, full_page: false }
+      - { name: ai-agents,             path: /de/ai-agents }
+
+  # ─────────────────────────────────────────────────────────────────
+  # Compliance-Manager / Head of GRC — framework portfolio + reuse
+  # Canonical owner of: compliance overview, framework list, mapping
+  # hub/wizard/seeds, requirements, suppliers, modules-overview,
+  # library-importer, compliance-policy settings.
+  # ─────────────────────────────────────────────────────────────────
+  compliance-manager:
+    label: "Compliance-Manager / Head of GRC"
+    description: "Framework-Portfolio, Cross-Mapping, Gap-Heatmap, Library-Reuse"
+    screens:
+      - { name: cm-dashboard,           path: /de/dashboards/compliance-manager, full_page: false }
+      - { name: compliance-overview,    path: /de/compliance/ }
+      - { name: framework-list,         path: /de/compliance/framework/ }
+      - { name: framework-manage,       path: /de/compliance/frameworks/manage }
+      - { name: compliance-wizard,      path: /de/compliance-wizard }
+      - { name: compliance-wizard-compare, path: /de/compliance-wizard/compare }
+      - { name: compliance-compare,     path: /de/compliance/compare }
+      - { name: compliance-cross-framework, path: /de/compliance/cross-framework }
+      - { name: compliance-transitive,  path: /de/compliance/transitive-compliance }
+      - { name: data-reuse-heatmap,     path: /de/reuse/heatmap }
+      - { name: mapping-hub,            path: /de/compliance/mapping/hub }
+      - { name: mapping-list,           path: /de/compliance/mapping/ }
+      - { name: mapping-wizard,         path: /de/compliance/mapping/wizard }
+      - { name: mapping-seeds,          path: /de/compliance/mappings/seeds }
+      # Mapping quality (new — admin-library-importer scope, compliance-manager owns)
+      - { name: mapping-quality-dashboard, path: /de/compliance/mapping-quality/ }
+      - { name: mapping-quality-review-queue, path: /de/compliance/mapping-quality/review-queue }
+      - { name: requirements-list,      path: /de/compliance/requirement/ }
+      - { name: suppliers,              path: /de/supplier/ }
+      - { name: modules-overview,       path: /de/admin/modules }
+      - { name: policy-wizard,          path: /de/policy-wizard }
+      - { name: policy-wizard-konzern-rollup, path: /de/policy-wizard/konzern-rollup }
+      - { name: industry-presets,       path: /de/admin/industry-presets }
+      - { name: gstool-import,          path: /de/admin/import/gstool }
+      - { name: import-history,         path: /de/admin/import/history }
+      - { name: tenant-compliance-settings, path: /de/admin/tenant-compliance-settings }
+      # Library importer — control catalogue YAML import/export (admin role required)
+      - { name: library-catalogue,      path: /de/admin/library }
+      - { name: library-import,         path: /de/admin/library/import }
+      # Compliance-policy settings (tenant-level compliance policy defaults)
+      - { name: compliance-policy-settings, path: /de/admin/compliance/settings }
+      - { name: bcm-data-reuse-insights, path: /de/bcm/data-reuse-insights }
+
+  # ─────────────────────────────────────────────────────────────────
+  # Junior-Implementer — setup, onboarding, guided paths
+  # Canonical owner of: welcome, all setup-wizard steps, asset/risk
+  # form-flows (new), help-tour, profile-mfa, change-requests.
+  # ─────────────────────────────────────────────────────────────────
+  implementer-junior:
+    label: "Junior-Implementer (neu in InfoSec)"
+    description: "Setup-Wizard, geführte Pfade, Empty-States mit CTA, Hilfe"
+    screens:
+      - { name: welcome,               path: /de/welcome }
+      - { name: help-tour,             path: /de/help/tour }
+      - { name: asset-new,             path: /de/asset/new }
+      - { name: risk-new,              path: /de/risk/new }
+      - { name: setup-wizard,          path: /de/setup/ }
+      - { name: setup-step0-welcome,   path: /de/setup/step0-welcome }
+      - { name: setup-step1-requirements, path: /de/setup/step1-requirements }
+      - { name: setup-step2-database-config, path: /de/setup/step2-database-config }
+      - { name: setup-step6-organisation-info, path: /de/setup/step6-organisation-info }
+      - { name: setup-step7-modules,   path: /de/setup/step7-modules }
+      - { name: setup-step8-compliance-frameworks, path: /de/setup/step8-compliance-frameworks }
+      - { name: setup-step10-sample-data, path: /de/setup/step10-sample-data }
+      - { name: setup-step11-complete, path: /de/setup/step11-complete }
+      - { name: setup-industry-preset, path: /de/setup/industry-preset }
+      - { name: profile-mfa,           path: /de/profile/mfa }
+      - { name: change-requests,       path: /de/change-request/ }
+
+  # ─────────────────────────────────────────────────────────────────
+  # Risk-Owner / Business — mobile, simple approval flows
+  # Canonical owner of: workflow inbox, business processes, BCM views,
+  # data-subject requests, consent, BC exercises.
+  # ─────────────────────────────────────────────────────────────────
+  risk-owner-business:
+    label: "Risk-Owner / Fachbereichsleiter"
+    description: "Business-Sprache, Mobile, Ein-Klick-Freigaben, eigene Aufgaben"
+    screens:
+      - { name: workflows-inbox,       path: /de/workflow/ }
+      - { name: business-processes,    path: /de/bcm/business-process/ }
+      - { name: bcm-overview,          path: /de/bcm/ }
+      - { name: bc-exercises,          path: /de/bc-exercise/ }
+      # BCM exercise log — requires at least one BC exercise to exist
+      - { name: bcm-exercise-log,      path: /de/bcm/exercise-log }
+      - { name: bcm-exercise-log-calendar, path: /de/bcm/exercise-log/calendar }
+      - { name: data-subject-requests, path: /de/data-subject-request }
+      - { name: consent-list,          path: /de/consent/ }
+
+  # ─────────────────────────────────────────────────────────────────
+  # Tool-Tester / QA-Engineer — implementation reality + i18n + UX
+  # Canonical owner of: design-system component showcase, mapping-quality
+  # dashboard, data-repair, loader-fixer, admin-settings, tour-content
+  # admin. Reports to compliance-manager, knows UX-specialist + Aurora.
+  # ─────────────────────────────────────────────────────────────────
+  tool-tester:
+    label: "Tool-Tester / QA mit ISMS-Basics"
+    description: "Reale Umsetzung, Übersetzungen, UX-Konsistenz, Aurora-Konformität, Mapping-Qualität"
+    screens:
+      - { name: design-system,         path: /de/dev/design-system }
+      - { name: admin-hub,             path: /de/admin/hub }
+      - { name: mapping-quality,       path: /de/admin/mapping-quality }
+      - { name: mapping-quality-coverage, path: /de/admin/mapping-quality/coverage/all }
+      - { name: data-repair,           path: /de/admin/data-repair/ }
+      - { name: loader-fixer,          path: /de/admin/loader-fixer }
+      # Core settings pages
+      - { name: admin-settings,        path: /de/admin/settings }
+      - { name: admin-settings-application, path: /de/admin/settings/application }
+      - { name: admin-settings-features, path: /de/admin/settings/features }
+      - { name: admin-settings-security, path: /de/admin/settings/security }
+      # New admin/settings/* sub-pages (added during settings expansion sprint)
+      - { name: admin-settings-api-rate-limits, path: /de/admin/settings/api-rate-limits }
+      - { name: admin-settings-backups, path: /de/admin/settings/backups }
+      - { name: admin-settings-data-retention, path: /de/admin/settings/data-retention }
+      - { name: admin-settings-fiscal-year, path: /de/admin/settings/fiscal-year }
+      - { name: admin-settings-notifications, path: /de/admin/settings/notifications }
+      - { name: admin-settings-workflow-slas, path: /de/admin/settings/workflow-slas }
+      # Lifecycle overrides (admin role; requires at least one workflow definition)
+      - { name: lifecycle-overrides,   path: /de/admin/lifecycle-overrides }
+      # Supplier criticality config
+      - { name: supplier-criticality,  path: /de/admin/supplier-criticality }
+      # SSO provider management + wizard entry-point
+      - { name: sso-providers,         path: /de/admin/sso }
+      - { name: sso-wizard-step1,      path: /de/admin/sso/wizard/step1 }
+      - { name: sso-approvals,         path: /de/admin/sso/approvals }
+      # Quick-fix settings
+      - { name: quick-fix-settings,    path: /de/admin/quick-fix-settings }
+      # Backup/restore UI
+      - { name: data-backup,           path: /de/admin/data/backup }
+      - { name: monitoring-health,     path: /de/admin/monitoring/health }
+      - { name: monitoring-performance, path: /de/admin/monitoring/performance }
+      - { name: monitoring-errors,     path: /de/admin/monitoring/errors }
+      - { name: sessions,              path: /de/admin/sessions }
+      - { name: roles,                 path: /de/admin/roles, full_page: false }
+      - { name: roles-compare,         path: /de/admin/roles/compare }
+      - { name: roles-templates,       path: /de/admin/roles/templates }
+      - { name: users,                 path: /de/admin/users }
+      - { name: permissions,           path: /de/admin/permissions }
+      - { name: tags,                  path: /de/admin/tags, full_page: false }
+      - { name: policy-style,          path: /de/admin/policy-style }
+      - { name: report-style,          path: /de/admin/report-style }
+      - { name: alva-hint-stats,       path: /de/admin/alva-hint/stats }
+      - { name: sample-data,           path: /de/admin/sample-data, full_page: false }
+      - { name: tour-content-admin,    path: /de/admin/tours/content }
+      - { name: tour-completion-admin, path: /de/admin/tours/completion }
+      - { name: kpi-thresholds,        path: /de/admin/kpi-thresholds/ }
+      - { name: incident-sla,          path: /de/admin/incident-sla }
+      - { name: risk-approval-config,  path: /de/admin/risk-governance/approval-thresholds }
+      # Locale smoke-tests (confirms EN translation completeness)
+      - { name: en-locale-dashboard,   path: /en/dashboard }
+      - { name: en-locale-soa,         path: /en/soa/ }
+      - { name: en-locale-compliance,  path: /en/compliance/ }
+
+  # ─────────────────────────────────────────────────────────────────
+  # External Auditor (ISO 19011) — evidence-driven, point-in-time
+  # Canonical owner of: auditor dashboard, audit program, audit-freeze,
+  # audit-log, training records, context, interested parties, objectives,
+  # DPIA list.
+  # ─────────────────────────────────────────────────────────────────
+  auditor-external:
+    label: "Externer Auditor (ISO 19011)"
+    description: "Evidence-Pfade, Audit-Trail, NC, Management-Review, Stichtag"
+    screens:
+      - { name: auditor-dashboard,     path: /de/dashboards/auditor }
+      - { name: audit-program,         path: /de/audit/ }
+      - { name: audit-freeze,          path: /de/audit-freeze }
+      - { name: certification-bundle-preflight, path: /de/certification-bundle/preflight }
+      - { name: audit-log,             path: /de/admin/audit-log/ }
+      - { name: audit-log-statistics,  path: /de/admin/audit-log/statistics }
+      - { name: audit-log-retention,   path: /de/admin/audit-log/retention }
+      - { name: training-records,      path: /de/training/ }
+      - { name: context-scope,         path: /de/context/ }
+      - { name: interested-parties,    path: /de/interested-party/ }
+      - { name: objectives,            path: /de/objective/ }
+      - { name: dpia-list,             path: /de/dpia/ }

@@ -5,17 +5,30 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\BCExercise;
+use App\Entity\Person;
+use App\Entity\User;
+use App\Entity\BusinessContinuityPlan;
+use App\Form\Entry\EvidenceArtifactEntryType;
+use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\CollectionType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
+use Symfony\Component\Form\Extension\Core\Type\NumberType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
-use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
+use Symfony\Component\Validator\Constraints\Callback;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class BCExerciseType extends AbstractType
+// SectionMap not applicable — templates (new.html.twig, edit.html.twig) pass
+// their own 'sections' data directly to _auto_form, overriding any SectionMap.
+// The templates also use a custom form_theme (bc_exercise/_bc_exercise_form_theme.html.twig)
+// which overrides successCriteria/evidenceArtifacts field rendering.
+final class BCExerciseType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -75,27 +88,87 @@ class BCExerciseType extends AbstractType
                 'required' => false,
                 'attr' => ['min' => 1, 'max' => 168],
             ])
+            // P-15 DataReuse: typed participantPersons Multi-Select replaces
+            // free-text participants textarea (kept read-only for legacy).
+            ->add('participantPersons', EntityType::class, [
+                'label' => 'bc_exercises.field.participant_persons',
+                'help' => 'bc_exercises.help.participant_persons',
+                'class' => Person::class,
+                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
+                'multiple' => true,
+                'expanded' => false,
+                'required' => false,
+                'attr' => ['data-controller' => 'tom-select'],
+            ])
             ->add('participants', TextareaType::class, [
-                'label' => 'bc_exercises.field.participants',
-                'help' => 'bc_exercises.help.participants',
-                'required' => true,
+                'label' => 'bc_exercises.field.participants_legacy',
+                'help' => 'bc_exercises.help.participants_legacy',
+                'required' => false,
                 'attr' => ['rows' => 3],
             ])
+            // P-15 DataReuse: facilitator now Pattern-A dual-state.
+            // facilitator textfield kept for legacy migration display only.
+            ->add('facilitatorUser', EntityType::class, [
+                'label' => 'bc_exercises.field.facilitator_user',
+                'help' => 'bc_exercises.help.facilitator_user',
+                'class' => User::class,
+                'choice_label' => fn(User $u): string => trim(($u->getFirstName() ?? '') . ' ' . ($u->getLastName() ?? '')) ?: ($u->getEmail() ?? ''),
+                'placeholder' => 'bc_exercises.placeholder.facilitator_user',
+                'required' => false,
+            ])
+            ->add('facilitatorPerson', EntityType::class, [
+                'label' => 'bc_exercises.field.facilitator_person',
+                'help' => 'bc_exercises.help.facilitator_person',
+                'class' => Person::class,
+                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
+                'placeholder' => 'bc_exercises.placeholder.facilitator_person',
+                'required' => false,
+            ])
             ->add('facilitator', TextType::class, [
-                'label' => 'bc_exercises.field.facilitator',
-                'help' => 'bc_exercises.help.facilitator',
-                'required' => true,
+                'label' => 'bc_exercises.field.facilitator_legacy',
+                'help' => 'bc_exercises.help.facilitator_legacy',
+                'required' => false,
                 'attr' => ['maxlength' => 100],
             ])
+            ->add('exerciseLeaderUser', EntityType::class, [
+                'label' => 'bc_exercises.field.exercise_leader_user',
+                'help' => 'bc_exercises.help.exercise_leader_user',
+                'class' => User::class,
+                'choice_label' => fn(User $u): string => trim(($u->getFirstName() ?? '') . ' ' . ($u->getLastName() ?? '')) ?: ($u->getEmail() ?? ''),
+                'placeholder' => 'bc_exercises.placeholder.exercise_leader_user',
+                'required' => false,
+            ])
+            ->add('exerciseLeaderPerson', EntityType::class, [
+                'label' => 'bc_exercises.field.exercise_leader_person',
+                'help' => 'bc_exercises.help.exercise_leader_person',
+                'class' => Person::class,
+                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
+                'placeholder' => 'bc_exercises.placeholder.exercise_leader_person',
+                'required' => false,
+            ])
+            // P-15 DataReuse: typed observerPersons Multi-Select.
+            ->add('observerPersons', EntityType::class, [
+                'label' => 'bc_exercises.field.observer_persons',
+                'help' => 'bc_exercises.help.observer_persons',
+                'class' => Person::class,
+                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
+                'multiple' => true,
+                'expanded' => false,
+                'required' => false,
+                'attr' => ['data-controller' => 'tom-select'],
+            ])
             ->add('observers', TextareaType::class, [
-                'label' => 'bc_exercises.field.observers',
-                'help' => 'bc_exercises.help.observers',
+                'label' => 'bc_exercises.field.observers_legacy',
+                'help' => 'bc_exercises.help.observers_legacy',
                 'required' => false,
                 'attr' => ['rows' => 2],
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix, Sprint Y.5) ──
+            // Owned by `bc_exercise_lifecycle`. ISO 22301 Cl. 8.5 — 4-eyes
+            // auf `complete` (Audit-Evidenz). Transitions via LifecycleService.
             ->add('status', ChoiceType::class, [
                 'label' => 'bc_exercises.field.status',
-                'help' => 'bc_exercises.help.status',
+                'help' => 'bc_exercises.help.status_readonly',
                 'choices' => [
                     'bc_exercises.status.planned' => 'planned',
                     'bc_exercises.status.in_progress' => 'in_progress',
@@ -103,7 +176,11 @@ class BCExerciseType extends AbstractType
                     'bc_exercises.status.cancelled' => 'cancelled',
                 ],
                 'choice_translation_domain' => 'bc_exercises',
-                'required' => true,
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
             ])
             ->add('results', TextareaType::class, [
                 'label' => 'bc_exercises.field.results',
@@ -164,6 +241,63 @@ class BCExerciseType extends AbstractType
                 'widget' => 'single_text',
                 'required' => false,
             ])
+            // S5 Bucket 5 (item 5.3) — proper FormType wraps the Stimulus
+            // JsonBuilder. Shape-normalisation moved into
+            // `SuccessCriteriaShapeTransformer` so call-sites no longer have
+            // to know about the legacy flat map vs rich list shapes (ISO
+            // 22301 §8.6 c). The visual builder stays (UX win), but is now
+            // behind a real FormType.
+            ->add('successCriteria', BcExerciseSuccessCriteriaType::class, [
+                'label' => 'bc_exercises.field.success_criteria',
+                'required' => false,
+                'help' => 'bc_exercises.help.success_criteria_json',
+            ])
+            ->add('actualRtoAchieved', NumberType::class, [
+                'label' => 'bc_exercises.field.actual_rto_achieved',
+                'required' => false,
+                'scale' => 2,
+                'attr' => ['step' => '0.01', 'min' => '0'],
+                'help' => 'bc_exercises.help.actual_rto_achieved',
+            ])
+            ->add('actualRpoAchieved', NumberType::class, [
+                'label' => 'bc_exercises.field.actual_rpo_achieved',
+                'required' => false,
+                'scale' => 2,
+                'attr' => ['step' => '0.01', 'min' => '0'],
+                'help' => 'bc_exercises.help.actual_rpo_achieved',
+            ])
+            ->add('testedPlans', EntityType::class, [
+                'class' => BusinessContinuityPlan::class,
+                'choice_label' => 'name',
+                'multiple' => true,
+                'expanded' => false,
+                'required' => false,
+                'label' => 'bc_exercises.field.bc_plans_tested',
+                'help' => 'bc_exercises.help.bc_plans_tested',
+                'attr' => [
+                    'data-controller' => 'tom-select',
+                ],
+            ])
+            // S5 Bucket 5 — structured per-row evidence artifacts.
+            // Shape: {type, name, url, capturedAt}. Legacy keys
+            // (reference, description) survive on round-trip via
+            // data_class=null PropertyAccess merging.
+            ->add('evidenceArtifacts', CollectionType::class, [
+                'label' => 'bc_exercises.field.evidence_artifacts',
+                'required' => false,
+                'entry_type' => EvidenceArtifactEntryType::class,
+                'entry_options' => ['label' => false],
+                'allow_add' => true,
+                'allow_delete' => true,
+                'by_reference' => false,
+                'prototype' => true,
+                'prototype_name' => '__evidence_index__',
+                'attr' => [
+                    'class' => 'fa-collection fa-collection--evidence',
+                    'data-collection-prototype-name' => '__evidence_index__',
+                ],
+                'help' => 'bc_exercises.help.evidence_artifacts',
+            ])
         ;
     }
 
@@ -172,6 +306,25 @@ class BCExerciseType extends AbstractType
         $resolver->setDefaults([
             'data_class' => BCExercise::class,
             'translation_domain' => 'bc_exercises',
+            'constraints' => [
+                // ISO 22301 Cl. 8.5 — every BC-exercise needs a named
+                // facilitator. Pattern A dual-state means EITHER
+                // facilitatorUser OR facilitatorPerson must be set.
+                // Implemented via the validateFacilitatorSlot callback below.
+                new Callback([$this, 'validateFacilitatorSlot']),
+            ],
         ]);
+    }
+
+    public function validateFacilitatorSlot(?BCExercise $entity, ExecutionContextInterface $context): void
+    {
+        if ($entity === null) {
+            return;
+        }
+        if ($entity->getFacilitatorUser() === null && $entity->getFacilitatorPerson() === null) {
+            $context->buildViolation('bc_exercises.error.facilitator_required_user_or_person')
+                ->atPath('facilitatorUser')
+                ->addViolation();
+        }
     }
 }

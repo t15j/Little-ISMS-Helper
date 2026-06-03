@@ -9,6 +9,7 @@ use App\Entity\BusinessProcess;
 use App\Entity\Risk;
 use App\Entity\Tenant;
 use App\Entity\User;
+use App\Enum\AssetStatus;
 use App\Enum\RiskStatus;
 use App\Enum\TreatmentStrategy;
 use DateTimeImmutable;
@@ -205,13 +206,13 @@ class LoadConnectedDemoDataCommand
 
         if ($existing instanceof Asset) {
             if ($update) {
-                $existing->setAssetType($assetType)
+                $existing->setAssetType($assetType) // @phpstan-ignore lifecycle.directSetStatus (demo data seeder — update path; 'active' is the asset_lifecycle initial_marking)
                     ->setDescription($description)
                     ->setConfidentialityValue($confidentiality)
                     ->setIntegrityValue($integrity)
                     ->setAvailabilityValue($availability)
                     ->setDataClassification($dataClassification)
-                    ->setStatus('active')
+                    ->setStatus(AssetStatus::Active)
                     ->setUpdatedAt(new DateTimeImmutable());
                 $stats['updated']++;
                 $io->text(sprintf('  Updated Asset: %s', $name));
@@ -223,7 +224,7 @@ class LoadConnectedDemoDataCommand
         }
 
         $asset = new Asset();
-        $asset->setTenant($tenant)
+        $asset->setTenant($tenant) // @phpstan-ignore lifecycle.directSetStatus (demo data seeder — initial state setup outside lifecycle flow)
             ->setName($name)
             ->setAssetType($assetType)
             ->setDescription($description)
@@ -232,7 +233,7 @@ class LoadConnectedDemoDataCommand
             ->setIntegrityValue($integrity)
             ->setAvailabilityValue($availability)
             ->setDataClassification($dataClassification)
-            ->setStatus('active');
+            ->setStatus(AssetStatus::Active);
 
         $this->entityManager->persist($asset);
         $stats['created']++;
@@ -334,7 +335,7 @@ class LoadConnectedDemoDataCommand
         }
 
         $risk = new Risk();
-        $risk->setTenant($tenant)
+        $risk->setTenant($tenant) // @phpstan-ignore lifecycle.directSetStatus (demo data seeder — initial state setup outside lifecycle flow)
             ->setTitle($title)
             ->setDescription($description)
             ->setThreat($threat)

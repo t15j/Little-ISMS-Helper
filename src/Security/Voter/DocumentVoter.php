@@ -10,6 +10,7 @@ use App\Entity\User;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\Vote;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
+use Symfony\Component\Security\Core\Role\RoleHierarchyInterface;
 
 /**
  * Document Voter
@@ -41,9 +42,19 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  * - Tenant-based sharing within organization
  * - Future: Can be extended with document classification and access levels
  */
-class DocumentVoter extends Voter
+final class DocumentVoter extends Voter
 {
     use HoldingTreeAccessTrait;
+
+    public function __construct(
+        private readonly RoleHierarchyInterface $roleHierarchy,
+    ) {
+    }
+
+    protected function getRoleHierarchy(): RoleHierarchyInterface
+    {
+        return $this->roleHierarchy;
+    }
 
     public const string VIEW = 'view';
     public const string EDIT = 'edit';
@@ -69,7 +80,7 @@ class DocumentVoter extends Voter
         $document = $subject;
 
         // Security: Admins can do everything
-        if (in_array('ROLE_ADMIN', $user->getRoles())) {
+        if ($this->hasRoleHierarchical($user, 'ROLE_ADMIN')) {
             return true;
         }
 
@@ -113,6 +124,13 @@ class DocumentVoter extends Voter
     private function canDelete(User $user): bool
     {
         // Security: Only admins can delete (enforced by IsGranted in controller)
-        return in_array('ROLE_ADMIN', $user->getRoles());
+        return $this->hasRoleHierarchical($user, 'ROLE_ADMIN');
+    }
+
+    private function hasRoleHierarchical(User $user, string $role): bool
+    {
+        $reachable = $this->roleHierarchy->getReachableRoleNames($user->getRoles());
+
+        return in_array($role, $reachable, true);
     }
 }

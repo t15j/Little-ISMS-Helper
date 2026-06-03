@@ -4,27 +4,38 @@ declare(strict_types=1);
 
 namespace App\Command;
 
-use Symfony\Component\Console\Attribute\Option;
 use App\Entity\ComplianceFramework;
 use App\Entity\ComplianceRequirement;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'app:load-iso27001-requirements',
     description: 'Load ISO 27001:2022 Annex A as ComplianceRequirements for cross-framework mapping (separate from Control entities)'
 )]
-class LoadIso27001RequirementsCommand
+class LoadIso27001RequirementsCommand extends Command
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
-    {
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        private readonly LoadIso27001ClausesCommand $loadIso27001ClausesCommand,
+    ) {
+        parent::__construct();
     }
 
-    public function __invoke(#[Option(name: 'update', shortcut: 'u', description: 'Update existing requirements instead of skipping them')]
-    bool $update = false, ?SymfonyStyle $symfonyStyle = null): int
+    protected function configure(): void
     {
+        $this->addOption('update', 'u', InputOption::VALUE_NONE, 'Update existing requirements instead of skipping them');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $update = (bool) $input->getOption('update');
+        $symfonyStyle = new SymfonyStyle($input, $output);
         $updateMode = $update;
 
         $symfonyStyle->title('Loading ISO 27001:2022 Annex A Requirements');
@@ -108,6 +119,13 @@ class LoadIso27001RequirementsCommand
             ]
         );
         $symfonyStyle->note('These ComplianceRequirements enable cross-framework mappings (separate from Control entities for implementation tracking).');
+
+        // ISO 27001 certification needs the mandatory management Clauses 4-10, not
+        // just Annex A. Seed them in the same load so they are never silently
+        // missing (the standalone app:load-iso27001-clauses command remains for
+        // re-runs). The clauses command is invokable; it finds the framework row
+        // this command just created and adds its 28 clause requirements.
+        ($this->loadIso27001ClausesCommand)(update: $update, symfonyStyle: $symfonyStyle);
 
         return Command::SUCCESS;
     }

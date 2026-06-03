@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Enum\ConsentStatus;
 use App\Repository\ConsentRepository;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * Consent Entity - GDPR Art. 7 Compliance
@@ -56,18 +58,18 @@ class Consent
      * Examples: email, customer ID, pseudonym, etc.
      */
     #[ORM\Column(length: 255)]
-    #[Assert\NotBlank(message: 'Data subject identifier is required')]
-    #[Assert\Length(max: 255, maxMessage: 'Identifier cannot exceed {{ limit }} characters')]
+    #[Assert\NotBlank(message: 'consent.validation.data_subject_identifier_required')]
+    #[Assert\Length(max: 255, maxMessage: 'consent.validation.data_subject_identifier_max_length')]
     private ?string $dataSubjectIdentifier = null;
 
     /**
      * Type of identifier for documentation purposes
      */
     #[ORM\Column(length: 50)]
-    #[Assert\NotBlank(message: 'Identifier type is required')]
+    #[Assert\NotBlank(message: 'consent.validation.identifier_type_required')]
     #[Assert\Choice(
         choices: ['email', 'customer_id', 'pseudonym', 'phone', 'other'],
-        message: 'Invalid identifier type'
+        message: 'consent.validation.identifier_type_invalid'
     )]
     private ?string $identifierType = null;
 
@@ -81,7 +83,7 @@ class Consent
      */
     #[ORM\ManyToOne(targetEntity: ProcessingActivity::class, inversedBy: 'consents')]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
-    #[Assert\NotNull(message: 'Processing activity is required')]
+    #[Assert\NotNull(message: 'consent.validation.processing_activity_required')]
     private ?ProcessingActivity $processingActivity = null;
 
     /**
@@ -99,17 +101,17 @@ class Consent
      * Date/time when consent was granted by data subject
      */
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
-    #[Assert\NotNull(message: 'Grant date is required')]
+    #[Assert\NotNull(message: 'consent.validation.granted_at_required')]
     private ?DateTimeImmutable $grantedAt = null;
 
     /**
      * Method of consent
      */
     #[ORM\Column(length: 50)]
-    #[Assert\NotBlank(message: 'Consent method is required')]
+    #[Assert\NotBlank(message: 'consent.validation.consent_method_required')]
     #[Assert\Choice(
         choices: ['double_opt_in', 'written_form', 'checkbox', 'oral', 'email', 'other'],
-        message: 'Invalid consent method'
+        message: 'consent.validation.consent_method_invalid'
     )]
     private ?string $consentMethod = null;
 
@@ -118,7 +120,7 @@ class Consent
      * IMPORTANT: GDPR Art. 7 Abs. 1 - proof requirement
      */
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Consent text is required for proof')]
+    #[Assert\NotBlank(message: 'consent.validation.consent_text_required')]
     private ?string $consentText = null;
 
     /**
@@ -127,7 +129,7 @@ class Consent
     #[ORM\Column(length: 100, nullable: true)]
     #[Assert\Choice(
         choices: ['website', 'email', 'paper_form', 'phone', 'in_person', 'other'],
-        message: 'Invalid consent channel'
+        message: 'consent.validation.consent_channel_invalid'
     )]
     private ?string $consentChannel = null;
 
@@ -173,9 +175,13 @@ class Consent
     #[ORM\Column(length: 50)]
     #[Assert\Choice(
         choices: ['active', 'revoked', 'expired', 'pending_verification', 'rejected'],
-        message: 'Invalid consent status'
+        message: 'consent.validation.status_invalid'
     )]
     private ?string $status = 'pending_verification';
+
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /**
      * DPO verification flag
@@ -212,7 +218,7 @@ class Consent
     #[ORM\Column(length: 50, nullable: true)]
     #[Assert\Choice(
         choices: ['email', 'phone', 'letter', 'website', 'in_person', 'other'],
-        message: 'Invalid revocation method'
+        message: 'consent.validation.revocation_method_invalid'
     )]
     private ?string $revocationMethod = null;
 
@@ -246,6 +252,28 @@ class Consent
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $notes = null;
+
+    // ═══════════════════════════════════════════════════════════
+    // WIDERRUF-TRACKING GDPR Art. 7(3) (Withdrawal)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Timestamp when consent was withdrawn by data subject (GDPR Art. 7(3))
+     */
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    private ?\DateTimeImmutable $withdrawnAt = null;
+
+    /**
+     * Reason given for withdrawal (audit trail)
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $withdrawalReason = null;
+
+    /**
+     * Channel through which withdrawal was communicated
+     */
+    #[ORM\Column(length: 100, nullable: true)]
+    private ?string $withdrawalChannel = null;
 
     // ═══════════════════════════════════════════════════════════
     // AUDIT TRAIL
@@ -290,7 +318,7 @@ class Consent
         return $this->dataSubjectIdentifier;
     }
 
-    public function setDataSubjectIdentifier(string $dataSubjectIdentifier): static
+    public function setDataSubjectIdentifier(?string $dataSubjectIdentifier): static
     {
         $this->dataSubjectIdentifier = $dataSubjectIdentifier;
         return $this;
@@ -301,7 +329,7 @@ class Consent
         return $this->identifierType;
     }
 
-    public function setIdentifierType(string $identifierType): static
+    public function setIdentifierType(?string $identifierType): static
     {
         $this->identifierType = $identifierType;
         return $this;
@@ -334,7 +362,7 @@ class Consent
         return $this->grantedAt;
     }
 
-    public function setGrantedAt(DateTimeImmutable $grantedAt): static
+    public function setGrantedAt(?DateTimeImmutable $grantedAt): static
     {
         $this->grantedAt = $grantedAt;
         return $this;
@@ -345,7 +373,7 @@ class Consent
         return $this->consentMethod;
     }
 
-    public function setConsentMethod(string $consentMethod): static
+    public function setConsentMethod(?string $consentMethod): static
     {
         $this->consentMethod = $consentMethod;
         return $this;
@@ -356,7 +384,7 @@ class Consent
         return $this->consentText;
     }
 
-    public function setConsentText(string $consentText): static
+    public function setConsentText(?string $consentText): static
     {
         $this->consentText = $consentText;
         return $this;
@@ -422,10 +450,23 @@ class Consent
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(ConsentStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum
+        // while existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?ConsentStatus
+    {
+        return $this->status === null ? null : ConsentStatus::from($this->status);
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     public function isVerifiedByDpo(): bool
@@ -560,6 +601,47 @@ class Consent
         return $this;
     }
 
+    public function getWithdrawnAt(): ?\DateTimeImmutable
+    {
+        return $this->withdrawnAt;
+    }
+
+    public function setWithdrawnAt(?\DateTimeImmutable $withdrawnAt): static
+    {
+        $this->withdrawnAt = $withdrawnAt;
+        return $this;
+    }
+
+    public function getWithdrawalReason(): ?string
+    {
+        return $this->withdrawalReason;
+    }
+
+    public function setWithdrawalReason(?string $withdrawalReason): static
+    {
+        $this->withdrawalReason = $withdrawalReason;
+        return $this;
+    }
+
+    public function getWithdrawalChannel(): ?string
+    {
+        return $this->withdrawalChannel;
+    }
+
+    public function setWithdrawalChannel(?string $withdrawalChannel): static
+    {
+        $this->withdrawalChannel = $withdrawalChannel;
+        return $this;
+    }
+
+    /**
+     * Convenience: returns true when withdrawal timestamp is set (GDPR Art. 7(3))
+     */
+    public function isWithdrawn(): bool
+    {
+        return $this->withdrawnAt !== null;
+    }
+
     // ═══════════════════════════════════════════════════════════
     // HELPER METHODS
     // ═══════════════════════════════════════════════════════════
@@ -620,5 +702,25 @@ class Consent
             'rejected' => 'danger',
             default => 'secondary',
         };
+    }
+
+    /**
+     * GDPR Art. 7(3): When withdrawal date is set, reason and channel are mandatory for audit completeness.
+     */
+    #[Assert\Callback]
+    public function validateWithdrawalCompleteness(ExecutionContextInterface $context): void
+    {
+        if ($this->withdrawnAt !== null) {
+            if (empty($this->withdrawalReason)) {
+                $context->buildViolation('consent.validation.withdrawal_reason_required_when_withdrawn')
+                    ->atPath('withdrawalReason')
+                    ->addViolation();
+            }
+            if (empty($this->withdrawalChannel)) {
+                $context->buildViolation('consent.validation.withdrawal_channel_required_when_withdrawn')
+                    ->atPath('withdrawalChannel')
+                    ->addViolation();
+            }
+        }
     }
 }

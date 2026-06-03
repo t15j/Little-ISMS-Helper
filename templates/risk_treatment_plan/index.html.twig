@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% trans_default_domain 'risk_treatment_plan' %}
 
 {% block title %}{{ 'risk_treatment_plan.title'|trans({}, 'risk_treatment_plan') }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
@@ -6,6 +7,8 @@
 {% block body %}
 {% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
+{% import '_components/_fa_progress.html.twig' as _fa_progress %}
+{% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
 
 {% include '_components/_breadcrumb.html.twig' with {
     breadcrumbs: [
@@ -15,13 +18,20 @@
 } %}
 
 {{ _fa_page_header.render({
-    badge: { icon: 'clipboard-check', label: 'nav.treatment_plans'|trans({}, 'nav') },
+    badge: { icon: 'nav-clipboard-check', label: 'nav.treatment_plans'|trans({}, 'nav') },
     title: 'risk_treatment_plan.title'|trans({}, 'risk_treatment_plan'),
     subtitle: 'risk_treatment_plan.description'|trans({}, 'risk_treatment_plan'),
     actions: [
-        { label: 'risk_treatment_plan.new'|trans({}, 'risk_treatment_plan'), variant: 'primary', icon: 'plus-lg', href: path('app_risk_treatment_plan_new') }
+        { label: 'risk_treatment_plan.new'|trans({}, 'risk_treatment_plan'), variant: 'primary', icon: 'plus', href: path('app_risk_treatment_plan_new') }
     ]
 }) }}
+{% set _global_hints = alva_hints('risk_treatment_plan_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 
 <main class="fa-aurora-surface">
 <div class="stats-grid mb-4">
@@ -56,10 +66,11 @@
         </div>
     {% endblock %}
     {% block card_body %}
+        {% import '_components/_fa_cyber_field.html.twig' as _fa_cyber %}
         <form method="get" action="{{ path('app_risk_treatment_plan_index') }}" class="row g-3" role="search" aria-label="{{ 'common.filters'|trans({}, 'messages') }}" id="filter-section" tabindex="-1">
             <div class="col-md-3">
                 <label for="filter-status" class="form-label">{{ 'risk_treatment_plan.field.status'|trans({}, 'risk_treatment_plan') }}</label>
-                <select class="form-select" id="filter-status" name="status" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                <select class="form-select fa-cyber-input__field" id="filter-status" name="status" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                     <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                     <option value="planned" {{ app.request.query.get('status') == 'planned' ? 'selected' : '' }}>{{ 'risk_treatment_plan.status.planned'|trans({}, 'risk_treatment_plan') }}</option>
                     <option value="in_progress" {{ app.request.query.get('status') == 'in_progress' ? 'selected' : '' }}>{{ 'risk_treatment_plan.status.in_progress'|trans({}, 'risk_treatment_plan') }}</option>
@@ -70,7 +81,7 @@
             </div>
             <div class="col-md-3">
                 <label for="filter-priority" class="form-label">{{ 'risk_treatment_plan.field.priority'|trans({}, 'risk_treatment_plan') }}</label>
-                <select class="form-select" id="filter-priority" name="priority" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                <select class="form-select fa-cyber-input__field" id="filter-priority" name="priority" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                     <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                     <option value="critical" {{ app.request.query.get('priority') == 'critical' ? 'selected' : '' }}>{{ 'risk_treatment_plan.priority.critical'|trans({}, 'risk_treatment_plan') }}</option>
                     <option value="high" {{ app.request.query.get('priority') == 'high' ? 'selected' : '' }}>{{ 'risk_treatment_plan.priority.high'|trans({}, 'risk_treatment_plan') }}</option>
@@ -79,14 +90,16 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label for="filter-responsible" class="form-label">{{ 'risk_treatment_plan.field.responsible_person'|trans({}, 'risk_treatment_plan') }}</label>
-                <input type="text" class="form-control" id="filter-responsible" name="responsible_person"
-                       value="{{ app.request.query.get('responsible_person') }}"
-                       placeholder="{{ 'common.search'|trans({}, 'messages') }}...">
+                {{ _fa_cyber.text('responsible_person', {
+                    id: 'filter-responsible',
+                    label: 'risk_treatment_plan.field.responsible_person'|trans({}, 'risk_treatment_plan'),
+                    value: app.request.query.get('responsible_person'),
+                    placeholder: 'common.search'|trans({}, 'messages') ~ '...'
+                }) }}
             </div>
             <div class="col-md-3">
                 <label for="filter-overdue" class="form-label">{{ 'risk_treatment_plan.filter.overdue'|trans({}, 'risk_treatment_plan') }}</label>
-                <select class="form-select" id="filter-overdue" name="overdue_only" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                <select class="form-select fa-cyber-input__field" id="filter-overdue" name="overdue_only" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                     <option value="">{{ 'common.all'|trans({}, 'messages') }}</option>
                     <option value="1" {{ app.request.query.get('overdue_only') == '1' ? 'selected' : '' }}>{{ 'risk_treatment_plan.filter.overdue_only'|trans({}, 'risk_treatment_plan') }}</option>
                 </select>
@@ -127,12 +140,13 @@
             </tr>
         {% endblock %}
         {% block table_body %}
+            {% import '_components/_fa_progress.html.twig' as _fa_progress %}
             {% for plan in plans %}
             <tr class="{{ plan.isOverdue() ? 'table-warning' : '' }}">
                 <td>
                     <strong>{{ plan.title }}</strong>
                     {% if plan.isOverdue() %}
-                        {% include '_components/_badge.html.twig' with { variant: 'danger', class: 'ms-2', icon: 'bi-exclamation-triangle', content: 'risk_treatment_plan.overdue'|trans({}, 'risk_treatment_plan') } %}
+                        {% include '_components/_badge.html.twig' with { variant: 'danger', class: 'ms-2', icon: 'status-warning', content: 'risk_treatment_plan.overdue'|trans({}, 'risk_treatment_plan') } %}
                     {% endif %}
                 </td>
                 <td>
@@ -152,16 +166,7 @@
                     {{ plan.effectiveResponsiblePerson ?? '<span class="text-muted">-</span>'|raw }}
                 </td>
                 <td class="text-center">
-                    <div class="progress progress-h-20">
-                        <div class="progress-bar bg-{{ plan.completionPercentage >= 75 ? 'success' : (plan.completionPercentage >= 50 ? 'info' : (plan.completionPercentage >= 25 ? 'warning' : 'danger')) }}"
-                             role="progressbar"
-                             style="width: {{ plan.completionPercentage }}%"
-                             aria-valuenow="{{ plan.completionPercentage }}"
-                             aria-valuemin="0"
-                             aria-valuemax="100">
-                            {{ plan.completionPercentage }}%
-                        </div>
-                    </div>
+                    {{ _fa_progress.render({ value: plan.completionPercentage, tone: plan.completionPercentage >= 75 ? 'success' : (plan.completionPercentage >= 50 ? 'info' : (plan.completionPercentage >= 25 ? 'warning' : 'danger')), showText: true }) }}
                 </td>
                 <td>
                     {{ plan.targetCompletionDate|date('Y-m-d') }}

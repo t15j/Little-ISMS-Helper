@@ -5,21 +5,56 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use RuntimeException;
+use App\Controller\Trait\ModuleGatedControllerTrait;
+use App\Controller\Trait\BulkActionTrait;
 use App\Entity\DataSubjectRequest;
+use App\Enum\DataSubjectRequestStatus;
 use App\Form\DataSubjectRequestType;
+use App\Repository\CommentRepository;
+use App\Repository\DataSubjectRequestRepository;
+use App\Service\AuditLogger;
 use App\Service\DataSubjectRequestService;
+use App\Service\ModuleConfigurationService;
+use App\Service\TenantContext;
+use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/data-subject-request', name: 'app_data_subject_request_')]
 #[IsGranted('ROLE_USER')]
 class DataSubjectRequestController extends AbstractController
 {
+    use \App\Controller\Trait\LocalizedFlashTrait;
+    use ModuleGatedControllerTrait;
+    use BulkActionTrait;
+
+    protected function getFlashDomain(): string
+    {
+        return 'data_subject_request';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
+    }
+
     public function __construct(
         private readonly DataSubjectRequestService $dataSubjectRequestService,
+        private readonly TranslatorInterface $translator,
+        private readonly ModuleConfigurationService $moduleService,
+        private readonly Security $security,
+        private readonly ?TenantContext $tenantContext = null,
+        private readonly ?CommentRepository $commentRepository = null,
+        private readonly ?DataSubjectRequestRepository $dataSubjectRequestRepository = null,
+        private readonly ?AuditLogger $auditLogger = null,
     ) {
     }
 
@@ -29,6 +64,8 @@ class DataSubjectRequestController extends AbstractController
     #[Route('', name: 'index', methods: ['GET'])]
     public function index(Request $request): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         $filterStatus = $request->query->get('status');
         $filterType = $request->query->get('type');
 
@@ -64,6 +101,8 @@ class DataSubjectRequestController extends AbstractController
     #[Route('/new', name: 'new', methods: ['GET', 'POST'])]
     public function new(Request $request): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         $dsr = new DataSubjectRequest();
 
         $form = $this->createForm(DataSubjectRequestType::class, $dsr);
@@ -72,14 +111,18 @@ class DataSubjectRequestController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             $this->dataSubjectRequestService->create($dsr);
 
-            $this->addFlash('success', 'dsr.flash.created');
+            $this->flashSuccess('data_subject_request.flash.created');
 
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('data_subject_request/new.html.twig', [
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
     /**
@@ -88,8 +131,18 @@ class DataSubjectRequestController extends AbstractController
     #[Route('/{id}', name: 'show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(DataSubjectRequest $dsr): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
+        // V4 LB-4: Comment-Thread adoption — load thread for this DataSubjectRequest.
+        $comments = [];
+        $tenant = $this->tenantContext?->getCurrentTenant();
+        if ($this->commentRepository !== null && $tenant !== null && $dsr->getId() !== null) {
+            $comments = $this->commentRepository->findThread($tenant, 'DataSubjectRequest', $dsr->getId());
+        }
+
         return $this->render('data_subject_request/show.html.twig', [
             'dsr' => $dsr,
+            'comments' => $comments,
         ]);
     }
 
@@ -99,8 +152,10 @@ class DataSubjectRequestController extends AbstractController
     #[Route('/{id}/edit', name: 'edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     public function edit(Request $request, DataSubjectRequest $dsr): Response
     {
-        if (in_array($dsr->getStatus(), ['completed', 'rejected'], true)) {
-            $this->addFlash('error', 'dsr.flash.cannot_edit_terminal');
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
+        if (in_array($dsr->getStatus(), [DataSubjectRequestStatus::Completed->value, DataSubjectRequestStatus::Rejected->value], true)) {
+            $this->flashError('data_subject_request.flash.cannot_edit_terminal');
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
@@ -110,15 +165,19 @@ class DataSubjectRequestController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             $this->dataSubjectRequestService->update($dsr);
 
-            $this->addFlash('success', 'dsr.flash.updated');
+            $this->flashSuccess('data_subject_request.flash.updated');
 
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('data_subject_request/edit.html.twig', [
             'dsr' => $dsr,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
     /**
@@ -127,21 +186,23 @@ class DataSubjectRequestController extends AbstractController
     #[Route('/{id}/complete', name: 'complete', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function complete(Request $request, DataSubjectRequest $dsr): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('complete' . $dsr->getId(), $token)) {
-            $this->addFlash('error', 'Invalid CSRF token.');
+            $this->flashError('data_subject_request.flash.invalid_csrf');
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
         $responseDescription = $request->request->get('response_description', '');
         if ($responseDescription === '') {
-            $this->addFlash('error', 'dsr.flash.response_required');
+            $this->flashError('data_subject_request.flash.response_required');
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
         try {
             $this->dataSubjectRequestService->complete($dsr, $responseDescription);
-            $this->addFlash('success', 'dsr.flash.completed');
+            $this->flashSuccess('data_subject_request.flash.completed');
         } catch (RuntimeException $e) {
             $this->addFlash('error', $e->getMessage());
         }
@@ -155,21 +216,23 @@ class DataSubjectRequestController extends AbstractController
     #[Route('/{id}/reject', name: 'reject', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function reject(Request $request, DataSubjectRequest $dsr): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('reject' . $dsr->getId(), $token)) {
-            $this->addFlash('error', 'Invalid CSRF token.');
+            $this->flashError('data_subject_request.flash.invalid_csrf');
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
         $rejectionReason = $request->request->get('rejection_reason', '');
         if ($rejectionReason === '') {
-            $this->addFlash('error', 'dsr.flash.rejection_reason_required');
+            $this->flashError('data_subject_request.flash.rejection_reason_required');
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
         try {
             $this->dataSubjectRequestService->reject($dsr, $rejectionReason);
-            $this->addFlash('success', 'dsr.flash.rejected');
+            $this->flashSuccess('data_subject_request.flash.rejected');
         } catch (RuntimeException $e) {
             $this->addFlash('error', $e->getMessage());
         }
@@ -183,21 +246,23 @@ class DataSubjectRequestController extends AbstractController
     #[Route('/{id}/extend', name: 'extend', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function extend(Request $request, DataSubjectRequest $dsr): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('extend' . $dsr->getId(), $token)) {
-            $this->addFlash('error', 'Invalid CSRF token.');
+            $this->flashError('data_subject_request.flash.invalid_csrf');
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
         $extensionReason = $request->request->get('extension_reason', '');
         if ($extensionReason === '') {
-            $this->addFlash('error', 'dsr.flash.extension_reason_required');
+            $this->flashError('data_subject_request.flash.extension_reason_required');
             return $this->redirectToRoute('app_data_subject_request_show', ['id' => $dsr->getId()]);
         }
 
         try {
             $this->dataSubjectRequestService->extend($dsr, $extensionReason);
-            $this->addFlash('success', 'dsr.flash.extended');
+            $this->flashSuccess('data_subject_request.flash.extended');
         } catch (RuntimeException $e) {
             $this->addFlash('error', $e->getMessage());
         }
@@ -212,16 +277,136 @@ class DataSubjectRequestController extends AbstractController
     #[IsGranted('ROLE_MANAGER')]
     public function delete(Request $request, DataSubjectRequest $dsr): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         $token = $request->request->get('_token');
         if (!$this->isCsrfTokenValid('delete' . $dsr->getId(), $token)) {
-            $this->addFlash('error', 'Invalid CSRF token.');
+            $this->flashError('data_subject_request.flash.invalid_csrf');
             return $this->redirectToRoute('app_data_subject_request_index');
         }
 
         $this->dataSubjectRequestService->delete($dsr);
 
-        $this->addFlash('success', 'dsr.flash.deleted');
+        $this->flashSuccess('data_subject_request.flash.deleted');
 
         return $this->redirectToRoute('app_data_subject_request_index');
+    }
+
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * DataSubjectRequests are terminal — returns empty dependencies.
+     */
+    #[Route('/bulk-delete-check', name: 'bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = (array) ($data['ids'] ?? []);
+        return new JsonResponse(['dependencies' => [], 'checked_count' => count($ids)]);
+    }
+
+    #[Route('/bulk-delete', name: 'bulk_delete', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDelete(Request $request): JsonResponse
+    {
+        if ($this->checkModuleActive('privacy') instanceof Response) {
+            return $this->json(['error' => 'Privacy module not active'], 403);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $ids = $data['ids'] ?? [];
+
+        if (empty($ids)) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->security->getUser()?->getTenant();
+        $deleted = 0;
+        $errors = [];
+
+        foreach ($ids as $id) {
+            try {
+                $dsr = $this->dataSubjectRequestService->findById((int) $id);
+                if (!$dsr) {
+                    $errors[] = "DataSubjectRequest ID $id not found";
+                    continue;
+                }
+                if ($tenant && $dsr->getTenant() !== $tenant) {
+                    $errors[] = "DataSubjectRequest ID $id does not belong to your organization";
+                    continue;
+                }
+                $this->dataSubjectRequestService->delete($dsr);
+                $deleted++;
+            } catch (Exception $e) {
+                $errors[] = "Error deleting DataSubjectRequest ID $id: " . $e->getMessage();
+            }
+        }
+
+        return $this->json([
+            'success' => $deleted > 0,
+            'deleted' => $deleted,
+            'errors' => $errors,
+            'message' => "$deleted data subject requests deleted successfully",
+        ]);
+    }
+
+    /**
+     * Bulk CSV export of selected data subject requests.
+     * Module-gated: privacy. ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/bulk-export', name: 'bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_DPO')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        if ($redirect = $this->checkModuleActive('privacy')) {
+            return $redirect;
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->tenantContext?->getCurrentTenant();
+
+        $dsrs = [];
+        foreach ($ids as $rawId) {
+            $dsr = $this->dataSubjectRequestRepository?->find((int) $rawId);
+            if ($dsr === null) {
+                continue;
+            }
+            if ($tenant !== null && $dsr->getTenant() !== $tenant) {
+                continue;
+            }
+            $dsrs[] = $dsr;
+        }
+
+        if ($dsrs === []) {
+            return $this->json(['error' => 'No exportable data subject requests'], 404);
+        }
+
+        $headers = ['ID', 'Request Type', 'Status', 'Data Subject Name', 'Received At', 'Deadline At'];
+
+        return $this->streamCsvExport(
+            $dsrs,
+            $headers,
+            static function (DataSubjectRequest $d): array {
+                return [
+                    (string) $d->getId(),
+                    (string) $d->getRequestType(),
+                    (string) $d->getStatus(),
+                    (string) $d->getDataSubjectName(),
+                    $d->getReceivedAt()?->format('Y-m-d') ?? '',
+                    $d->getDeadlineAt()?->format('Y-m-d') ?? '',
+                ];
+            },
+            'data-subject-requests-export',
+            'DataSubjectRequest',
+            $this->auditLogger,
+        );
     }
 }

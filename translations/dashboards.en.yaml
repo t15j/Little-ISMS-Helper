@@ -78,6 +78,8 @@ risk_manager:
         forecast: 'Risk Forecast'
         untreated_risks: 'Untreated Risks'
         overdue_treatments: 'Overdue Treatments'
+        pending_approvals: 'Pending Approvals'
+        lifecycle_stuck: 'Overdue Lifecycles'
     pipeline:
         total: 'Total'
         treated: 'Treated'
@@ -96,6 +98,8 @@ risk_manager:
     all_treated: 'All risks are treated'
     no_overdue: 'No overdue treatments'
     target_date: 'Target Date'
+    no_pending_approvals: 'No pending approvals'
+    no_lifecycle_stuck: 'No overdue lifecycles'
 
 # Auditor Dashboard
 auditor:
@@ -135,6 +139,99 @@ auditor:
         total: 'Total'
         open: 'Open'
         overdue: 'Overdue'
+
+# Compliance Manager Dashboard
+compliance_manager:
+    title: 'Compliance Manager Dashboard'
+    subtitle: 'Frameworks, findings, audits, approval queue — Head of GRC view'
+    badge: 'GRC'
+    action:
+        ciso_view: 'CISO View'
+        compliance_wizards: 'Compliance Wizards'
+    kpi:
+        frameworks_active: 'Active Frameworks'
+        avg_compliance: 'Avg. Compliance'
+        at_risk: 'Frameworks At Risk'
+        open_findings: 'Open Findings'
+        upcoming_audits: 'Audits 90d'
+        approval_queue: 'Doc Approval Queue'
+        dora_roi_status: 'DORA RoI status'
+        dora_roi_status_open: 'Pending'
+        dora_roi_open: 'Open RoI'
+    section:
+        coverage_heatmap: 'Coverage heatmap by framework'
+        lowest_coverage: 'Top 3 frameworks with lowest coverage'
+        findings_by_severity: 'Open findings by severity'
+        audit_schedule: 'Audit schedule (next 90 days)'
+        approval_queue: 'Document approval queue'
+        quick_actions: 'Quick actions'
+        dora_status: 'DORA obligation status'
+        pending_approvals: 'Pending Approvals'
+        lifecycle_stuck: 'Overdue Lifecycles'
+    table:
+        framework: 'Framework'
+        coverage: 'Coverage'
+        bar: 'Bar'
+        status: 'Status'
+        actions: 'Actions'
+    status:
+        ok: 'OK'
+        at_risk: 'At Risk'
+        gap: 'Gap'
+    severity:
+        critical: 'Critical'
+        high: 'High'
+        medium: 'Medium'
+        low: 'Low'
+    empty:
+        no_frameworks_title: 'No frameworks active yet'
+        no_frameworks_text: 'Activate a framework via the compliance wizard overview.'
+        no_frameworks_action: 'Choose wizard'
+        no_audits_title: 'No audits scheduled'
+        no_audits_text: 'No audits scheduled in the next 90 days.'
+        no_pending_docs_title: 'Approval queue empty'
+        no_pending_docs_text: 'No documents waiting for your approval.'
+    lowest:
+        coverage_hint: '%coverage%% coverage — prioritized for next sprint'
+        edit: 'Edit'
+    audit:
+        prefix: 'Audit #'
+    quick:
+        new_wizard: 'Start new wizard'
+        cross_mapping: 'Cross-framework mapping'
+        compare_wizards: 'Compare wizards'
+    common:
+        wizard: 'Wizard'
+    heatmap:
+        drill:
+            title: 'Heatmap Drill-Down: %framework% / %section%'
+            page_title: 'Drill-Down %framework% — %section%'
+            subtitle: 'Covered controls, gaps and open findings for this section'
+            breadcrumb: 'Heatmap Drill-Down'
+            action: 'Details'
+            back: 'Back to overview'
+            filter_section: 'Section'
+            all_sections: 'All Sections'
+            covered: 'Covered'
+            gaps: 'Gaps'
+            findings: 'Open Findings'
+            coverage_rate: 'Coverage Rate'
+            fix: 'Fix'
+            framework_not_found: 'Framework "%code%" not found or not active.'
+            col:
+                req_id: 'Requirement ID'
+                title: 'Title'
+                category: 'Category'
+                controls: 'Controls'
+                priority: 'Priority'
+                action: 'Action'
+            empty:
+                no_covered_title: 'No covered requirements'
+                no_covered_text: 'No controls for this section have been implemented yet.'
+                no_gaps_title: 'No gaps — fully covered!'
+                no_gaps_text: 'All requirements in this section are covered by controls.'
+                no_findings_title: 'No open findings'
+                no_findings_text: 'There are currently no open audit findings.'
 
 # Board Dashboard
 board:
@@ -177,3 +274,104 @@ board:
         metric: 'Metric'
         change: 'Change'
         target: 'Target'
+
+# DPO (Data Protection Officer) Dashboard — Art. 39 GDPR
+dpo:
+    badge: 'Data Protection'
+    title: 'DPO Dashboard'
+    subtitle: 'Operational GDPR overview: data breaches, DPIAs, and processing register'
+    action:
+        vvt_export: 'Export VVT'
+        dpia_list: 'DPIA List'
+        create_dpia: 'Create DPIA'
+    kpi:
+        open_breaches: 'Open Data Breaches'
+        ticking_72h: '72 h Clock Ticking'
+        dpias_in_progress: 'DPIAs in Progress'
+        activities_needing_dpia: 'Activities Without DPIA'
+        activities_due_review: 'Activities Due Review'
+        third_country_transfers: 'Third-Country Transfers'
+        dora_obligation: 'DORA obligation'
+        dora_obligated: 'Obligated'
+        dora_roi_link: 'Open RoI'
+    section:
+        open_breaches: 'Open Data Breaches (Art. 33 GDPR)'
+        dpias_in_progress: 'Data Protection Impact Assessments in Progress (Art. 35 GDPR)'
+        activities_needing_dpia: 'Processing Activities Without DPIA'
+        quick_actions: 'Quick Actions'
+        dora_status: 'DORA obligation status'
+        pending_approvals: 'Pending Approvals'
+        lifecycle_stuck: 'Overdue Lifecycles'
+    empty:
+        no_breaches_title: 'No Open Data Breaches'
+        no_breaches_text: 'There are currently no open data breaches to handle.'
+        no_dpias_title: 'No DPIAs in Progress'
+        no_dpias_text: 'All data protection impact assessments are completed or not yet started.'
+    activity:
+        no_dpia_hint: 'High-risk processing activity — DPIA required (Art. 35 GDPR)'
+    quick:
+        new_dpia: 'New DPIA'
+        report_breach: 'Report Breach'
+        new_activity: 'New Processing Activity'
+        vvt_export: 'Export VVT (XLSX)'
+
+# ── ISB Dashboard (Wave 5) ──────────────────────────────────
+isb:
+    badge: 'ISB · ISO 27001'
+    title: 'ISB Dashboard'
+    subtitle: 'Information Security Officer — ISMS Operations and Control'
+    action:
+        controls: 'Controls'
+        incidents: 'Incidents'
+        audits: 'Audits'
+    section:
+        pending_approvals: 'Pending Approvals'
+        lifecycle_stuck: 'Overdue Lifecycles'
+        quick_actions: 'Quick Access'
+    empty:
+        no_approvals_title: 'No open approvals'
+        no_approvals_text: 'All approval requests have been processed.'
+
+# ── BCM-Officer Dashboard (Wave 5) ─────────────────────────
+bcm_officer:
+    badge: 'BCM · ISO 22301'
+    title: 'BCM Officer Dashboard'
+    subtitle: 'Business Continuity Manager — Operations and Planning'
+    action:
+        bc_plans: 'BC Plans'
+        exercises: 'Exercises'
+        crisis_team: 'Crisis Team'
+    section:
+        pending_approvals: 'Pending Approvals'
+        lifecycle_stuck: 'Overdue Lifecycles'
+        quick_actions: 'Quick Access'
+    empty:
+        no_approvals_title: 'No open approvals'
+        no_approvals_text: 'All approval requests have been processed.'
+
+# ── TISAX Per-Tier Statistics (shared across persona dashboards) ──────────────
+tisax:
+    section:
+        title: 'TISAX Maturity Overview'
+        subtitle: 'VDA-ISA 6 — Three-Tier Assessment'
+    tier:
+        information_security:  'Information Security (Ch. 1-6)'
+        prototype_protection:  'Prototype Protection (Ch. 7-8)'
+        data_protection:       'Data Protection (Ch. 9 / GDPR)'
+    label:
+        avg_maturity: 'Avg. Maturity'
+        target:       'Target AL3'
+        gap:          'Gap'
+        assessed:     'Assessed'
+        total:        'Total'
+        compliant:    'Compliant'
+        not_compliant: 'Non-Compliant'
+        not_applicable: 'Not Applicable'
+        pct_compliant: 'Compliance Rate'
+    grade:
+        critical: 'Critical'
+        amber:    'Needs Improvement'
+        green:    'Target Met'
+    empty:
+        no_tisax_title: 'No TISAX Requirements'
+        no_tisax_text:  'No VDA-ISA requirements have been uploaded yet.'

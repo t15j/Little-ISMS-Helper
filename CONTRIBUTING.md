@@ -33,6 +33,8 @@ We are committed to providing a welcoming and inspiring community for everyone. 
 
 ## Getting Started
 
+> **First time contributing?** Start with **[ONBOARDING.md](ONBOARDING.md)** and the step-by-step guides under `docs/onboarding/` (environment setup → architecture tour → hot files → test runbook → anti-patterns). Takes about 30 minutes and will save hours later.
+
 ### Prerequisites
 
 - PHP 8.4+ required (8.5 supported and tested in CI)
@@ -181,6 +183,146 @@ class RiskIntelligenceService
     </div>
 </div>
 ```
+
+### Form Standards (Aurora v4)
+
+The application uses a **single global form-theme** — `templates/form/fa_cyber_input.html.twig` — set in `config/packages/twig.yaml`. All Symfony forms render through this theme automatically.
+
+**MUST do:**
+- All `FormType` classes extend `AbstractType` and set `data_class` + `translation_domain` in `configureOptions()`.
+- Render forms via `{{ form_start(form) }}` + `{{ form_widget(form) }}` (or `{{ form_row(form.field) }}` for custom layouts) + `{{ form_end(form) }}`. `form_end` auto-renders CSRF.
+- For new field types (e.g. `file`, `range`, `date`, `time`, `datetime`), the theme adds `.fa-cyber-input__field--<type>` modifiers — no custom markup needed.
+
+**MUST NOT do:**
+- Override `getBlockPrefix()` in a `FormType` — this breaks global theming.
+- Use `{% form_theme form '...' %}` to switch to `bootstrap_5_layout.html.twig`. If you need to override one specific field, write a custom theme that `{% use "form/fa_cyber_input.html.twig" %}` and only overrides the specific block (see `templates/supplier/_supplier_form_theme.html.twig` for an example).
+- Hand-roll `<input class="form-control">` instead of `form_widget()` inside Symfony forms. Filter forms (GET, stateless) may use raw inputs — they're styled via the Aurora CSS bridge in `fairy-aurora-components.css`.
+
+**Validation + accessibility:**
+- The theme renders errors as `.fa-cyber-input__errors[role="alert"]` automatically.
+- All inputs receive an associated `<label for="...">` via `form_label`.
+- Required fields show `<span class="fa-cyber-input__req" aria-label="form.required">*</span>`.
+
+**CSS bridge:** Raw Bootstrap classes (`.form-control`, `.form-select`) inside `<form method="get">` filter bars are styled with Aurora tokens via `fairy-aurora-components.css` (~line 3751). This is intentional — filter forms don't go through Symfony's form system.
+
+### Module-Gating Pattern
+
+Forms and UI sections that depend on optional compliance modules must use the
+module-gating infrastructure introduced in T31 (May 2026).
+
+> Full developer reference: [docs/MODULE_GATING_GUIDE.md](docs/MODULE_GATING_GUIDE.md)
+
+#### FormType: use `ModuleAwareFormTrait`
+
+```php
+use App\Form\Trait\ModuleAwareFormTrait;
+use App\Service\ModuleConfigurationService;
+
+class MyFormType extends AbstractType
+{
+    use ModuleAwareFormTrait;
+
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleConfiguration,
+    ) {}
+
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        // Core fields — always shown
+        $builder->add('title', TextType::class, ['label' => 'my.field.title']);
+
+        // Module-gated section with norm reference
+        // GDPR Art. 7(3) — consent withdrawal mandatory when privacy module active
+        if ($this->isModuleActive('privacy')) {
+            $builder->add('withdrawnAt', DateTimeType::class, [
+                'label' => 'my.field.withdrawn_at',
+                'required' => false,
+            ]);
+        }
+    }
+}
+```
+
+Rules:
+- Use `private readonly ModuleConfigurationService $moduleConfiguration` (exact property name — the trait uses it).
+- Gate entire logical field groups, not individual fields.
+- Add a doc comment with the norm reference next to every `if` block.
+- Do NOT duplicate the `isModuleActive()` method — use the trait.
+
+#### Controller: use `ModuleGatedControllerTrait`
+
+For whole-module gating (entire controller blocked when module is inactive):
+
+```php
+use App\Controller\Trait\ModuleGatedControllerTrait;
+use App\Service\ModuleConfigurationService;
+use Symfony\Contracts\Translation\TranslatorInterface;
+
+class MyController extends AbstractController
+{
+    use ModuleGatedControllerTrait;
+
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleService,
+        private readonly TranslatorInterface $translator,
+    ) {}
+
+    public function index(): Response
+    {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+        // ... controller logic
+    }
+}
+```
+
+#### Twig: `is_module_active()` global function
+
+```twig
+{% if is_module_active('privacy') %}
+    <div class="card">
+        {# GDPR-specific content #}
+    </div>
+{% endif %}
+```
+
+#### Stimulus: `data-depends-on` for conditional sub-fields
+
+Within a module-gated section, use `data-depends-on` for field-level conditional
+visibility (no round-trip needed):
+
+```php
+$builder->add('specialCategoryData', CheckboxType::class, [
+    'attr' => [
+        'data-depends-on' => 'my_form_involvesPersonalData',
+        'data-depends-on-value' => '1',
+    ],
+]);
+```
+
+#### Translation Key Convention
+
+Module-gated fields use the same translation domain as the surrounding FormType.
+No separate domain for gated fields. The "module inactive" flash message uses
+the `messages` domain key `common.module_not_active`.
+
+#### 21 Module Keys Reference
+
+| Key | Trigger |
+|---|---|
+| `privacy` | GDPR / ISO 27701 |
+| `nis2_dora` | NIS2 + DORA |
+| `ai_governance` | EU AI Act + ISO 42001 |
+| `cloud_security` | ISO 27017/18, BSI C5 |
+| `vulnerability_intel` | Vulnerability + Threat Intelligence |
+| `marisk` | MaRisk (DACH banks/insurers) |
+| `tisax` | TISAX / VDA ISA |
+| `quantitative_risk` | FAIR methodology |
+| `bcm` | ISO 22301 BCM |
+| `compliance` | Multi-framework compliance |
+| `bsi_grundschutz` | BSI IT-Grundschutz |
+| `core`, `assets`, `risks`, `controls`, `incidents`, `audits`, `training`, `reviews`, `authentication`, `audit_logging` | Always active |
+
+---
 
 ### JavaScript/Stimulus
 

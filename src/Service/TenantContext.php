@@ -7,7 +7,9 @@ namespace App\Service;
 use App\Entity\Tenant;
 use App\Entity\User;
 use App\Repository\TenantRepository;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /**
  * Tenant Context Service
@@ -22,7 +24,8 @@ class TenantContext
 
     public function __construct(
         private readonly Security $security,
-        private readonly TenantRepository $tenantRepository
+        private readonly TenantRepository $tenantRepository,
+        private readonly EntityManagerInterface $entityManager,
     ) {
     }
 
@@ -35,6 +38,25 @@ class TenantContext
             $this->initialize();
         }
 
+        // Re-initialize if we cached "no tenant" but a user is now logged in.
+        // Tests with `disableReboot()` boot the container BEFORE login_user; the
+        // first call to initialize() runs with security->getUser()===null and
+        // memoizes currentTenant=null. Without this re-check the controller
+        // would 403 every multi-tenant route in that flow.
+        if ($this->currentTenant === null && $this->security->getUser() !== null) {
+            $this->initialize();
+        }
+
+        // Re-fetch if cached tenant became detached from EM (e.g. after EM clear
+        // between requests in long-running processes / tests with disableReboot).
+        if ($this->currentTenant !== null
+            && $this->currentTenant->getId() !== null
+            && !$this->entityManager->contains($this->currentTenant)
+        ) {
+            $this->currentTenant = $this->tenantRepository->find($this->currentTenant->getId())
+                ?? $this->currentTenant;
+        }
+
         return $this->currentTenant;
     }
 
@@ -44,6 +66,16 @@ class TenantContext
     public function setCurrentTenant(?Tenant $tenant): void
     {
         $this->currentTenant = $tenant;
+        $this->initialized = true;
+    }
+
+    /**
+     * Set the current tenant by id, resolving the entity. Used by background
+     * jobs (e.g. scheduled reports) that only carry a tenant id, not the object.
+     */
+    public function setCurrentTenantById(?int $id): void
+    {
+        $this->currentTenant = $id !== null ? $this->tenantRepository->find($id) : null;
         $this->initialized = true;
     }
 
@@ -97,8 +129,15 @@ class TenantContext
             return;
         }
 
-        // Use user's tenant if available
-        $this->currentTenant = $user->getTenant();
+        // Use user's tenant if available — re-fetch via repository so we always
+        // hold a managed entity (User session-deserialization yields a detached
+        // tenant association, which would cascade-persist-fail on flush).
+        $userTenant = $user->getTenant();
+        if ($userTenant !== null && $userTenant->getId() !== null) {
+            $this->currentTenant = $this->tenantRepository->find($userTenant->getId()) ?? $userTenant;
+        } else {
+            $this->currentTenant = $userTenant;
+        }
 
         // Fallback if user has no tenant assigned
         if ($this->currentTenant === null) {
@@ -208,5 +247,134 @@ class TenantContext
             return true;
         }
         return $candidate->isChildOf($current);
+    }
+
+    /**
+     * Resolve the tenant scope for an admin operation.
+     *
+     * Consolidates the inline "SUPER vs ADMIN-with-tenant-check" branches
+     * that are duplicated across ~20 admin controllers
+     * (see `AdminBackupController::resolveTenantScopeForBackup()` for the
+     * reference shape).
+     *
+     * Behaviour:
+     *  - `null`, `''`, `'global'`  → ROLE_SUPER_ADMIN gets `null` (global
+     *                                scope); ROLE_ADMIN falls back to their
+     *                                own current tenant. Any other caller
+     *                                triggers AccessDeniedException.
+     *  - Tenant instance           → SUPER_ADMIN: returned as-is.
+     *                                ROLE_ADMIN: returned when
+     *                                `canAccessTenant()` is true, else
+     *                                AccessDeniedException.
+     *  - int / numeric-string id   → resolved via TenantRepository; same
+     *                                rules as Tenant-instance once resolved.
+     *                                Unknown id throws AccessDeniedException
+     *                                (treat as cross-tenant attempt).
+     *
+     * @param Tenant|int|string|null $requested
+     *
+     * @throws AccessDeniedException on cross-tenant or unauthenticated access
+     */
+    public function resolveAdminScope(mixed $requested): ?Tenant
+    {
+        $user = $this->security->getUser();
+        if (!$user instanceof User) {
+            throw new AccessDeniedException('Authenticated user required to resolve admin scope.');
+        }
+
+        // Global / no-scope request — explicit `'global'` opts into the
+        // null branch; bare null / '' uses the SUPER_ADMIN's current
+        // tenant so tenant-scoped admin pages (KPI thresholds, lifecycle
+        // overrides, sample data, …) work out of the box. Single-tenant
+        // installs additionally fall back to the only active tenant when
+        // no current is bound — historically the most common shape.
+        $explicitGlobal = ($requested === 'global');
+        if ($requested === null || $requested === '' || $explicitGlobal) {
+            if ($this->security->isGranted('ROLE_SUPER_ADMIN')) {
+                if ($explicitGlobal) {
+                    return null;
+                }
+                $current = $this->getCurrentTenant();
+                if ($current instanceof Tenant) {
+                    return $current;
+                }
+                $tenants = $this->tenantRepository->findBy(['isActive' => true]);
+                if (count($tenants) === 1) {
+                    return $tenants[0];
+                }
+                return null;
+            }
+            if ($this->security->isGranted('ROLE_ADMIN')) {
+                $current = $this->getCurrentTenant();
+                if (!$current instanceof Tenant) {
+                    throw new AccessDeniedException(
+                        'No active tenant context for admin scope fallback.'
+                    );
+                }
+                return $current;
+            }
+            throw new AccessDeniedException('Role is not permitted to request global scope.');
+        }
+
+        // Specific tenant requested — resolve to a Tenant instance
+        $tenant = $this->coerceToTenant($requested);
+        if (!$tenant instanceof Tenant) {
+            throw new AccessDeniedException('Requested tenant could not be resolved.');
+        }
+
+        if ($this->security->isGranted('ROLE_SUPER_ADMIN')) {
+            return $tenant;
+        }
+        if ($this->security->isGranted('ROLE_ADMIN') && $this->canAccessTenant($tenant)) {
+            return $tenant;
+        }
+
+        throw new AccessDeniedException('Cross-tenant admin operation is not permitted.');
+    }
+
+    /**
+     * True when the current user may administer $target.
+     *
+     * - ROLE_SUPER_ADMIN: always true.
+     * - ROLE_ADMIN: true only when $target is within
+     *   {@see getAccessibleTenants()} (own tenant + descendants).
+     * - All other roles: false.
+     *
+     * `$target = null` means "no specific tenant" — true for SUPER_ADMIN
+     * and for ROLE_ADMIN when an active tenant context exists.
+     */
+    public function canAdminister(?Tenant $target): bool
+    {
+        if (!$this->security->getUser() instanceof User) {
+            return false;
+        }
+        if ($this->security->isGranted('ROLE_SUPER_ADMIN')) {
+            return true;
+        }
+        if (!$this->security->isGranted('ROLE_ADMIN')) {
+            return false;
+        }
+        if ($target === null) {
+            return $this->hasTenant();
+        }
+        return $this->canAccessTenant($target);
+    }
+
+    /**
+     * Coerce a Tenant|int|string into a managed Tenant instance.
+     */
+    private function coerceToTenant(mixed $value): ?Tenant
+    {
+        if ($value instanceof Tenant) {
+            return $value;
+        }
+        if (is_int($value) && $value > 0) {
+            return $this->tenantRepository->find($value);
+        }
+        if (is_string($value) && ctype_digit($value)) {
+            $id = (int) $value;
+            return $id > 0 ? $this->tenantRepository->find($id) : null;
+        }
+        return null;
     }
 }

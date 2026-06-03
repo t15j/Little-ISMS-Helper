@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Service;
 
 use DateTime;
+use App\Enum\CryptographicOperationStatus;
 use App\Enum\IncidentSeverity;
 use App\Enum\IncidentStatus;
 use App\Repository\AuditLogRepository;
@@ -19,7 +20,7 @@ use App\Repository\ThreatIntelligenceRepository;
  * Exports security events in SIEM-compatible formats (CEF, JSON, Syslog)
  * Supports integration with enterprise SIEM solutions for ISO 27001 compliance
  */
-class SiemExportService
+final class SiemExportService
 {
     public function __construct(
         private readonly AuditLogRepository $auditLogRepository,
@@ -219,7 +220,7 @@ class SiemExportService
      */
     private function buildCefFromCrypto($crypto): array
     {
-        $severity = $crypto->getStatus() === 'success' ? 1 : 5;
+        $severity = $crypto->getStatus() === CryptographicOperationStatus::Success->value ? 1 : 5;
 
         $extensions = sprintf(
             'act=%s cs1=%s cs1Label=Algorithm cn1=%d cn1Label=KeyLength suser=%s outcome=%s rt=%s',

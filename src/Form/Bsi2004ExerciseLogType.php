@@ -1,0 +1,152 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Form;
+
+use App\Entity\Bsi2004ExerciseLog;
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\CollectionType;
+use Symfony\Component\Form\Extension\Core\Type\TextareaType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\OptionsResolver\OptionsResolver;
+
+/**
+ * BSI-200-4 Übungs-Logbuch Form.
+ *
+ * SectionMap not applicable — template uses custom dynamic-collection layout
+ * (improvementActionsCollection needs CollectionType prototype JS + manual row
+ * rendering; _auto_form does not support CollectionType prototypes).
+ */
+final class Bsi2004ExerciseLogType extends AbstractType
+{
+    public function buildForm(FormBuilderInterface $builder, array $options): void
+    {
+        $translationDomain = 'bsi_200_4_exercise';
+
+        // --- Section 1: Basis ---
+        $builder->add('exerciseType', ChoiceType::class, [
+            'label'           => 'bsi_200_4_exercise.field.exercise_type',
+            'translation_domain' => $translationDomain,
+            'choices'         => array_combine(
+                array_map(
+                    static fn (string $t): string => 'exercise_type.' . $t,
+                    Bsi2004ExerciseLog::EXERCISE_TYPES
+                ),
+                Bsi2004ExerciseLog::EXERCISE_TYPES
+            ),
+            'choice_translation_domain' => $translationDomain,
+        ]);
+
+        $builder->add('bsi2004Template', ChoiceType::class, [
+            'label'           => 'bsi_200_4_exercise.field.template',
+            'translation_domain' => $translationDomain,
+            'choices'         => array_combine(
+                array_map(
+                    static fn (string $t): string => 'template.' . $t,
+                    Bsi2004ExerciseLog::TEMPLATES
+                ),
+                Bsi2004ExerciseLog::TEMPLATES
+            ),
+            'choice_translation_domain' => $translationDomain,
+        ]);
+
+        // --- Section 2: Szenario ---
+        $builder->add('scenarioSummary', TextareaType::class, [
+            'label'              => 'bsi_200_4_exercise.field.scenario_summary',
+            'translation_domain' => $translationDomain,
+            'attr'               => ['rows' => 5],
+        ]);
+
+        // Objectives: stored as JSON array but edited as newline-separated textarea
+        $builder->add('objectivesText', TextareaType::class, [
+            'label'              => 'bsi_200_4_exercise.field.objectives',
+            'translation_domain' => $translationDomain,
+            'mapped'             => false,
+            'required'           => false,
+            'attr'               => ['rows' => 4, 'placeholder' => 'bsi_200_4_exercise.field.objectives_placeholder'],
+            'help'               => 'bsi_200_4_exercise.field.objectives_help',
+            'help_translation_parameters' => [],
+        ]);
+
+        // Participants: stored as JSON array but edited as comma-separated textarea
+        $builder->add('participantsText', TextareaType::class, [
+            'label'              => 'bsi_200_4_exercise.field.participants',
+            'translation_domain' => $translationDomain,
+            'mapped'             => false,
+            'required'           => false,
+            'attr'               => ['rows' => 3, 'placeholder' => 'bsi_200_4_exercise.field.participants_placeholder'],
+        ]);
+
+        // --- Section 3: Maßnahmen ---
+        $builder->add('actionsBefore', TextareaType::class, [
+            'label'              => 'bsi_200_4_exercise.section.actions_before',
+            'translation_domain' => $translationDomain,
+            'required'           => false,
+            'attr'               => ['rows' => 4],
+        ]);
+
+        $builder->add('actionsDuring', TextareaType::class, [
+            'label'              => 'bsi_200_4_exercise.section.actions_during',
+            'translation_domain' => $translationDomain,
+            'required'           => false,
+            'attr'               => ['rows' => 4],
+        ]);
+
+        $builder->add('actionsAfter', TextareaType::class, [
+            'label'              => 'bsi_200_4_exercise.section.actions_after',
+            'translation_domain' => $translationDomain,
+            'required'           => false,
+            'attr'               => ['rows' => 4],
+        ]);
+
+        // --- Section 4: Lessons Learned ---
+        $builder->add('lessonsLearned', TextareaType::class, [
+            'label'              => 'bsi_200_4_exercise.field.lessons_learned',
+            'translation_domain' => $translationDomain,
+            'required'           => false,
+            'attr'               => ['rows' => 5],
+        ]);
+
+        // ImprovementActions as a collection of sub-forms
+        $builder->add('improvementActionsCollection', CollectionType::class, [
+            'label'              => 'bsi_200_4_exercise.section.improvement_actions',
+            'translation_domain' => $translationDomain,
+            'entry_type'         => ImprovementActionType::class,
+            'entry_options'      => ['label' => false],
+            'allow_add'          => true,
+            'allow_delete'       => true,
+            'prototype'          => true,
+            'mapped'             => false,
+            'required'           => false,
+            'by_reference'       => false,
+            'attr'               => ['class' => 'improvement-actions-collection'],
+        ]);
+
+        // --- Section 5: Bewertung ---
+        $builder->add('overallRating', ChoiceType::class, [
+            'label'           => 'bsi_200_4_exercise.field.overall_rating',
+            'translation_domain' => $translationDomain,
+            'required'        => false,
+            'placeholder'     => 'bsi_200_4_exercise.field.rating_placeholder',
+            'choices'         => array_combine(
+                array_map(
+                    static fn (string $r): string => 'rating.' . $r,
+                    Bsi2004ExerciseLog::RATINGS
+                ),
+                Bsi2004ExerciseLog::RATINGS
+            ),
+            'choice_translation_domain' => $translationDomain,
+        ]);
+    }
+
+    public function configureOptions(OptionsResolver $resolver): void
+    {
+        $resolver->setDefaults([
+            'data_class'         => Bsi2004ExerciseLog::class,
+            'translation_domain' => 'bsi_200_4_exercise',
+        ]);
+    }
+}

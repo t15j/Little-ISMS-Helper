@@ -1,11 +1,20 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'bc_exercises' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
+{% import '_components/_fa_norm_bridge.html.twig' as _fa_norm_bridge %}
 
 {% block title %}{{ bc_exercise.name }}{% endblock %}
 
 {% block body %}
 <div class="container">
+    {# Lifecycle Y.5 — status transition dropdown (bc_exercise_lifecycle) #}
+    {% include '_components/_lifecycle_toolbar.html.twig' with {
+        entity: bc_exercise,
+        entity_type: 'bc-exercise',
+        workflow_name: 'bc_exercise_lifecycle'
+    } only %}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
             { label: 'nav.bcm'|trans({}, 'nav'), url: path('app_bcm_index') },
@@ -14,11 +23,37 @@
         ]
     } %}
 
-    <div class="page-header">
-        <h1>{{ bc_exercise.name }}</h1>
-        <div class="actions">
-            <a href="{{ path('app_bc_exercise_edit', {id: bc_exercise.id}) }}" class="fa-cyber-btn fa-cyber-btn--primary"><i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'common.edit'|trans({}, 'messages') }}</a>
-            <a href="{{ path('app_bc_exercise_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">{{ 'common.back'|trans({}, 'messages') }}</a>
+    {# Junior-ISB-Audit-2026-05-22 K-07: ISO 22301 Cl. 8.5.3 + 9.1.1 Lessons-Learned loop #}
+    {% set hint = alva_hint(bc_exercise) %}
+    {% if hint %}{{ _fa_alva_hint.render(hint) }}{% endif %}
+
+    {{ _fa_page_header.render({
+        badge: { icon: 'play', label: ('bc_exercises.exercise_type.' ~ bc_exercise.exerciseType)|trans({}, 'bc_exercises') },
+        title: bc_exercise.name,
+        subtitle: ('bc_exercises.status.' ~ bc_exercise.status)|trans({}, 'bc_exercises'),
+        actions: [
+            { label: 'common.edit'|trans({}, 'messages'), variant: 'primary', icon: 'ui-edit', href: path('app_bc_exercise_edit', {id: bc_exercise.id}) },
+            { label: 'common.back'|trans({}, 'messages'), variant: 'ghost', href: path('app_bc_exercise_index') }
+        ]
+    }) }}
+
+    {# 9001-bridge: BC-Exercise = process verification (9001 9.1 evaluation) + 22301 8.5 mandatory test. P-12 show-page mirror of #614. #}
+    {{ _fa_norm_bridge.render({
+        from_norm: 'ISO 22301 8.5',
+        to_norm:   'ISO 9001 6.1 / 9.1',
+        bridge_text: ('iso_9001_bridge.exercise'|trans({}, 'bc_exercises')),
+        prominence: 'subtle'
+    }) }}
+
+    {# Inline POST-delete + clone kept below header (cannot be expressed via _fa_page_header GET-only actions) #}
+    {% if is_granted('ROLE_USER') %}
+        <div class="d-flex justify-content-end gap-2 mb-3">
+            <form method="post" action="{{ path('app_bc_exercise_clone', {id: bc_exercise.id}) }}" class="d-inline" data-turbo="false">
+                <input type="hidden" name="_token" value="{{ csrf_token('clone_bc_exercise_' ~ bc_exercise.id) }}">
+                <button type="submit" class="fa-cyber-btn fa-cyber-btn--success" title="{{ 'common.clone.help'|trans({}, 'messages') }}">
+                    <i class="fa-icon fa-icon--ui-copy" aria-hidden="true"></i> {{ 'common.clone.label'|trans({}, 'messages') }}
+                </button>
+            </form>
             {% if is_granted('ROLE_ADMIN') %}
                 <form method="post" action="{{ path('app_bc_exercise_delete', {id: bc_exercise.id}) }}" class="d-inline"
                       data-controller="ui-actions"
@@ -29,7 +64,7 @@
                 </form>
             {% endif %}
         </div>
-    </div>
+    {% endif %}
 
     {% embed '_components/_card.html.twig' %}
         {% block card_header %}
@@ -60,7 +95,7 @@
                 </div>
                 <div class="detail-item">
                     <span class="label">{{ 'bc_exercises.field.facilitator'|trans({}, 'bc_exercises') }}:</span>
-                    <span class="value">{{ bc_exercise.facilitator }}</span>
+                    <span class="value">{{ bc_exercise.effectiveExerciseLeaderName ?? bc_exercise.facilitator }}</span>
                 </div>
                 {% if bc_exercise.successRating %}
                 <div class="detail-item">
@@ -92,9 +127,33 @@
 
             <div class="detail-section">
                 <h3>{{ 'bc_exercises.section.participants'|trans({}, 'bc_exercises') }}</h3>
-                <p>{{ bc_exercise.participants|nl2br }}</p>
+
+                {# P-15 DataReuse: typed Person M2M collections (canonical). Render
+                   as linked badges so users navigate to the master-data record. #}
+                {% if bc_exercise.participantPersons|length > 0 %}
+                    <p><strong>{{ 'bc_exercises.field.participant_persons'|trans({}, 'bc_exercises') }}:</strong>
+                        {% for person in bc_exercise.participantPersons %}
+                            <a href="{{ path('app_person_show', { _locale: app.request.locale, id: person.id }) }}"
+                               class="badge bg-secondary text-decoration-none me-1">{{ person.fullName }}</a>
+                        {% endfor %}
+                    </p>
+                {% endif %}
+                {% if bc_exercise.observerPersons|length > 0 %}
+                    <p><strong>{{ 'bc_exercises.field.observer_persons'|trans({}, 'bc_exercises') }}:</strong>
+                        {% for person in bc_exercise.observerPersons %}
+                            <a href="{{ path('app_person_show', { _locale: app.request.locale, id: person.id }) }}"
+                               class="badge bg-secondary text-decoration-none me-1">{{ person.fullName }}</a>
+                        {% endfor %}
+                    </p>
+                {% endif %}
+
+                {# Legacy free-text fallbacks — @deprecated since 2026-05-25,
+                   rendered for migration display only. #}
+                {% if bc_exercise.participants %}
+                <p><strong>{{ 'bc_exercises.field.participants_legacy'|trans({}, 'bc_exercises') }}:</strong> {{ bc_exercise.participants|nl2br }}</p>
+                {% endif %}
                 {% if bc_exercise.observers %}
-                <p><strong>{{ 'common.observers'|trans({}, 'messages') }}:</strong> {{ bc_exercise.observers|nl2br }}</p>
+                <p><strong>{{ 'bc_exercises.field.observers_legacy'|trans({}, 'bc_exercises') }}:</strong> {{ bc_exercise.observers|nl2br }}</p>
                 {% endif %}
             </div>
 

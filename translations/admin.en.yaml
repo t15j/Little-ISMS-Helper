@@ -1,7 +1,117 @@
 admin:
+    industry_preset:
+        error:
+            not_found: 'Preset not found.'
+            invalid_csrf: 'Invalid CSRF token.'
+            tenant_required: 'Organization context required.'
+    module:
+        error:
+            invalid_csrf: 'Invalid CSRF token.'
+    backup:
+        success:
+            uploaded: 'Backup file uploaded successfully: %filename%'
+        error:
+            no_file_uploaded: 'No file uploaded.'
+            invalid_file_format: 'Invalid file format. Only .json, .gz or .zip files are allowed.'
+            upload_failed: 'File upload failed: %message%'
+            no_import_data: 'No import data found.'
+    sso_provider:
+        success:
+            deleted: 'SSO provider deleted.'
+            role_mappings_saved: 'Role mappings saved.'
+        error:
+            discovery_failed: 'Discovery failed: %message%'
     title: Administration
+    cancel: 'Cancel'
+    tenant_management:
+        title: 'Organization management'
     breadcrumb:
         home: 'Admin Dashboard'
+    hub:
+        title: 'Admin Panel'
+        subtitle: '%count% modules in 8 areas — filtered via search, opened as focused detail pages.'
+        search_placeholder: 'Search modules… (e.g. tenants, audit log, SSO)'
+        search_label: 'Search modules'
+        no_results: 'No modules found — adjust the search term.'
+        coming_soon: 'coming soon'
+        group:
+            organisation: { label: 'Organisation', desc: 'Organizations, group structure, locations' }
+            identity: { label: 'Access & Identity', desc: 'Users, roles, permissions, SSO, sessions, MFA' }
+            isms_data: { label: 'ISMS data', desc: 'Frameworks, mappings, industry baselines, tags' }
+            audit_compliance: { label: 'Audit & Compliance', desc: 'Audit log, retention, compliance policy, risk-approval thresholds' }
+            integrations: { label: 'Integrations', desc: 'Compliance imports, GSTool, sample data, import history' }
+            system: { label: 'System', desc: 'Health, modules, quick-fix settings, KPI thresholds, licensing' }
+            branding_ux: { label: 'Branding & UX', desc: 'Supplier criticality, tour content, Alva-hint statistics' }
+            notifications: { label: 'Notifications', desc: 'Rules, channels, templates and preferences for outgoing notifications' }
+        module:
+            tenants: { label: 'Organizations', desc: 'Manage customer organizations' }
+            corporate_structure: { label: 'Corporate structure', desc: 'Parent / subsidiary hierarchy' }
+            locations: { label: 'Locations', desc: 'Physical sites for asset assignment' }
+            tenant_branding: { label: 'Organization branding', desc: 'Per-organization email logos and senders' }
+            tenant_compliance_settings: { label: 'Compliance settings', desc: 'Locale, TLP, DPO, risk methodology, escalation, JSON defaults' }
+            policy_style: { label: 'Policy appearance', desc: 'Layout, watermark and typography for policy documents' }
+            report_style: { label: 'Report look', desc: 'Cover pattern, audience default, watermark, chart colors per tenant' }
+            users: { label: 'Users', desc: 'Accounts, status, lockouts' }
+            roles: { label: 'Roles', desc: 'Organization roles and templates' }
+            permissions: { label: 'Permissions', desc: 'Module × role permission matrix' }
+            sso: { label: 'SSO', desc: 'OIDC providers, approvals, domain bindings' }
+            sessions: { label: 'Sessions', desc: 'Active sessions, force logout' }
+            mfa: { label: 'MFA tokens', desc: 'Manage TOTP / backup codes' }
+            frameworks: { label: 'Compliance frameworks', desc: 'Activate / load ISO, BSI, NIS2, DORA' }
+            mappings: { label: 'Cross-framework mappings', desc: 'Requirement links between frameworks' }
+            mapping_quality: { label: 'Mapping quality score', desc: 'Review pipeline for mapping suggestions' }
+            industry_baselines: { label: 'Industry baselines', desc: 'Pre-filled risk/asset/control sets per NACE' }
+            industry_preset: { label: 'Industry presets', desc: 'Create a demo tenant from an industry bundle' }
+            compliance_mapping_seeds: { label: 'Mapping seeds', desc: 'Pre-filled cross-framework mapping suggestions' }
+            tags: { label: 'Tags', desc: 'Framework tags + bulk-apply actions' }
+            audit_log: { label: 'Audit log', desc: 'Tamper-evident activity trail' }
+            audit_retention: { label: 'Retention policy', desc: 'Audit-log retention windows' }
+            compliance_policy: { label: 'Compliance policy', desc: 'Inheritance rules, review obligations' }
+            risk_approval_config: { label: 'Risk approval thresholds', desc: 'Escalation tiers for risk acceptance' }
+            incident_sla: { label: 'Incident SLAs', desc: 'Response times per severity' }
+            audit_log_monitoring: { label: 'Audit-log monitoring', desc: 'Live stream + anomaly filter' }
+            workflow_definitions: { label: 'Workflow definitions', desc: 'Design and activate approval lifecycles' }
+            scheduled_reports: { label: 'Scheduled reports', desc: 'Manage recurring report delivery' }
+            compliance_import: { label: 'Compliance import', desc: 'CSV/YAML bulk import of requirements' }
+            gstool_import: { label: 'GSTool import', desc: 'BSI IT-Grundschutz from GSTool export' }
+            sample_data: { label: 'Sample data', desc: 'Load / remove demo records' }
+            import_history: { label: 'Import history', desc: 'Recent imports + rollback' }
+            library_importer: { label: 'BSI / TISAX Library', desc: 'Import and export framework fixtures (BSI Kompendium 2024, TISAX ISA 6.0)' }
+            system_health: { label: 'System health', desc: 'Service status, disk, cache, logs' }
+            modules: { label: 'Modules', desc: 'Manage active ISMS modules' }
+            data_repair: { label: 'Data repair', desc: 'Orphans, tenant mismatches, schema reconcile' }
+            quick_fix_settings: { label: 'Quick-fix settings', desc: 'Auto-fallback UI configuration' }
+            kpi_threshold: { label: 'KPI thresholds', desc: 'Traffic-light limits for dashboard KPIs' }
+            fte_tracking: { label: 'FTE Tracking', desc: 'Measure and report effort savings through automation' }
+            loader_fixer: { label: 'Loader fixer', desc: 'Compliance-loader diff repair' }
+            monitoring_performance: { label: 'Performance monitor', desc: 'Request times, slow query log' }
+            licensing: { label: 'Licensing', desc: 'Plan, limits, license report' }
+            application_settings: { label: 'Application settings', desc: 'Application, security, features' }
+            data_backup: { label: 'Backup & Restore', desc: 'Create, validate, and restore data backups' }
+            monitoring_errors: { label: 'Error monitoring', desc: 'Application errors, stack traces, frequencies' }
+            api_doc: { label: 'API documentation', desc: 'OpenAPI / Swagger UI for integrations' }
+            setup_wizard: { label: 'Setup wizard', desc: 'Re-run initial configuration' }
+            lifecycle_overrides: { label: 'Lifecycle Overrides', desc: 'Configure workflow transition metadata per tenant' }
+            workflow_overlay: { label: 'Workflow Step Editor', desc: 'Edit per-tenant step-level overrides for regulatory approval lifecycles' }
+            supplier_criticality: { label: 'Supplier criticalities', desc: 'Custom levels for supplier classification' }
+            tour_content: { label: 'Guided-tour content', desc: 'Edit step texts and order' }
+            tour_completion: { label: 'Tour completion', desc: 'Completion rates + reset tools' }
+            alva_hint_stats: { label: 'Alva-hint statistics', desc: 'Render / dismiss / dismiss rate per hint' }
+            # Sprint 6b — Notifications
+            notification_rules: { label: 'Notification rules', desc: 'Define event rules and assign delivery channels' }
+            notification_channels: { label: 'Notification channels', desc: 'Configure email, webhook, and in-app channels' }
+            notification_templates: { label: 'Template gallery', desc: 'Apply tier-1 templates for common compliance scenarios' }
+            notification_preferences: { label: 'Notification preferences', desc: 'Global delivery preferences and thresholds' }
+            # Sprint 8 — EU Authority reporting
+            authority_hub: { label: 'EU Authority Hub', desc: 'Reporting obligations and export templates for EU supervisory authorities' }
+            nis2_registration: { label: 'NIS-2 BSI Registration', desc: 'Annual mandatory registration in the BSI notification portal' }
+            dora_roi: { label: 'DORA RoI XBRL export', desc: 'Register of Information XBRL/CSV export for BaFin reporting' }
+            # Sprint 6 deferred system-settings sub-pages
+            api_rate_limits: { label: 'API rate limits', desc: 'Request limits per route and token class' }
+            backup_settings: { label: 'Backup settings', desc: 'Retention windows and automated backup scheduling' }
+            fiscal_year: { label: 'Fiscal year', desc: 'Start month and fiscal year for reports and KPIs' }
+            data_retention_settings: { label: 'Retention periods', desc: 'GDPR deletion schedules per data category' }
+            workflow_sla_defaults: { label: 'Lifecycle SLA defaults', desc: 'Default deadlines for approval steps' }
     section:
         overview: Overview
         user_access: 'Users & Access'
@@ -10,6 +120,7 @@ admin:
         monitoring: 'Monitoring & Logs'
         navigation: Navigation
         data_management: 'Data Management'
+        integration_operations: 'Integration & Operations'
         licensing: Licensing
         platform:
             users_access: 'Platform · Users & Access'
@@ -18,8 +129,16 @@ admin:
         compliance:
             frameworks: 'Compliance · Frameworks'
             imports: 'Compliance · Imports'
+        # V3 W2-H6: Quick-jump sub-sections in mega-menu (max 4 items each).
+        # Full directory lives in AdminHubCatalog.
+        quick:
+            user_mgmt: 'User-Mgmt'
+            tenant_mgmt: 'Organization Mgmt'
+            module_config: 'Module-Config'
+            settings: Settings
     nav:
-        tenants: Tenants
+        admin: Administration
+        tenants: Organizations
         users: Users
         roles: Roles
         settings: Settings
@@ -31,6 +150,7 @@ admin:
         permissions: Permissions
         sessions: Sessions
         mfa: 'MFA Management'
+        sso: 'SSO Identity Providers'
         module_management: 'Module Management'
         compliance_management: 'Compliance Management'
         compliance_policy: 'Compliance Policy Settings'
@@ -77,8 +197,8 @@ admin:
             frameworks: 'Frameworks (active/catalog)'
             mappings_count: '%count% cross-framework mappings'
             unreviewed_mappings: 'Unreviewed seed mappings'
-            workflows_open: '%count% open workflows'
-            workflows_none: 'No open workflows'
+            workflows_open: '%count% open lifecycles'
+            workflows_none: 'No open lifecycles'
             review_now: 'Review now'
         modules:
             title: 'Modules Overview'
@@ -108,6 +228,12 @@ admin:
             view_all: 'View all'
     licensing:
         attributions_provided: 'Attributions Provided'
+        warning:
+            report_not_found: 'License report not found. Please generate it using the button below.'
+        success:
+            report_generated: 'License report generated successfully.'
+        error:
+            report_generation_failed: 'License report generation failed.'
     data_export:
         title: 'Data Export'
         format: 'Export Format'
@@ -124,6 +250,9 @@ admin:
         submit: 'Export Selected Entities'
         notes_title: 'Important Notes'
         backup_link: 'For complete system backup, use the <a href="%url%" class="alert-link">Database Backup</a> function'
+        error:
+            no_entities: 'Please select at least one entity.'
+            invalid_token: 'Invalid CSRF token. Please reload the page and try again.'
     data_management:
         title: 'Data Management'
     settings:
@@ -190,6 +319,45 @@ admin:
         info_text: 'Changes take effect immediately and affect all tenants'
         info: Information
         help: Help
+        sso:
+            title: 'SSO Identity Providers'
+            description: 'OIDC/SAML providers, auto-provisioning, domain bindings and approval queue'
+        email_branding:
+            title: 'Email Branding'
+            description: 'Per-tenant email logo, sender name and footer for all outgoing messages'
+        report_style:
+            title: 'Report Appearance'
+            description: 'Cover pattern, audience default, watermark and chart colours'
+        policy_style:
+            title: 'Policy Appearance'
+            description: 'Layout, watermark and typography for policy documents'
+        audit_retention:
+            title: 'Audit-Log Retention'
+            description: 'Retention windows per event category (ISO 27001 Annex A 8.15)'
+        compliance_policy:
+            title: 'Compliance Policy'
+            description: 'Inheritance rules, review obligations and escalation defaults'
+        tenant_compliance:
+            title: 'Organization Compliance Settings'
+            description: 'Locale, TLP classification, DPO contact, risk methodology and JSON defaults per tenant'
+        risk_approval:
+            title: 'Risk Approval Thresholds'
+            description: 'Escalation tiers and acceptance thresholds for risk governance (ISO 27001 Clause 6.1.3)'
+        incident_sla:
+            title: 'Incident SLAs'
+            description: 'Response-time targets per severity level (ISO 27001 Annex A 5.26)'
+        kpi_thresholds:
+            title: 'KPI Thresholds'
+            description: 'Traffic-light limits for dashboard KPIs (red / amber / green)'
+        supplier_criticality:
+            title: 'Supplier Criticality Levels'
+            description: 'Custom criticality tiers for supplier classification (ISO 27001 Annex A 5.19)'
+        tags:
+            title: 'Tags'
+            description: 'Global tag taxonomy and bulk-apply actions across ISMS entities'
+        quick_fix:
+            title: 'Quick-Fix Settings'
+            description: 'Auto-fallback behaviour and schema-reconcile configuration for the operator UI'
     compliance:
         framework: Framework
         total_requirements: 'Total Requirements'
@@ -326,9 +494,9 @@ admin:
         removed: '%count% records from "%key%" removed.'
         remove_partial: '%count% records removed, %errors% errors. See subsequent messages for details.'
         nothing_selected: 'No datasets selected.'
-        no_tenant: 'No tenant context available — please select a tenant first.'
+        no_tenant: 'No organization context available — please select an organization first.'
         note_title: 'Note'
-        note_message: 'Sample data is linked to the current tenant and can only be removed here (exception: command-based imports like TISAX/DORA, which need CLI rollback).'
+        note_message: 'Sample data is linked to the current organization and can only be removed here (exception: command-based imports like TISAX/DORA, which need CLI rollback).'
 
     data_repair:
         title: 'Data Repair & Integrity'
@@ -340,7 +508,7 @@ admin:
             title: 'Caution — live data changes'
             lead: 'Every button on this page writes directly to the production database. No dry-run mode is available. Please verify first:'
             point_audit_log: 'Every repair is recorded in the audit log (tamper-evident HMAC-SHA256 chain) and remains traceable.'
-            point_backup: 'Before bulk repairs (Fix-all-Orphans, Fix-Tenant-Mismatches) ensure a recent backup exists.'
+            point_backup: 'Before bulk repairs (Fix-all-Orphans, Fix-Organization-Mismatches) ensure a recent backup exists.'
             point_confirm: 'Every button shows a confirmation dialog — please read it carefully before clicking "OK".'
             action_backup: 'Check backup'
             action_audit_log: 'View audit log'
@@ -360,19 +528,21 @@ admin:
         orphaned_assets: 'Orphaned Assets'
         orphaned_risks: 'Orphaned Risks'
         orphaned_incidents: 'Orphaned Incidents'
-        assign_to_tenant: 'Assign To Tenant'
-        select_tenant: 'Select Tenant'
+        assign_to_tenant: 'Assign To Organization'
+        select_tenant: 'Select Organization'
         all_orphans: 'All Orphans'
         assets_only: 'Assets Only'
         risks_only: 'Risks Only'
         incidents_only: 'Incidents Only'
         assign_orphans: 'Assign Orphans'
         assigned_count: '%count% entities successfully assigned to %tenant%'
+        partial_assignment: 'Partial assignment completed — %count% entities assigned to %tenant%. The Entity Manager closed after an error; please reload to verify final state.'
         fixed_all_orphans: '%count% orphaned entities successfully assigned to %tenant%'
+        orphans_skipped: '%count% entities skipped (constraint violation or similar)'
         bulk_blocked_multi_tenant: 'Bulk assign blocked: %count% tenants exist in this instance. In multi-tenant deployments no single action may cross-reassign orphans. Please use the per-entity routes instead.'
         bulk_confirm_hash_mismatch: 'Bulk assign aborted: orphan count changed since preview (expected %expected%). Reload the page and confirm again.'
         fixed_mismatches: '%count% tenant mismatches successfully fixed'
-        reason_required: 'Tenant-mismatch fix rejected: reason with at least %min% characters is mandatory (currently %actual%).'
+        reason_required: 'Organization-mismatch fix rejected: reason with at least %min% characters is mandatory (currently %actual%).'
         reason_label: 'Reason for tenant reassignment'
         reason_help: 'Minimum 20 characters. Stored in the audit log for every affected record.'
         tenant_not_found: 'Selected tenant not found'
@@ -382,7 +552,7 @@ admin:
         orphaned_assets_list: 'Orphaned Assets List'
         orphaned_risks_list: 'Orphaned Risks List'
         orphaned_incidents_list: 'Orphaned Incidents List'
-        tenant_statistics: 'Tenant Statistics'
+        tenant_statistics: 'Organization Statistics'
         risk_asset_assignment: 'Risk Asset Assignment'
         risk_asset_assignment_desc: 'These risks do not have an asset assigned. Risks must be associated with assets for proper tracking.'
         incident_asset_assignment: 'Incident Asset Assignment'
@@ -413,6 +583,8 @@ admin:
             migrations_applied: '%count% migration(s) executed successfully.'
             migrations_failed: 'Migrations failed: %error%'
             reconcile_applied: 'Schema reconcile applied (%count% statements executed).'
+            auto_marked_migrations: '%count% migration(s) auto-marked as executed.'
+            auto_mark_failed: '%count% migration(s) could NOT be marked (first: %first%).'
             reconcile_failed: 'Schema reconcile failed: %error%'
             reconcile_blocked: 'Schema reconcile blocked (%reason%). Please execute pending migrations first.'
         duplicates_merged: '%count% duplicate %type% record(s) removed (oldest kept).'
@@ -426,6 +598,7 @@ admin:
             confirm_merge: 'Really merge %count% duplicate group(s) for "%type%"? The oldest entry (lowest ID) is kept, all others are deleted. This action cannot be undone.'
             show_details: 'Show duplicate details'
             items: 'entries'
+            all_ok: 'No duplicate entities detected — all entries are unique within their tenant.'
         risk_health:
             title: 'Risk Health (ISO 27005)'
             all_ok: 'No risk health issues found — all risks are correctly configured.'
@@ -474,7 +647,7 @@ admin:
             title: 'Data Quality (Tier 3 — Operational Gaps)'
             all_ok: 'No data quality issues found — all operational data is complete and up to date.'
             issues_found: '%count% data quality issue(s) found. Please review and correct.'
-            workflows_stuck: 'Workflows Stuck (>30 Days)'
+            workflows_stuck: 'Lifecycles Stuck (>30 Days)'
             workflows_stuck_hint: 'These workflow instances have been in progress for more than 30 days. Review their current step, reassign if necessary, or close and re-open to restart the process.'
             risks_zero_values: 'Risks With No Probability/Impact'
             risks_zero_values_hint: 'These active risks have no probability or impact value set. Without these values, the risk score cannot be calculated. Open each risk and set the probability and impact fields.'
@@ -487,6 +660,144 @@ admin:
             col_started: 'Started At'
             col_treatment: 'Treatment Plan'
             col_risk: 'Risk'
+        # Extended coverage (2026-05) — file orphans, cascade cleanup,
+        # JSON schema, audit-log integrity, status-enum drift.
+        uploads:
+            title: 'Orphaned File Uploads'
+            description: 'Files in the upload directory (public/uploads/) that are not referenced by any Doctrine entity. Quarantine moves files to var/quarantine/ — never direct delete.'
+            all_ok: 'No orphaned upload files detected — filesystem is consistent with the database.'
+            unavailable: 'Upload directory not accessible (project path missing or public/uploads/ does not exist).'
+            col_path: 'Path'
+            col_size: 'Size'
+            col_mtime: 'Modified'
+            more: 'more files'
+            confirm_quarantine: 'Really move %count% orphaned file(s) to quarantine? You can manually restore from var/quarantine/ if needed.'
+            action_quarantine: 'Quarantine %count% file(s)'
+            action_hint: 'Files are moved to var/quarantine/<date>/, never unlinked.'
+            quarantined: '%count% file(s) successfully moved to %dir%.'
+            nothing_to_quarantine: 'No files queued for quarantine.'
+            quarantine_dir_failed: 'Quarantine directory could not be created: %dir%'
+        cascade:
+            title: 'Cascade Cleanup (Dangling References)'
+            description: 'Entities whose ManyToOne target was deleted but cascade never fired. Five categories cleaned under one audit-batch.'
+            all_ok: 'No dangling references — all cascade targets are consistent.'
+            show_examples: 'Show examples'
+            more: 'more'
+            confirm_cleanup: 'Really delete %count% dangling entries? This action is not reversible and is logged under one batch_id in the audit-log.'
+            action_cleanup: 'Cleanup %count% dangling reference(s)'
+            cleaned: '%count% dangling reference(s) successfully cleaned up.'
+            category:
+                workflow_instances: 'Workflow instances (target missing)'
+                mfa_tokens: 'MFA tokens (expired, never used)'
+                sso_user_approvals: 'SSO approvals (reviewer deleted)'
+                evidence_tasks: 'Evidence tasks (no anchor)'
+                notification_deliveries: 'Notification deliveries (rule deleted)'
+        json_schema:
+            title: 'JSON Schema Validation'
+            description: 'Validate JSON columns against expected shape (Tenant.settings, TenantPolicySetting.value, NotificationRule.conditions, WorkflowStep.metadata). Detection only — no auto-repair.'
+            all_ok: 'No JSON schema violations detected.'
+            detection_only: 'Detection only — please review and repair each row manually. There is no auto-repair button for this risk.'
+            col_error: 'Error'
+            category:
+                tenant_settings: 'Tenant.settings (k/v object expected)'
+                tenant_policy_settings: 'TenantPolicySetting.value (JSON decode error)'
+                notification_rule_conditions: 'NotificationRule.conditions (list of {field, op, value})'
+                workflow_step_metadata: 'WorkflowStep.metadata (object, opt. auto_progression)'
+        audit_integrity:
+            title: 'Audit Log Integrity'
+            description: 'Structural anomalies the HMAC chain alone cannot detect: bulk-batch mismatches, day-gaps, NULL-tenant entries.'
+            all_ok: 'Audit-log integrity OK — no bulk mismatches, day-gaps or NULL-tenant entries.'
+            bulk_mismatches: 'Bulk-batch mismatches (per_entity_count > actual)'
+            day_gaps: 'Day-gaps (last 30 days)'
+            null_tenants: 'Entries with tenant_id IS NULL'
+        status_enum_drift:
+            title: 'Status Enum Drift'
+            description: 'DB status values that are not present in the new App\\Enum\\<Entity>Status case-set. Manual triage required — auto-repair would mask real lifecycle bugs.'
+            all_ok: 'All status values match the defined enum cases — no drift.'
+            col_entity: 'Entity'
+            col_enum: 'Enum'
+            col_unknown_values: 'Unknown values × count'
+        # Async data-repair job progress pages (Phase 2 rollout)
+        job:
+            badge: 'Data Repair'
+            generic_subtitle: 'Running in the background to keep PHP-FPM responsive.'
+            fix_all_orphans_label: 'Assign all orphans'
+            fix_all_orphans_subtitle: 'Assigns all orphaned entities (tenant_id IS NULL) to the default tenant in the background…'
+            fix_tenant_mismatches_label: 'Fix Organization Mismatches'
+            fix_tenant_mismatches_subtitle: 'Aligning child entity tenants with their parent (Asset) in the background…'
+            merge_duplicates_label: 'Merge Duplicates — %type%'
+            merge_duplicates_subtitle: 'Keeping the oldest entry, deleting newer duplicates in the background…'
+            execute_migrations_label: 'Execute Pending Migrations'
+            execute_migrations_subtitle: 'Running the Doctrine migration plan in the background…'
+            reconcile_schema_label: 'Reconcile Schema'
+            reconcile_schema_subtitle: 'Aligning live database schema with entity metadata in the background…'
+            run_integrity_check_label: 'Full Integrity Scan'
+            run_integrity_check_subtitle: 'Scanning orphans, duplicates, broken references, missing relationships and schema drift in the background…'
+            scan_orphans_label: 'Scan Orphans'
+            scan_orphans_subtitle: 'Scanning orphaned (tenant_id IS NULL) entities in the background…'
+            scan_duplicates_label: 'Scan Duplicates'
+            scan_duplicates_subtitle: 'Detecting duplicate entities per type and tenant in the background…'
+            scan_broken_refs_label: 'Scan Broken References'
+            scan_broken_refs_subtitle: 'Scanning broken FK references, cascade orphans and orphaned uploads in the background…'
+            scan_health_label: 'Scan Health Issues'
+            scan_health_subtitle: 'Running the four health-check buckets (risk / compliance / operational / data-quality) in the background…'
+            assign_orphans_label: 'Assign Orphans → %tenant%'
+            assign_orphans_subtitle: 'Assigning orphaned entities (tenant_id IS NULL) to the target tenant in the background. Audit log written per entity, flushes batched.'
+            reassign_entity_label: 'Reassign %type%#%id%'
+            reassign_entity_subtitle: 'Reassigning the entity to tenant "%tenant%" in the background, then refreshing the orphan cache.'
+        # Inventory preview on the overview page (cache-driven, no DB roundtrip)
+        inventory:
+            title: 'What needs cleaning up?'
+            never_scanned: 'This section has never been scanned. Click "Refresh now" to dispatch a background scan.'
+            show_all: 'Show all'
+            more_items: '… and %count% more items'
+            more_groups: '… and %count% more groups'
+            col_type: 'Type'
+            col_group: 'Group / Value'
+            col_count: 'Count'
+            broken_refs_header: 'Broken FK References'
+            cascade_orphans_header: 'Cascade Orphans'
+            orphaned_uploads_summary: '%count% orphaned upload file(s) on disk'
+        # Sub-page navigation + cache banners (async-rendering refactor 2026-05)
+        sections_title: 'Repair Sections'
+        section:
+            badge: 'Data Repair'
+            orphans: 'Orphans'
+            orphans_description: 'Entities with no tenant assigned. Reassign individually or in bulk to a target tenant.'
+            duplicates: 'Duplicates'
+            duplicates_description: 'Duplicate entities within the same tenant. Merge keeps the lowest ID and removes the newer copies.'
+            broken_references: 'Broken References'
+            broken_references_description: 'Broken FK references, cascade orphans, and orphaned upload files on disk.'
+            health: 'Health Issues'
+            health_description: 'Four health-check buckets (risk / compliance / operational / data-quality) — informational, no auto-repair.'
+            cache_status: 'Cache Status'
+            last_scan: 'Last scan: %when% (took %duration% s)'
+            never_scanned: 'Never scanned'
+            never_scanned_full: 'No cached result yet — click "Refresh now" to dispatch a background scan.'
+            scanned_ago: 'Scanned %when%'
+            refresh_now: 'Refresh now'
+            back_to_index: 'Back to overview'
+            orphans_summary: '%total% orphan(s) across %types% entity type(s)'
+            duplicates_summary: '%groups% duplicate group(s) across %types% entity type(s)'
+            broken_refs_summary: '%broken% broken ref(s), %cascade% cascade orphan(s), %uploads% orphaned upload(s)'
+            health_summary: '%total% health issue(s) across 4 buckets'
+            health_run_to_view: 'Health-issue data is loaded from cache only — click "Refresh now" once to populate it.'
+            health_all_ok: 'All four health-check buckets are clean.'
+            health_bucket_count: '%count% issue(s) detected in this bucket'
+            no_broken_refs: 'No broken references detected.'
+            fix_tenant_mismatches: 'Fix Organization Mismatches'
+            tip: 'Each section runs its own background scan. The index page reads only cached counts, so it stays fast regardless of how many entities you have. Repair actions still read live data when applied.'
+        tenant_card:
+            title: 'Organizations'
+            tenant_count: '%count% tenant(s) registered'
+            description: 'Cheap COUNT(*) — does not trigger a full scan.'
+        integrity_check:
+            title: 'Async Integrity Scan'
+            description: 'On large datasets the inline scan on this page can exceed PHP-FPM''s timeout. Run it as a background job instead — the result is cached and surfaced here as a banner.'
+            run_now: 'Run async scan'
+            last_run: 'Last async scan: %when% (duration: %duration% s)'
+            last_counts: '%orphans% orphans, %duplicates% duplicate groups, %broken% broken references — health score %health%'
+            never_run: 'Has never run. The banner will show a summary after the first run.'
     modules:
         title: Title
         dependency_graph: 'Dependency Graph'
@@ -513,6 +824,624 @@ admin:
             activate_required: 'When activating, all required modules will be activated as well'
             deactivate_dependency: 'Modules can only be deactivated if no other modules depend on them'
             required_always_active: 'Required modules can never be deactivated'
+
+    tenant_settings:
+        title: 'Compliance Settings'
+        subtitle: 'Tier-1 compliance settings — locale, audit window, DPO contact, TLP, supervisory authorities, retention policies'
+        tab:
+            defaults: Defaults
+            frameworks: Frameworks
+            modules: Modules
+            contact: Contact
+            advanced: Advanced
+        no_tenant_in_context: 'No organization context active — please pick an organization from the list first.'
+        section_tenant: 'Organization-specific'
+        section_global: 'System defaults (all organizations)'
+        global_help: 'Global security defaults — change via System Settings page.'
+        locale: 'Language + region'
+        timezone: 'Timezone'
+        financial_year_start: 'Financial year start'
+        tlp_default: 'TLP default for incident sharing'
+        tlp_default_help: 'Traffic Light Protocol — default classification for incidents in NIS2 information sharing.'
+        dpo_name: 'DPO contact (name)'
+        dpo_email: 'DPO contact (email)'
+        dpo_help: 'Data Protection Officer per GDPR Art. 37 — separate from the NIS2 contact.'
+        save: 'Save'
+        saved: 'Compliance settings saved.'
+        mfa_roles: 'MFA-required roles'
+        password_min_length: 'Min. password length'
+        password_complexity: 'Enforce complexity'
+        password_rotation: 'Rotation'
+        session_timeout: 'Session timeout'
+        chars: 'chars'
+        days: 'days'
+        minutes: 'min.'
+        enforced: 'Enforced'
+        disabled: 'Disabled'
+        no_rotation: 'No rotation (NIST 800-63B)'
+        edit_globals: 'Edit global settings'
+        section_operational: 'Operational — risk methodology + wizard default'
+        risk_methodology: 'Risk methodology'
+        risk_methodology_help: 'Standard for risk analysis — drives default fields + reports.'
+        risk_matrix_size: 'Risk matrix size'
+        risk_matrix_size_help: '3x3 quick + SME-friendly; 5x5 is the ISO 27005 standard.'
+        wizard_maturity_target: 'Default wizard maturity target'
+        wizard_maturity_target_help: 'Shown as target maturity in every wizard result.'
+        section_api: 'API limits'
+        section_json: 'Structured JSON fields (supervisory / retention / notifications / CSIRT / crisis-team rotation)'
+        json_help: 'Enter as JSON object. Empty = default. Example templates in docs.'
+        api_rate_limit: 'API rate limit (requests/minute)'
+        api_rate_limit_help: '0 = unlimited. 600 = 10/sec. Default for fair multi-tenant operation.'
+        dora_entity_category: 'DORA obligation status (Art. 2)'
+        dora_entity_category_help: 'Determines whether this tenant is subject to EU DORA. Shows or hides DORA-specific features.'
+        dora_entity_category.none: 'Not DORA-obligated (default)'
+        dora_entity_category.financial_entity: 'Financial entity (DORA Art. 2(2)) — bank / insurer / investment firm'
+        dora_entity_category.critical_ict_third_party: 'Critical ICT third-party provider (CTPP designated by ESAs, DORA Art. 31)'
+        supervisory_authorities: 'Supervisory authorities (JSON)'
+        supervisory_authorities_help: 'JSON map: { "BSI": { name, email, phone, scope } }'
+        data_retention_policies: 'GDPR retention policies (JSON)'
+        data_retention_policies_help: 'JSON map: { "crm": { years, basis } }'
+        notification_preferences: 'Notification preferences (JSON)'
+        notification_preferences_help: 'JSON map: { "incident": { email: true, slack: false } }'
+        csirt_endpoints: 'CSIRT endpoints (JSON)'
+        csirt_endpoints_help: 'JSON map: { "BSI-CERT": { url, contact, auth_type } }'
+        crisis_team_on_call: 'Crisis team on-call rotation (JSON)'
+        crisis_team_on_call_help: 'JSON array: [ { date, primary, deputy } ]'
+        backup_schedule: 'Backup schedule'
+        backup_retention: 'Backup retention'
+        environment_label: 'Environment'
+        telemetry: 'Telemetry'
+
+    # ── Notification Preferences ─────────────────────────────────────────────────
+    notification_preferences:
+        title: 'Notification Preferences'
+        subtitle: 'Configure tenant-level notification defaults and delivery settings.'
+        saved: 'Notification preferences saved successfully.'
+        csrf_invalid: 'Invalid security token. Please try again.'
+        help_text: 'These settings define how and when notifications are delivered to users in this tenant. Individual users can override their own preferences in their profile.'
+        digest_enabled:
+            label: 'Enable notification digest'
+            help: 'Bundle multiple notifications into periodic digests instead of sending each one immediately.'
+        digest_frequency:
+            label: 'Digest frequency'
+            instant: 'Instant (send immediately)'
+            hourly: 'Hourly digest'
+            daily: 'Daily digest'
+        webhook_timeout:
+            label: 'Webhook timeout (seconds)'
+            help: 'Maximum time to wait for a webhook response before marking the delivery as failed (1-120 seconds).'
+        email_from_name:
+            label: 'Email sender name'
+            placeholder: 'e.g. ISMS Team'
+            help: 'The display name shown in the "From" field of outgoing notification emails. Leave empty to use the system default.'
+
+    # ── API Rate Limits ───────────────────────────────────────────────────────────
+    api_rate_limits:
+        title: 'API Rate Limits'
+        subtitle: 'Control the maximum number of API requests allowed per minute for this tenant.'
+        saved: 'API rate limit settings saved successfully.'
+        csrf_invalid: 'Invalid security token. Please try again.'
+        help_text: 'Rate limits protect the platform against abuse and ensure fair resource sharing. Set to 0 to disable rate limiting (not recommended in production).'
+        rate_limit_per_minute:
+            label: 'Requests per minute'
+            help: '0 = unlimited. 600 = 10 requests/second. Default for fair multi-tenant operation.'
+        burst_limit:
+            label: 'Burst limit'
+            help: 'Allow this many requests immediately before throttling begins. Useful for clients that batch requests at startup.'
+        exclude_routes_regex:
+            label: 'Exclude routes (regex)'
+            help: 'Regular expression matching route paths that are exempt from rate limiting (e.g. health-check, metrics). Leave empty to apply limits globally.'
+
+    # ── Backup Settings ───────────────────────────────────────────────────────────
+    backups:
+        title: 'Backup Settings'
+        subtitle: 'Configure automated backup schedule and data retention.'
+        saved: 'Backup settings saved successfully.'
+        csrf_invalid: 'Invalid security token. Please try again.'
+        help_text: 'These settings control how long backup files are kept and whether automated backups run on a schedule. The "Run now" trigger and Messenger dispatch are coming in Wave 2.'
+        settings_title: 'Backup Configuration'
+        wave2_note:
+            title: 'Wave 2 note'
+            body: 'The "Run backup now" button and automated Messenger-based execution will be available in Wave 2. These settings are saved and will be picked up once the scheduler is active.'
+        retention_days:
+            label: 'Retention period (days)'
+            help: 'Backup files older than this number of days will be automatically removed. Minimum 1, maximum 10 years (3650 days).'
+        schedule:
+            label: 'Backup schedule'
+            off: 'Off (manual only)'
+            daily: 'Daily'
+            weekly: 'Weekly'
+            help: 'When the Messenger scheduler is active (Wave 2), backups will run according to this schedule.'
+        storage_path:
+            label: 'Storage path (read-only)'
+            help: 'Configured via the BACKUP_STORAGE_PATH environment variable. Contact your system administrator to change this value.'
+
+    # ── Fiscal Year ───────────────────────────────────────────────────────────────
+    fiscal_year:
+        title: 'Fiscal Year Configuration'
+        subtitle: 'Set the financial year start month and reporting cadence for this tenant.'
+        saved: 'Fiscal year configuration saved successfully.'
+        csrf_invalid: 'Invalid security token. Please try again.'
+        help_text: 'The fiscal year start month controls how KPI dashboards, management reports, and compliance reviews are grouped. Changes take effect on the next report generation.'
+        start_month:
+            label: 'Fiscal year start month'
+            help: 'Select the first month of your financial/fiscal year. January (1) is the calendar default.'
+        quarterly_grouping:
+            label: 'Enable quarterly grouping'
+            help: 'When enabled, dashboards and reports group data into fiscal quarters aligned to your start month.'
+        reporting_cadence:
+            label: 'Default reporting cadence'
+            help: 'Determines how frequently management reports are generated by default.'
+            monthly: 'Monthly'
+            quarterly: 'Quarterly'
+            yearly: 'Yearly'
+        month:
+            january: 'January'
+            february: 'February'
+            march: 'March'
+            april: 'April'
+            may: 'May'
+            june: 'June'
+            july: 'July'
+            august: 'August'
+            september: 'September'
+            october: 'October'
+            november: 'November'
+            december: 'December'
+
+    # ── Data Retention ────────────────────────────────────────────────────────────
+    data_retention:
+        title: 'Data Retention Policies'
+        subtitle: 'Configure per-entity data retention periods and automatic deletion rules.'
+        saved: 'Data retention policies saved successfully.'
+        csrf_invalid: 'Invalid security token. Please try again.'
+        gdpr_cap_applied: 'One or more retention values exceeded the GDPR maximum and were automatically capped.'
+        warning:
+            title: 'Changes affect actual data deletion'
+            body: 'Enabling auto-delete will cause records older than the specified period to be permanently removed by the daily cron job (Wave 2). Review each setting carefully before saving. GDPR-relevant data categories are capped at their legal maximum.'
+        policies_title: 'Retention Policies by Entity Type'
+        col:
+            entity_type: 'Entity type'
+            retention_days: 'Retention (days)'
+            auto_delete: 'Auto-delete'
+            gdpr_cap: 'GDPR max'
+        entity:
+            asset: 'Assets'
+            risk: 'Risks'
+            incident: 'Incidents'
+            document: 'Documents'
+            processing_activity: 'Processing Activities'
+            audit_finding: 'Audit Findings'
+            workflow_instance: 'Workflow Instances'
+        gdpr_cap: 'Max %days% days'
+
+    # ── Lifecycle SLA Defaults ────────────────────────────────────────────────────
+    workflow_slas:
+        title: 'Lifecycle SLA Defaults'
+        subtitle: 'Set default SLA durations (hours) for each lifecycle event type.'
+        saved: 'Lifecycle SLA defaults saved successfully.'
+        csrf_invalid: 'Invalid security token. Please try again.'
+        regulatory_minimum_enforced: 'One or more SLA values were below the regulatory minimum and were automatically adjusted.'
+        help_text: 'These SLA defaults will be used by the Sprint-6b SlaDeadlineMonitor (Wave 2) to generate deadline warnings and escalations. Regulatory minimums (GDPR Art. 33, ISO 27035) cannot be undercut.'
+        defaults_title: 'SLA Defaults by Event Type'
+        regulatory_badge: 'Regulatory'
+        wave2_note:
+            title: 'Wave 2 note'
+            body: 'The SlaDeadlineMonitor that evaluates these values is planned for Wave 2. Save your settings now — they will be activated automatically once the monitor is deployed.'
+        col:
+            event_type: 'Lifecycle event'
+            sla_hours: 'SLA (hours)'
+            regulatory_basis: 'Regulatory basis'
+        event:
+            data_breach: 'Data Breach Notification'
+            incident_high: 'Incident (High/Critical)'
+            incident_medium: 'Incident (Medium)'
+            incident_low: 'Incident (Low)'
+            risk_approval: 'Risk Treatment Approval'
+            policy_approval: 'Policy Approval'
+            dpia_review: 'DPIA Review'
+            audit_finding: 'Audit Finding Resolution'
+        basis:
+            data_breach: 'GDPR Art. 33 — 72 h supervisory authority notification'
+            incident_high: 'ISO 27035 — CISO response within 4 h'
+            incident_medium: 'ISO 27035 — CISO response within 72 h'
+            incident_low: 'ISO 27035 — standard handling'
+            risk_approval: 'ISO 27001 Clause 6.1.3 — treatment plan approval'
+            policy_approval: 'ISO 27001 Clause 5.2 — management review'
+            dpia_review: 'GDPR Art. 35/36 — DPA consultation'
+            audit_finding: 'ISO 27001 Clause 10.1 — nonconformity closure'
+
+
+    policy_style:
+        title: 'Policy appearance'
+        subtitle: 'Configure layout, typography, watermark and signature slots for generated policy documents.'
+        tab:
+            general: General
+            branding: Branding
+            layout: Layout
+            content: Content
+            advanced: Advanced
+        section:
+            form: 'Configuration'
+            form_subtitle: 'Changes appear live in the preview on the right. Saving persists the values for all future policy documents.'
+            preview: 'Live preview'
+            preview_subtitle: 'Sample policy with current settings — synthetic data, no tenant content.'
+        group:
+            cover: 'Cover page'
+            typography: 'Typography & layout'
+            watermark: 'Watermark'
+            layout: 'Sections & signature'
+            footer: 'Footer'
+            advanced: 'Advanced'
+        field:
+            font_family: 'Font family'
+            cover_pattern: 'Cover pattern'
+            cover_logo_size: 'Cover logo size'
+            page_margin: 'Page margin'
+            watermark_enabled: 'Watermark enabled'
+            watermark_opacity: 'Watermark opacity'
+            signature_lines: 'Signature blocks'
+            show_toc: 'Show table of contents'
+            show_history: 'Show version history'
+            show_annex_a_refs: 'Show Annex A references'
+            footer_text: 'Custom footer text'
+            custom_css: 'Custom CSS override'
+        help:
+            font_family: 'Affects all text in the PDF export. Inter is the ISMS default.'
+            cover_pattern: '"Branded" for marketing tone, "Auditor formal" for certification audits, "Engineering" for DevSecOps.'
+            page_margin: 'Compact = more content per page; wide = better readability for approval reviews.'
+            watermark_enabled: 'When enabled, the classification is rendered diagonally as a watermark over every page.'
+            watermark_opacity: '0% invisible, 8% is the default, > 25% interferes with reading.'
+            signature_lines: 'Number of pre-rendered signature blocks on the signature page (1–6).'
+            footer_text: 'When empty, the default footer with tenant name + classification is used.'
+            custom_css: 'Rendered |raw inside the policy-doc <style> block. ROLE_ADMIN only. Bad CSS may break PDF generation.'
+        cover:
+            minimal: 'Minimal — neutral cover without logo blocks'
+            branded: 'Branded — logo prominent, primary color as accent'
+            auditor_formal: 'Auditor formal — serif, muted colors, certification look'
+            engineering: 'Engineering — monospace accents, DevSecOps look'
+        size:
+            small: 'Small (40 px)'
+            medium: 'Medium (64 px)'
+            large: 'Large (88 px)'
+        margin:
+            compact: 'Compact (12 mm)'
+            standard: 'Standard (20 mm)'
+            wide: 'Wide (28 mm)'
+        save: 'Save'
+        reset: 'Reset to defaults'
+        reset_confirm: 'Really reset all policy appearance settings to defaults?'
+        flash:
+            saved: 'Policy appearance saved. New policy PDFs will use the updated settings.'
+            reset: 'Policy appearance has been reset to defaults.'
+        preview:
+            eyebrow: 'Information Security Management System'
+            version: 'Version'
+            classification: 'Classification'
+            toc: 'Table of contents'
+            history: 'Version history'
+            signature: 'Signatures'
+            annex_a_refs: 'Annex A'
+            col_version: 'Version'
+            col_date: 'Date'
+            col_author: 'Author'
+            col_note: 'Note'
+            default_footer: '%tenant% — Confidential ISMS document — Uncontrolled when printed'
+            custom_css_inert: 'Custom CSS (inert in preview — only rendered in PDF export)'
+
+    report_style:
+        title: 'Report Look'
+        subtitle: 'Layout, watermark and audience defaults for generated reports — per tenant. Live preview on the right.'
+        tab:
+            general: General
+            branding: Branding
+            layout: Layout
+            typography: Typography
+            advanced: Advanced
+        save: 'Save'
+        reset: 'Reset to defaults'
+        reset_confirm: 'Really reset all 12 fields to defaults?'
+        flash:
+            saved: 'Report style updated.'
+            reset: 'Report style reset to defaults.'
+        section:
+            form: 'Configuration'
+            form_subtitle: 'Aurora defaults are sensible. Tuning per audience (board / auditor / supervisor) makes stakeholder-specific reports faster.'
+            preview: 'Live preview'
+            preview_subtitle: '5-slot layout (cover, exec summary, data, appendix, footer). Audience toggle changes the cover eyebrow label.'
+        group:
+            cover: 'Cover & Audience'
+            typography: 'Typography & Format'
+            charts: 'Chart Colors'
+            watermark: 'Watermark'
+            slots: 'Visible sections'
+            footer: 'Footer Disclaimer'
+            advanced: 'Advanced (Custom CSS)'
+        field:
+            cover_pattern: 'Cover pattern'
+            default_audience: 'Default audience'
+            font_family: 'Font family'
+            page_orientation: 'Page orientation'
+            chart_color_scheme: 'Chart color scheme'
+            watermark_enabled: 'Watermark enabled'
+            watermark_opacity: 'Watermark opacity'
+            show_exec_summary: 'Show executive summary'
+            show_appendix: 'Show appendix'
+            show_distribution_list: 'Show distribution list'
+            footer_disclaimer: 'Footer disclaimer (overrides default)'
+            custom_css: 'Custom CSS (paste-only)'
+        help:
+            cover_pattern: 'Visual style for the title page — from minimal (clean) to auditor-formal (serif).'
+            default_audience: 'Default audience for new reports — layout and watermark adapt accordingly.'
+            font_family: 'Used in cover and body. Inter is neutral; Merriweather creates an audit / authority look.'
+            page_orientation: 'Auto picks per content; portrait for text reports, landscape for data tables.'
+            chart_color_scheme: 'Aurora is vibrant; Audit/Print-friendly for B/W print; Colorblind-safe for accessibility.'
+            watermark_enabled: 'Watermark with classification (e.g. TLP:AMBER) as a diagonal label.'
+            watermark_opacity: 'Low values (5–10 %) are subtle; higher to flag drafts visibly.'
+            show_exec_summary: 'Board reports usually have one; auditor reports do not need it.'
+            show_appendix: 'Detail tables, methodology notes. Supervisory reports usually need it.'
+            show_distribution_list: 'In the appendix. Mandatory for supervisors, optional for internal reports.'
+            footer_disclaimer: 'Overrides the default footer with the tenant name. Max 1,000 characters.'
+            custom_css: 'Embedded via |raw on export. Caution: layout can break. ROLE_ADMIN only.'
+        cover:
+            minimal: 'Minimal (clean, no accents)'
+            branded: 'Branded (tenant primary color)'
+            board_formal: 'Board formal (centered, serif title)'
+            auditor_formal: 'Auditor formal (serif, uppercase headings)'
+        audience:
+            vorstand: 'Board / C-Level'
+            auditor: 'Auditor (internal/external)'
+            aufsicht: 'Supervisor (BaFin, BSI)'
+            internal: 'Internal (CISO/ISO team)'
+        orientation:
+            portrait: 'Portrait'
+            landscape: 'Landscape'
+            auto: 'Auto (per content)'
+        chart:
+            aurora: 'Aurora (cyan/violet/green/amber/red)'
+            audit: 'Audit (greyscale, subtle)'
+            print_friendly: 'Print friendly (B/W safe)'
+            colorblind_safe: 'Colorblind safe (Wong palette)'
+        swatches:
+            label: 'Current palette (preview)'
+        preview:
+            period: 'Reporting period'
+            classification: 'Classification'
+            audience: 'Audience'
+            exec_summary: 'Executive Summary'
+            data_section: 'Data & Analysis'
+            appendix: 'Appendix'
+            distribution_list: 'Distribution List'
+            col_recipient: 'Recipient'
+            col_role: 'Role'
+            default_footer: '%tenant% — confidential. Do not share without authorization.'
+            custom_css_inert: 'Custom CSS (only active on export — preview stays unaffected)'
+    lifecycle_overrides:
+        title: 'Lifecycle Configuration'
+        subtitle: 'Override workflow transition metadata per organization'
+        no_tenant: 'No organization context found. Please switch organization.'
+        no_workflows: 'No workflow configuration files found.'
+        no_transitions: 'No transitions found in this workflow.'
+        yaml_baseline: 'YAML baseline'
+        current_value: 'Current value'
+        save_success: 'Lifecycle override saved.'
+        reset_success: 'Lifecycle override reset — YAML baseline will be used again.'
+        reset_confirm: 'Really reset all overrides for this transition?'
+        section:
+            workflows: 'Workflows'
+            transitions: 'Transitions'
+            override_fields: 'Override Fields'
+            help: 'Help'
+        col:
+            workflow: 'Workflow'
+            description: 'Description'
+            overrides: 'Active Overrides'
+            transition: 'Transition'
+            overridden_keys: 'Overridden Keys'
+        show:
+            title: 'Workflow: %workflow%'
+            subtitle: 'Transitions and their current overrides'
+        edit:
+            title: 'Edit Override: %transition%'
+            hint: 'Empty fields use the YAML baseline value. Only populated fields are stored in the database.'
+        action:
+            manage: 'Manage'
+            back: 'Back'
+            reset: 'Reset'
+        form:
+            roles: 'Roles'
+            roles_help: 'Comma-separated ROLE_* values, e.g. ROLE_MANAGER, ROLE_ADMIN. Leave empty to use YAML default.'
+            reason_required: 'Reason required'
+            reason_required_value: 'Require reason'
+            four_eyes: 'Four-eyes principle'
+            four_eyes_value: 'Enable four-eyes'
+            module: 'Module gate'
+            module_help: 'Module key (e.g. privacy, documents). Leave empty for no restriction.'
+            enable_override: 'Enable override'
+            override_enabled: 'Override active'
+        help:
+            roles:
+                title: 'Roles'
+                body: 'Defines which ROLE_* roles are allowed to trigger the transition. Overrides the YAML baseline.'
+            reason_required:
+                title: 'Reason required'
+                body: 'When enabled, the user must provide a reason when triggering the transition.'
+            four_eyes:
+                title: 'Four-eyes principle'
+                body: 'When enabled, a second person must confirm the transition (four-eyes principle).'
+            module:
+                title: 'Module gate'
+                body: 'Restricts the transition to tenants where the specified module is active.'
+        hint:
+            yaml_baseline: 'Missing overrides automatically use the YAML baseline value from the workflow configuration.'
+
+    # Async admin jobs
+    job:
+        queued: "Job queued and will be processed shortly…"
+        progress: "Progress"
+        error: "Error"
+        completed: "Job completed successfully."
+        id_label: "Job ID"
+        worker_hint: "The job is running in the background. This page auto-refreshes every 3 seconds."
+        download: "Download file"
+        progress_page_title: "Job progress"
+        progress_subtitle_generic: "The operation is running in the background. A status will appear here once it completes."
+        badge: "Async job"
+        export:
+            data_label: "CSV export — all entities"
+            data_subtitle: "Collecting selected entities into a file in the background…"
+            ready: "Export ready. Click Download to save the file."
+            file_not_found: "Export file not found (already downloaded or expired)."
+
+    workflows:
+        title: 'Workflow Step Editor'
+        subtitle: 'Edit per-tenant step-level overrides for regulatory approval lifecycles and lifecycle configurations'
+        no_regulatory: 'No regulatory workflow configuration files found.'
+        no_lifecycle: 'No lifecycle configuration files found.'
+        no_steps: 'No steps defined for this workflow. Lifecycle configurations use transition-level overrides.'
+        no_yaml_baseline: 'No YAML baseline data available for this step.'
+        yaml_baseline: 'YAML baseline'
+        yaml_value: 'YAML value'
+        current_override: 'Current override'
+        save_success: 'Workflow step override saved.'
+        reset_success: 'Workflow step override reset — YAML baseline will be used again.'
+        reset_confirm: 'Really reset all overrides for this step?'
+        section:
+            regulatory: 'Regulatory Workflows'
+            regulatory_desc: 'Approval chain workflows with per-step overrides for roles, SLA, and auto-progress conditions.'
+            lifecycle: 'Lifecycle Configurations'
+            lifecycle_desc: 'Entity status state machines — configure transition-level overrides via the Lifecycle Overrides editor.'
+            steps: 'Approval Steps'
+            steps_desc: '%count% steps defined in YAML'
+            override_fields: 'Override Fields'
+            yaml_baseline: 'YAML Baseline'
+            help: 'Help'
+        col:
+            name: 'Workflow'
+            steps: 'Steps'
+            overrides: 'Active Overrides'
+            step_name: 'Step'
+            approver_role: 'Approver Role'
+            days: 'Days'
+            overridden_keys: 'Overridden Keys'
+        step:
+            unnamed: '(unnamed step)'
+            overridden: 'overridden'
+            override_active: 'Override active'
+        show:
+            title: 'Workflow: %workflow%'
+            subtitle: 'Step structure and tenant overrides'
+        edit:
+            title: 'Edit Step %step% — %workflow%'
+            breadcrumb: 'Step %step%'
+            hint: 'Empty fields use the YAML baseline value. Only populated fields are stored in the database.'
+        action:
+            show: 'Manage steps'
+            back: 'Back'
+            reset: 'Reset'
+            transition_overrides: 'Transition overrides'
+            edit_transitions: 'Edit transition overrides'
+            lifecycle_overrides: 'Lifecycle Overrides'
+        form:
+            approver_role: 'Approver role'
+            approver_role_help: 'ROLE_* value that overrides the YAML approver role for this step. Leave empty to use YAML default.'
+            approver_users: 'Approver users (JSON)'
+            approver_users_help: 'JSON array of user IDs, e.g. [42, 57]. Leave empty to use YAML default.'
+            days_to_complete: 'Days to complete'
+            days_to_complete_help: 'SLA days override. Leave empty to use YAML default.'
+            auto_progress_conditions: 'Auto-progress conditions (JSON)'
+            auto_progress_conditions_help: 'JSON condition object for field_completion auto-progression. Leave empty to use YAML default.'
+            reason_required: 'Reason required'
+            reason_required_value: 'Require reason'
+            four_eyes: 'Four-eyes principle'
+            four_eyes_value: 'Enable four-eyes'
+            module: 'Module gate'
+            module_help: 'Module key (e.g. privacy, documents). Leave empty for no restriction.'
+            enable_override: 'Enable override'
+        hint:
+            yaml_baseline: 'Missing overrides automatically use the YAML baseline value from the workflow configuration.'
+            lifecycle_redirect: 'Lifecycle configurations use transition-level overrides. Click "Transition overrides" to configure them.'
+            lifecycle_has_transitions: 'This is a lifecycle configuration. Use the Lifecycle Overrides editor to configure transition-level metadata.'
+        validation:
+            days_non_negative: 'Days to complete must be 0 or greater.'
+            conditions_invalid_json: 'Auto-progress conditions must be valid JSON.'
+        help:
+            approver_role:
+                title: 'Approver role'
+                body: 'Overrides the ROLE_* value that is required to approve this step. Takes precedence over the YAML definition.'
+            days_to_complete:
+                title: 'Days to complete'
+                body: 'Override the SLA deadline for this step. Affects the overdue-monitoring cron job.'
+            auto_progress:
+                title: 'Auto-progress conditions'
+                body: 'When all conditions evaluate to true (field_completion / risk_appetite / auto), the step is auto-approved without user action.'
+            four_eyes:
+                title: 'Four-eyes principle'
+                body: 'When enabled, a second person must confirm the transition (four-eyes principle).'
+    queue:
+        title: 'Queue Status'
+        badge: 'Async Worker'
+        subtitle: 'Heartbeat, queue depth, recently processed jobs, and manual emergency-trigger for shared-hosting deployments.'
+        status:
+            green:
+                message: 'Worker healthy — last heartbeat %age% s ago, %depth% messages queued.'
+            yellow:
+                message: 'Worker is slow to respond (last heartbeat %age% s ago). Cron may run with delay — usually drains on the next cycle.'
+            red:
+                message: 'Worker offline — no heartbeat for %age% s. %depth% messages queued. Check cron entry or click "Process now".'
+            unknown:
+                message: 'No heartbeat recorded yet. The traffic light activates as soon as the worker runs for the first time.'
+        kpi:
+            heartbeat:
+                label: 'Heartbeat'
+                hint: 'Seconds since last worker tick'
+                never: 'never'
+            queue_depth:
+                label: 'Queue depth'
+                hint: 'Pending async messages'
+            pending:
+                label: 'Pending jobs'
+                hint: 'Job files with status "pending"'
+            failed:
+                label: 'Failed (24 h)'
+                hint: 'Messenger failure queue, last 24 h'
+        process_now:
+            title: 'Process queue now'
+            description: 'Safe emergency drain: up to 5 messages within 25 seconds — stays under the PHP-FPM timeout. Click repeatedly for larger queues.'
+            button: 'Process now'
+            fineprint: 'CSRF-protected, audit-logged.'
+            success: 'Queue drain completed successfully (%duration% s).'
+            partial: 'Worker exited with code %exit% after %duration% s. Check logs.'
+            error: 'Queue drain failed to start: %error%'
+        cron:
+            title: 'Cron entry for a permanent worker'
+            description: 'Configure as a 1-minute cron in your hosting panel (cPanel, Plesk, ISPConfig). See the hosting-worker guide for details.'
+            see_guide: 'Full guide: docs/user-guide/HOSTING_WORKER.md'
+        recent:
+            title: 'Recently processed jobs'
+            col:
+                job: 'Job'
+                status: 'Status'
+                progress: 'Progress'
+                updated: 'Updated'
+            empty:
+                title: 'No jobs processed yet'
+                description: 'Jobs appear here as soon as the worker (cron or manual trigger) executes async tasks.'
+        job_status:
+            pending: 'Pending'
+            running: 'Running'
+            succeeded: 'Succeeded'
+            failed: 'Failed'
+            unknown: 'Unknown'
+        banner:
+            title: 'Async worker offline.'
+            message: 'No heartbeat for %age% s, %depth% messages queued. Admin jobs (backup, data repair, exports) are stuck until the worker resumes.'
+            link: 'Open queue status →'
+        hub:
+            label: 'Queue status'
+            desc: 'Worker health, heartbeat, manual drain'
+
+
 data_management:
     backup:
         title: 'Backup & Restore'
@@ -611,6 +1540,11 @@ data_management:
             page_reload: 'Page will reload in 3 seconds...'
         confirm_delete: 'Do you really want to delete the backup "%filename%"?'
         bootstrap_error: 'Bootstrap could not be loaded after %attempts% attempts'
+        # Async-job progress page (Phase 2 rollout) — shared by create and restore.
+        progress:
+            badge: 'Backup'
+            title: 'Backup job in progress'
+            subtitle: 'Running in the background to avoid PHP-FPM timeouts on large datasets.'
     export:
         includes_all_records: 'Includes all records from your tenant'
         sensitive_data_warning: 'Warning: This export may contain sensitive data. Please store securely.'
@@ -691,7 +1625,7 @@ setup:
 kpi_threshold:
     page:
         title: 'KPI Thresholds'
-        subtitle: 'Tenant-specific good/warning cut-offs for KPI status colours (overrides defaults).'
+        subtitle: 'Organization-specific good/warning cut-offs for KPI status colours (overrides defaults).'
         new: 'New threshold'
         edit: 'Edit threshold'
     action:
@@ -725,8 +1659,47 @@ kpi_threshold:
         deleted: 'Threshold deleted.'
         duplicate_key: 'A threshold already exists for this KPI.'
         good_below_warning: 'Good threshold must be ≥ warning threshold.'
-        no_tenant: 'No tenant assigned.'
+        no_tenant: 'No organization assigned — please select a specific organization first to configure KPI thresholds.'
     message:
         no_configs: 'No thresholds configured — defaults apply.'
     confirm:
         delete: 'Really delete this threshold? Defaults will apply afterwards.'
+
+industry_preset:
+    title: 'Industry Presets'
+    badge: 'Setup'
+    subtitle: 'Industry templates for modules, frameworks, controls and documents — apply in one step.'
+    action:
+        admin_hub: 'Admin Hub'
+        preview: 'Preview'
+        apply: 'Apply'
+        back: 'Back'
+        apply_button: 'Apply preset'
+    badge_label:
+        modules: 'Modules'
+        frameworks: 'Frameworks'
+        controls: 'Controls'
+        documents: 'Documents'
+    empty:
+        title: 'No presets found'
+        text: 'No YAML files in fixtures/library/presets/.'
+    confirm:
+        apply_full: 'Really apply preset? Modules + frameworks will be activated, controls and documents will be created.'
+        apply_short: 'Really apply preset?'
+    preview:
+        badge: 'Preview'
+        subtitle: 'Review content of industry preset before applying.'
+        section_description: 'Description'
+        section_modules: 'Modules'
+        section_frameworks: 'Frameworks'
+        section_initial_controls: 'Initial controls'
+        section_initial_documents: 'Initial documents'
+        section_apply: 'Apply'
+        apply_hint: 'Applying activates modules, unlocks frameworks, and persists initial controls/documents. Existing records remain untouched.'
+        table:
+            code: 'Code'
+            priority: 'Priority'
+            activate: 'Activate'
+            optional: 'optional'
+
+

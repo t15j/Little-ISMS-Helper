@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Controller\Trait\ModuleGatedControllerTrait;
+use App\Controller\Trait\BulkActionTrait;
 use App\Entity\Consent;
 use App\Entity\User;
+use App\Enum\ConsentStatus;
 use App\Form\ConsentType;
+use App\Lifecycle\LifecycleService;
 use App\Repository\ConsentRepository;
+use App\Service\AuditLogger;
+use App\Service\ModuleConfigurationService;
 use App\Service\TenantContext;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -15,25 +21,35 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/consent', requirements: ['_locale' => 'de|en'])]
 class ConsentController extends AbstractController
 {
+    use ModuleGatedControllerTrait;
+    use BulkActionTrait;
+
     public function __construct(
         private readonly ConsentRepository $consentRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly TenantContext $tenantContext,
         private readonly Security $security,
-        private readonly TranslatorInterface $translator
+        private readonly TranslatorInterface $translator,
+        private readonly ModuleConfigurationService $moduleService,
+        private readonly LifecycleService $lifecycleService,
+        private readonly ?AuditLogger $auditLogger = null,
     ) {}
 
-    #[Route('/', name: 'app_consent_index')]
+    #[Route('/', name: 'app_consent_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(Request $request): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         $tenant = $this->tenantContext->getCurrentTenant();
 
         // Get filter parameters
@@ -82,10 +98,12 @@ class ConsentController extends AbstractController
         ]);
     }
 
-    #[Route('/new', name: 'app_consent_new')]
+    #[Route('/new', name: 'app_consent_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         $consent = new Consent();
         $tenant = $this->tenantContext->getCurrentTenant();
 
@@ -109,41 +127,50 @@ class ConsentController extends AbstractController
                     $consent->setIsVerifiedByDpo(true);
                     $consent->setVerifiedBy($currentUser);
                     $consent->setVerifiedAt(new DateTimeImmutable());
-                    $consent->setStatus('active');
+                    $this->entityManager->persist($consent);
+                    $this->entityManager->flush();
+                    $this->lifecycleService->transition($consent, 'consent_lifecycle', 'verify', $currentUser);
                 } else {
-                    $consent->setStatus('pending_verification');
+                    // pending_verification is the workflow initial_marking — no transition needed
+                    $this->entityManager->persist($consent);
+                    $this->entityManager->flush();
                 }
-
-                $this->entityManager->persist($consent);
-                $this->entityManager->flush();
 
                 $this->addFlash('success', $this->translator->trans('consent.success.created', [], 'consent'));
                 return $this->redirectToRoute('app_consent_show', ['id' => $consent->getId()]);
             }
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('consent/form.html.twig', [
             'consent' => $consent,
             'form' => $form,
             'is_edit' => false,
-        ]);
+        ], new Response(status: $status));
     }
 
-    #[Route('/{id}', name: 'app_consent_show', requirements: ['id' => '\d+'])]
+    #[Route('/{id}', name: 'app_consent_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(Consent $consent): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         return $this->render('consent/show.html.twig', [
             'consent' => $consent,
         ]);
     }
 
-    #[Route('/{id}/edit', name: 'app_consent_edit', requirements: ['id' => '\d+'])]
+    #[Route('/{id}/edit', name: 'app_consent_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, Consent $consent): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         // Only allow editing if pending or active
-        if (!in_array($consent->getStatus(), ['pending_verification', 'active'], true)) {
+        if (!in_array($consent->getStatus(), [ConsentStatus::PendingVerification->value, ConsentStatus::Active->value], true)) {
             $this->addFlash('error', $this->translator->trans('consent.error.cannot_edit_status', [], 'consent'));
             return $this->redirectToRoute('app_consent_show', ['id' => $consent->getId()]);
         }
@@ -159,17 +186,23 @@ class ConsentController extends AbstractController
             return $this->redirectToRoute('app_consent_show', ['id' => $consent->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('consent/form.html.twig', [
             'consent' => $consent,
             'form' => $form,
             'is_edit' => true,
-        ]);
+        ], new Response(status: $status));
     }
 
     #[Route('/{id}/verify', name: 'app_consent_verify', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_DPO')]
     public function verify(Request $request, Consent $consent): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         if (!$this->isCsrfTokenValid('verify' . $consent->getId(), $request->request->get('_token'))) {
             $this->addFlash('error', $this->translator->trans('consent.error.invalid_token', [], 'consent'));
             return $this->redirectToRoute('app_consent_show', ['id' => $consent->getId()]);
@@ -186,10 +219,10 @@ class ConsentController extends AbstractController
             $consent->setIsVerifiedByDpo(true);
             $consent->setVerifiedBy($currentUser);
             $consent->setVerifiedAt(new DateTimeImmutable());
-            $consent->setStatus('active');
             $consent->setUpdatedAt(new DateTimeImmutable());
 
             $this->entityManager->flush();
+            $this->lifecycleService->transition($consent, 'consent_lifecycle', 'verify', $currentUser);
 
             $this->addFlash('success', $this->translator->trans('consent.success.verified', [], 'consent'));
         }
@@ -201,6 +234,8 @@ class ConsentController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function revoke(Request $request, Consent $consent): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         if (!$this->isCsrfTokenValid('revoke' . $consent->getId(), $request->request->get('_token'))) {
             $this->addFlash('error', $this->translator->trans('consent.error.invalid_token', [], 'consent'));
             return $this->redirectToRoute('app_consent_show', ['id' => $consent->getId()]);
@@ -221,7 +256,6 @@ class ConsentController extends AbstractController
             $consent->setRevokedAt(new DateTimeImmutable());
             $consent->setRevocationMethod($revocationMethod);
             $consent->setRevocationDocumentedBy($currentUser);
-            $consent->setStatus('revoked');
             $consent->setUpdatedAt(new DateTimeImmutable());
 
             // Append revocation notes
@@ -240,6 +274,7 @@ class ConsentController extends AbstractController
             }
 
             $this->entityManager->flush();
+            $this->lifecycleService->transition($consent, 'consent_lifecycle', 'revoke', $currentUser);
 
             $this->addFlash('success', $this->translator->trans('consent.success.revoked', [], 'consent'));
         }
@@ -251,6 +286,8 @@ class ConsentController extends AbstractController
     #[IsGranted('ROLE_DPO')]
     public function delete(Request $request, Consent $consent): Response
     {
+        if ($redirect = $this->checkModuleActive('privacy')) return $redirect;
+
         if (!$this->isCsrfTokenValid('delete' . $consent->getId(), $request->request->get('_token'))) {
             $this->addFlash('error', $this->translator->trans('consent.error.invalid_token', [], 'consent'));
             return $this->redirectToRoute('app_consent_show', ['id' => $consent->getId()]);
@@ -261,5 +298,66 @@ class ConsentController extends AbstractController
 
         $this->addFlash('success', $this->translator->trans('consent.success.deleted', [], 'consent'));
         return $this->redirectToRoute('app_consent_index');
+    }
+
+    /**
+     * Bulk CSV export of selected consents.
+     * Module-gated: privacy. ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/bulk-export', name: 'app_consent_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_DPO')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        if ($redirect = $this->checkModuleActive('privacy')) {
+            return $redirect;
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->tenantContext->getCurrentTenant();
+
+        $consents = [];
+        foreach ($ids as $rawId) {
+            $consent = $this->consentRepository->find((int) $rawId);
+            if ($consent === null) {
+                continue;
+            }
+            if ($tenant !== null && $consent->getTenant() !== $tenant) {
+                continue;
+            }
+            $consents[] = $consent;
+        }
+
+        if ($consents === []) {
+            return $this->json(['error' => 'No exportable consents'], 404);
+        }
+
+        $headers = ['ID', 'Data Subject Identifier', 'Identifier Type', 'Status', 'Granted At', 'Consent Method', 'Expires At'];
+
+        return $this->streamCsvExport(
+            $consents,
+            $headers,
+            static function (Consent $c): array {
+                return [
+                    (string) $c->getId(),
+                    (string) $c->getDataSubjectIdentifier(),
+                    (string) $c->getIdentifierType(),
+                    (string) $c->getStatus(),
+                    $c->getGrantedAt()?->format('Y-m-d') ?? '',
+                    (string) $c->getConsentMethod(),
+                    $c->getExpiresAt()?->format('Y-m-d') ?? '',
+                ];
+            },
+            'consents-export',
+            'Consent',
+            $this->auditLogger,
+        );
     }
 }

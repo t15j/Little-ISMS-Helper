@@ -23,7 +23,7 @@ services:
     networks:
       - little-isms
     volumes:
-      # ✅ REQUIRED: Persistente Daten (inkl. embedded MariaDB)
+      # ✅ REQUIRED: Persistente Daten (inkl. embedded MariaDB unter var/mysql)
       # Ohne dieses Volume gehen alle Daten bei Container-Neustart verloren!
       - isms_data:/var/www/html/var
     environment:

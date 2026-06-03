@@ -8,8 +8,8 @@
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.reports'|trans({}, 'nav'), path: 'app_reports_index' },
-            { label: 'management_reports.title'|trans({}, 'management_reports'), path: 'app_management_reports' },
+            { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_index') },
+            { label: 'management_reports.title'|trans({}, 'management_reports'), url: path('app_management_reports') },
             { label: 'management_reports.audit.title'|trans({}, 'management_reports') }
         ]
     } %}
@@ -18,13 +18,16 @@
         <h1 class="h2 mb-0">
             <i class="fa-icon fa-icon--ui-search text-warning" aria-hidden="true"></i> {{ 'management_reports.audit.title'|trans({}, 'management_reports') }}
         </h1>
-        <div class="btn-group">
-            <a href="{{ path('app_management_reports_audit_pdf') }}" class="fa-cyber-btn fa-cyber-btn--danger">
-                <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'management_reports.action.download_pdf'|trans({}, 'management_reports') }}
-            </a>
-            <a href="{{ path('app_management_reports_audit_excel') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="bi bi-file-excel" aria-hidden="true"></i> {{ 'management_reports.action.download_excel'|trans({}, 'management_reports') }}
-            </a>
+        <div>
+            <div class="btn-group">
+                <a href="{{ path('app_management_reports_audit_pdf') }}" class="fa-cyber-btn fa-cyber-btn--danger">
+                    <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'management_reports.action.download_pdf'|trans({}, 'management_reports') }}
+                </a>
+                <a href="{{ path('app_management_reports_audit_excel') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
+                    <i class="fa-icon fa-icon--nav-file-check" aria-hidden="true"></i> {{ 'management_reports.action.download_excel'|trans({}, 'management_reports') }}
+                </a>
+            </div>
+            {% include '_components/_fa_pdf_locale_switch.html.twig' with {route: 'app_management_reports_audit_pdf'} only %}
         </div>
     </div>
 
@@ -32,7 +35,7 @@
     <div class="row mb-4">
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'clipboard-check',
+                icon: 'nav-clipboard-check',
                 label: 'management_reports.audit.total_audits'|trans({}, 'management_reports'),
                 value: report.audits.total,
                 variant: 'primary'
@@ -40,7 +43,7 @@
         </div>
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'calendar-check',
+                icon: 'nav-calendar-check',
                 label: 'management_reports.audit.this_year'|trans({}, 'management_reports'),
                 value: report.audits.this_year,
                 variant: 'success'
@@ -48,7 +51,7 @@
         </div>
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'people',
+                icon: 'nav-people',
                 label: 'management_reports.audit.total_reviews'|trans({}, 'management_reports'),
                 value: report.management_reviews.total,
                 variant: 'primary'
@@ -56,7 +59,7 @@
         </div>
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'calendar-event',
+                icon: 'ui-calendar-event',
                 label: 'management_reports.audit.reviews_this_year'|trans({}, 'management_reports'),
                 value: report.management_reviews.this_year,
                 variant: 'warning'
@@ -77,41 +80,34 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'management_reports.audit_status.planned'|trans({}, 'management_reports') } %}
                             <span>{{ report.audits.by_status.planned }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-secondary" style="width: {{ report.audits.total > 0 ? (report.audits.by_status.planned / report.audits.total * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: report.audits.total > 0 ? (report.audits.by_status.planned / report.audits.total * 100) : 0, tone: 'neutral' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'primary', content: 'management_reports.audit_status.in_progress'|trans({}, 'management_reports') } %}
                             <span>{{ report.audits.by_status.in_progress }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-primary" style="width: {{ report.audits.total > 0 ? (report.audits.by_status.in_progress / report.audits.total * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: report.audits.total > 0 ? (report.audits.by_status.in_progress / report.audits.total * 100) : 0, tone: 'primary' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'success', content: 'management_reports.audit_status.completed'|trans({}, 'management_reports') } %}
                             <span>{{ report.audits.by_status.completed }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-success" style="width: {{ report.audits.total > 0 ? (report.audits.by_status.completed / report.audits.total * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: report.audits.total > 0 ? (report.audits.by_status.completed / report.audits.total * 100) : 0, tone: 'success' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'management_reports.audit_status.cancelled'|trans({}, 'management_reports') } %}
                             <span>{{ report.audits.by_status.cancelled }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-danger" style="width: {{ report.audits.total > 0 ? (report.audits.by_status.cancelled / report.audits.total * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: report.audits.total > 0 ? (report.audits.by_status.cancelled / report.audits.total * 100) : 0, tone: 'danger' }) }}
                     </div>
                 {% endblock %}
             {% endembed %}

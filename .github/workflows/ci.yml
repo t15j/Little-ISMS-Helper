@@ -2,20 +2,22 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop, 'claude/**' ]
+    branches: [ main, develop, 'claude/**', 'release-please--**' ]
     tags:
       - 'v*.*.*'  # Trigger on version tags for Docker releases
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
 
 permissions:
   contents: read
   security-events: write  # Required for Trivy SARIF upload
   actions: read
+  packages: write  # Required for ghcr.io push on tag releases
 
 env:
   # Opt into Node.js 24 for all actions that haven't migrated yet.
-  # Removes the persistent "actions/checkout@v4 running on Node 20"
+  # Removes the persistent "actions/checkout@v6 running on Node 20"
   # deprecation warnings from Security Checks / Code Quality / Tests
   # / Docker Build & Push. Becomes default on June 2nd 2026.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -50,14 +52,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-version }}
           extensions: intl, pdo, pdo_mysql, gd, zip, opcache, mbstring, xml
-          coverage: xdebug
+          # pcov is ~10x faster than xdebug for line-coverage collection (only
+          # capability we need — coverage-clover output, no debugger / no
+          # step-through). Switching shaves several minutes off the test job's
+          # wall-clock without changing the resulting clover report shape.
+          coverage: pcov
           tools: composer:v2
 
       - name: Get Composer cache directory
@@ -84,15 +90,38 @@ jobs:
           mysql -h 127.0.0.1 -u root -proot_password -e "GRANT ALL PRIVILEGES ON isms_test.* TO 'isms_user'@'%';"
           mysql -h 127.0.0.1 -u root -proot_password -e "FLUSH PRIVILEGES;"
 
-      - name: Run database migrations
+      - name: Build test database (hard-reset, entity-direct schema)
         env:
           DATABASE_URL: mysql://isms_user:isms_password@127.0.0.1:3306/isms?serverVersion=mariadb-11.0.0&charset=utf8mb4
           APP_ENV: test
           APP_SECRET: test_secret_for_ci
         run: |
-          php bin/console doctrine:migrations:migrate --no-interaction --env=test
+          # Hard-reset: drop + recreate test-DB so every run starts deterministic.
+          # Migration-only setup hits 229+ entity-vs-DB drift statements caused by
+          # legacy PREPARE/EXECUTE migrations (CLAUDE.md pitfall #6) and 1832 FK-blocked
+          # ALTER COLUMNs. Bypass migrations in test env — build schema directly from
+          # entity-metadata for guaranteed parity.
+          mysql -h 127.0.0.1 -u root -proot_password -e "DROP DATABASE IF EXISTS isms_test; CREATE DATABASE isms_test;"
+          mysql -h 127.0.0.1 -u root -proot_password -e "GRANT ALL PRIVILEGES ON isms_test.* TO 'isms_user'@'%'; FLUSH PRIVILEGES;"
+
+          # Build schema directly from entity-metadata (no migrations, no drift).
+          php bin/console doctrine:schema:create --env=test
+
+          # Initialize the doctrine_migration_versions table (schema:create skips it).
+          php bin/console doctrine:migrations:sync-metadata-storage --no-interaction --env=test
+
+          # Mark all migrations as already-executed so any code path that triggers
+          # `migrations:migrate` during tests sees "no pending" and skips silently.
+          php bin/console doctrine:migrations:version --add --all --no-interaction --env=test
+
           # Mark setup as complete to bypass setup wizard redirect
           touch config/setup_complete.lock
+
+          # Provision active_modules.yaml for test env (gitignored; required by
+          # ModuleConfigurationService for module-gated show-templates added in M-4).
+          # Without this file the service falls back to core-only modules and
+          # module-gated show-template tests (e.g. SoaSnapshotControllerTest) fail.
+          cp config/active_modules.yaml.dist config/active_modules.yaml
 
       - name: Run PHPUnit tests
         env:
@@ -122,7 +151,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         if: matrix.php-version == '8.4'
         with:
           files: ./coverage.xml
@@ -134,7 +163,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -158,7 +187,7 @@ jobs:
       - name: Run PHPStan
         run: |
           if [ -f vendor/bin/phpstan ]; then
-            vendor/bin/phpstan analyse src --level=1 || true
+            vendor/bin/phpstan analyse --configuration phpstan.dist.neon --no-progress
           else
             echo "PHPStan not available, skipping"
           fi
@@ -172,15 +201,311 @@ jobs:
             echo "A11y audit script not found — skipping"
           fi
 
+      # Twig Macro-Scope Gate — catches {% import %} at file-scope used inside {% block %}
+      # (lint:twig does NOT catch this; fails at render-time with "Variable does not exist")
+      - name: Twig Macro-Scope Check
+        run: python3 scripts/quality/check_twig_macro_scope.py
+
       # DQL Field Mismatch Gate — catches QueryBuilder references to non-existent entity fields
       - name: DQL Field Mismatch Check
         run: php scripts/quality/check-dql-mismatches.php
+
+      # Twig Entity-Member Gate — catches {{ x.relation.member }} where member is
+      # not a real accessor on the related entity (lint:twig only checks syntax;
+      # such accesses fail at render-time with an HTTP 500).
+      - name: Twig Entity-Property Check
+        run: python3 scripts/quality/check_twig_entity_properties.py
+
+      # ── Repo Quality Gates ─────────────────────────────────────────────────
+      # 8 static-analysis gates that catch common bug-patterns at PR-time.
+      # Each gate exits 0 (clean) or 1 (violations). Blocking gates fail
+      # the whole job; warn-only gates use continue-on-error: true.
+      #
+      # Gate 1 — Twig macro import-order (BLOCKING)
+      #   Detects macro usage before the first import appears in the file.
+      #   Prevents: 'Variable "_fa_xxx" does not exist' runtime errors.
+      #   Embed-scope isolation is handled by Twig Macro-Scope Check above.
+      - name: "Gate 1: Twig macro import-order"
+        run: python3 scripts/quality/check_twig_macro_imports.py
+
+      # Gate 2 — Embed-block trans_default_domain (WARN-ONLY for now)
+      #   Detects {% embed %} blocks using |trans without their own
+      #   {% trans_default_domain %} directive. 44 pre-existing violations
+      #   in templates/ being resolved separately; becomes blocking once
+      #   legacy violations are cleared.
+      - name: "Gate 2: Embed-block trans_default_domain"
+        run: python3 scripts/quality/check_twig_embed_domain.py
+        continue-on-error: true
+
+      # Gate 3 — MariaDB-11 reserved-words in migrations (BLOCKING)
+      #   Detects unquoted ROW_NUMBER/RANK/WINDOW/OVER/etc. as column names.
+      #   Prevents: ERROR 1064 syntax errors during migration on MariaDB 11.
+      - name: "Gate 3: MariaDB-11 reserved-words in migrations"
+        run: bash scripts/quality/check_migration_reserved_words.sh
+
+      # Gate 4 — DDL-migrations isTransactional()=false (BLOCKING)
+      #   Only enforced for migrations created on/after 2026-05-08.
+      #   83 pre-existing legacy migrations are exempt (cutoff documented in script).
+      #   Prevents: SAVEPOINT errors when running multiple DDL migrations.
+      - name: "Gate 4: DDL-migrations isTransactional()=false"
+        run: bash scripts/quality/check_migration_transactional.sh
+
+      # Gate 5 — Aurora v4 anti-patterns on cards (WARN-ONLY for now)
+      #   Detects Bootstrap bg-*/text-white on .card/.card-header.
+      #   8 pre-existing violations in templates/ being resolved separately.
+      - name: "Gate 5: Aurora anti-patterns on cards"
+        run: python3 scripts/quality/check_aurora_anti_patterns.py
+        continue-on-error: true
+
+      # Gate 6 — Missing translation keys (BLOCKING for high-priority domains)
+      #   Pure-Python YAML-diff between <domain>.de.yaml and <domain>.en.yaml.
+      #   Replaced the previous shell wrapper around `bin/console
+      #   debug:translation` which cold-started the Symfony kernel 12 times
+      #   sequentially (~12-24s). Python implementation runs in <1s.
+      #   Full-domain check: ALL_DOMAINS=1 python3 scripts/quality/check_missing_translations.py
+      - name: "Gate 6: Missing translation keys"
+        run: python3 scripts/quality/check_missing_translations.py
+
+      # Gate 7 — Competitor-names in source/templates/translations (BLOCKING)
+      #   Detects Vanta/Drata/Probo/Verinice/HiScout/etc. in codebase.
+      #   Per memory feedback_no_competitor_names.
+      - name: "Gate 7: No competitor names"
+        run: bash scripts/quality/check_no_competitor_names.sh
+
+      # Gate 8 — Double /{_locale}/ prefix in Controller routes (BLOCKING)
+      #   config/routes.yaml wraps src/Controller/ in prefix /{_locale} globally.
+      #   Adding /{_locale}/ in #[Route(...)] produces /{_locale}/{_locale}/...
+      #   which Symfony refuses to compile — cache:clear fails, app does not boot.
+      #   Per memory feedback_locale_in_links.
+      - name: "Gate 8: No double /{_locale}/ prefix in controllers"
+        run: python3 scripts/quality/check_double_locale_prefix.py
+
+      # Gate 9 — Alva-Hint translation placeholder consistency (BLOCKING)
+      #   Verifies every %placeholder% in alva.de/en.yaml title/body strings
+      #   is declared in the rule's bodyTranslationParams. Missing params would
+      #   leak raw "%foo%" tokens into the rendered hint card UI.
+      - name: "Gate 9: Alva-Hint placeholder consistency"
+        run: python3 scripts/quality/check_alva_hint_placeholders.py
+
+      # Gate 10 — Wildcard route collision detection (BLOCKING)
+      #   Detects routes where a /{placeholder} wildcard without a restrictive
+      #   requirement appears BEFORE literal-segment sibling routes in the same
+      #   controller. Symfony matches attribute routes in source-code order, so
+      #   an unrestricted /{id} greedily matches /new or /approvals, passing the
+      #   literal string to EntityValueResolver → NotFoundHttpException (404).
+      #   Fix: add requirements: ['id' => '\d+'] (or enum for slug placeholders)
+      #   to every flagged wildcard route. Root cause of the user-reported
+      #   IdentityProvider-not-found 404 on /admin/sso/new.
+      - name: "Gate 10: No wildcard-vs-literal route collisions"
+        run: python3 scripts/quality/check_route_wildcard_collisions.py
+
+      # ── Pattern-Discipline Gates (Audit-S5) ────────────────────────────────
+      # Three static analyzers enforcing Foundation patterns from
+      # var/junior-isb-audit/SOLUTIONS_FOUNDATION.md. Pre-existing violations
+      # are captured in scripts/quality/baselines/*.txt; remove an entry once
+      # the underlying issue is migrated. Annotation overrides documented in
+      # each script's header.
+      #
+      # Gate 11 — Module-gating discipline (P-6, BLOCKING via baseline)
+      #   Verifies regulatory fields (DORA/LkSG/MaRisk/NIS2/TISAX/GDPR) live
+      #   inside an isModuleActive() block, addModuleGatedField() call, or a
+      #   safe-helper method. Annotation: // @no-module-gate-required: <why>.
+      - name: "Gate 11: Module-gating discipline (P-6)"
+        run: python3 scripts/quality/check_module_gating.py --baseline scripts/quality/baselines/module_gating.txt --quiet
+
+      # Gate 12 — Flash translation-domain (P-5, BLOCKING via baseline)
+      #   Stops $this->translator->trans('key') without an explicit domain
+      #   parameter in controllers. Annotation: // @flash-domain-fallback-ok.
+      - name: "Gate 12: Flash translation-domain (P-5)"
+        run: python3 scripts/quality/check_flash_domain.py --baseline scripts/quality/baselines/flash_domain.txt --quiet
+
+      # Gate 13 — Freetext-legacy heuristic (P-15, STRICT-via-baseline)
+      #   Flags TextType/TextareaType fields whose name signals an existing
+      #   entity should be used (auditor/owner/department/etc.). Baseline
+      #   captures 14 pre-existing migration targets. Annotation:
+      #   // @legacy-freetext: <reason>.
+      - name: "Gate 13: Freetext-legacy heuristic (P-15)"
+        run: python3 scripts/quality/check_freetext_legacy.py --baseline scripts/quality/baselines/freetext_legacy.txt --strict --quiet
+
+      # Gate 14 — Workflow configs valid (lifecycle-foundation, BLOCKING)
+      #   Runs cache:clear --env=test (catches unsupported supports-class errors)
+      #   then workflow:dump for every config/workflows/*.yaml state-machine.
+      - name: "Gate 14: Workflow configs valid"
+        run: ./scripts/quality/check_workflow_configs.sh
+
+      # ── Sprint Quality Gates (round 2 — bug-classes from last sweep) ──────
+      # 14 new gates, each baselined for `main` HEAD. Remove a baseline entry
+      # once the underlying issue is fixed.
+      - name: "Gate 15: Aurora icon-name validity"
+        run: python3 scripts/quality/check_aurora_icon_names.py --baseline scripts/quality/baselines/aurora_icon_names.txt --quiet
+      - name: "Gate 16: No Bootstrap-Icons bi-* classes"
+        run: python3 scripts/quality/check_no_bi_classes.py --baseline scripts/quality/baselines/no_bi_classes.txt --quiet
+      - name: "Gate 17: No nested <form> tags"
+        run: python3 scripts/quality/check_nested_forms.py --baseline scripts/quality/baselines/nested_forms.txt --quiet
+      - name: "Gate 18: #[Route] requires methods: arg"
+        run: python3 scripts/quality/check_route_methods.py --baseline scripts/quality/baselines/route_methods.txt --quiet
+      - name: "Gate 19: Forbid legacy Routing\\Annotation\\Route import"
+        run: python3 scripts/quality/check_legacy_route_import.py --baseline scripts/quality/baselines/legacy_route_import.txt --quiet
+      - name: "Gate 20: DDL migrations need isTransactional()=false"
+        run: python3 scripts/quality/check_ddl_transactional.py --baseline scripts/quality/baselines/ddl_transactional.txt --quiet
+      - name: "Gate 21: Bool-property accessor mismatch"
+        run: python3 scripts/quality/check_bool_accessor_usage.py --baseline scripts/quality/baselines/bool_accessor_usage.txt --quiet
+      - name: "Gate 22: Forbid generic exception throws"
+        run: python3 scripts/quality/check_no_generic_throws.py --baseline scripts/quality/baselines/no_generic_throws.txt --quiet
+      - name: "Gate 23: Translation dynamic-key prefix registry"
+        run: python3 scripts/quality/check_translation_dynamic_keys.py --quiet
+      - name: "Gate 24: AuditLog must set tenant"
+        run: python3 scripts/quality/check_audit_log_tenant.py --baseline scripts/quality/baselines/audit_log_tenant.txt --quiet
+      - name: "Gate 25: God-class size (soft-fail via baseline)"
+        run: python3 scripts/quality/check_god_class_size.py --baseline scripts/quality/baselines/god_class_size.txt --quiet
+      - name: "Gate 26: Translation top-level keys match domain"
+        run: python3 scripts/quality/check_translation_nesting.py --baseline scripts/quality/baselines/translation_nesting.txt --quiet
+      - name: "Gate 27: No EntityManager writes in controllers"
+        run: python3 scripts/quality/check_em_writes_in_controller.py --baseline scripts/quality/baselines/em_writes_in_controller.txt --quiet
+      - name: "Gate 28: #[CurrentUser] action test-arg count"
+        run: python3 scripts/quality/check_currentuser_test_args.py --baseline scripts/quality/baselines/currentuser_test_args.txt --quiet
+
+      # ── Sprint Quality Gates (round 3 — sweep-aftermath gates) ────────────
+      # Caught real bugs at introduction time.
+      - name: "Gate 29: Form-render-completeness (fields flowing past submit)"
+        run: python3 scripts/quality/check_form_render_completeness.py --baseline scripts/quality/baselines/form_render_completeness.txt --quiet
+      - name: "Gate 30: Twig macro positional-arg arity"
+        run: python3 scripts/quality/check_macro_arg_arity.py --baseline scripts/quality/baselines/macro_arg_arity.txt --quiet
+      - name: "Gate 31: Nested Twig print-expr inside string-literal macro args"
+        run: python3 scripts/quality/check_nested_twig_in_string.py --baseline scripts/quality/baselines/nested_twig_in_string.txt --quiet
+      - name: "Gate 32: #[ORM\\Version] columns require explicit type + name"
+        run: python3 scripts/quality/check_version_column_explicit.py --baseline scripts/quality/baselines/version_column_explicit.txt --quiet
+      - name: "Gate 33: No PREPARE/EXECUTE dynamic SQL in migrations"
+        run: python3 scripts/quality/check_no_prepare_execute_migrations.py --baseline scripts/quality/baselines/no_prepare_execute_migrations.txt --quiet
+      - name: "Gate 34: No raw TextareaType for JSON+array entity columns"
+        run: python3 scripts/quality/check_raw_json_textarea.py --baseline scripts/quality/baselines/raw_json_textarea.txt --quiet
+
+      # ── Sprint Quality Gates (round 4 — 21-day fix-pattern audit) ─────────
+      - name: "Gate 35: No Bootstrap size utilities on Aurora components"
+        run: python3 scripts/quality/check_aurora_utility_misuse.py --baseline scripts/quality/baselines/aurora_utility_misuse.txt --quiet
+      - name: "Gate 36: #[Route] paths must not have trailing slash"
+        run: python3 scripts/quality/check_route_trailing_slash.py --baseline scripts/quality/baselines/route_trailing_slash.txt --quiet
+      - name: "Gate 37: No non-portable DQL date functions"
+        run: python3 scripts/quality/check_dql_non_portable.py --baseline scripts/quality/baselines/dql_non_portable.txt --quiet
+      - name: "Gate 40: _auto_form include requires explicit field whitelist"
+        run: python3 scripts/quality/check_auto_form_field_whitelist.py --baseline scripts/quality/baselines/auto_form_field_whitelist.txt --quiet
+      - name: "Gate 41: Admin controllers declare consistent role-scope guard"
+        run: python3 scripts/quality/check_admin_role_scope.py --baseline scripts/quality/baselines/admin_role_scope.txt --quiet
+      - name: "Gate 42: Status-Enum cases match Symfony Workflow YAML places"
+        run: python3 scripts/quality/check_status_enum_yaml_parity.py --baseline scripts/quality/baselines/status_enum_yaml_parity.txt --quiet
+      - name: "Gate 43: Backup entity coverage (every src/Entity/*.php is backed up or has documented exclusion)"
+        run: python3 scripts/quality/check_backup_entity_coverage.py --quiet
+      - name: "Gate 44: Translation issues (hardcoded text / missing domains in Twig) — baseline-gated"
+        # check_translation_issues.py has no native --baseline / non-zero exit support;
+        # we wrap it and diff <file>:<line>: <desc> triples against the baseline.
+        # Existing entries are tolerated, NEW entries fail the gate.
+        # S12 item 9 — see scripts/quality/baselines/translation_issues.txt
+        run: |
+          set -euo pipefail
+          BASELINE=scripts/quality/baselines/translation_issues.txt
+          if [ ! -f "$BASELINE" ]; then
+            echo "::error::Baseline file $BASELINE missing"
+            exit 1
+          fi
+          CURRENT=$(python3 scripts/quality/check_translation_issues.py 2>&1 | python3 -c "
+          import sys, re
+          file = None
+          for line in sys.stdin:
+              line = line.rstrip()
+              m = re.match(r'^📄 (.+)$', line)
+              if m:
+                  file = m.group(1)
+                  continue
+              m = re.match(r'^\s+Line (\d+): (.+)$', line)
+              if m and file:
+                  print(f'{file}:{m.group(1)}: {m.group(2)}')
+          " | sort -u)
+          BASELINE_ENTRIES=$(grep -vE '^\s*(#|$)' "$BASELINE" | sort -u || true)
+          NEW=$(comm -23 <(printf '%s\n' "$CURRENT") <(printf '%s\n' "$BASELINE_ENTRIES") || true)
+          # comm prints empty line on empty input; strip blank lines
+          NEW=$(printf '%s\n' "$NEW" | grep -v '^$' || true)
+          if [ -n "$NEW" ]; then
+            echo "::error::Gate 44 FAILED — new translation issues introduced (not in baseline):"
+            printf '%s\n' "$NEW" | sed 's/^/  FAIL /'
+            echo ""
+            echo "Fix: either translate the affected strings, or — only if intentional —"
+            echo "add the entries to scripts/quality/baselines/translation_issues.txt."
+            exit 1
+          fi
+          TOTAL=$(printf '%s\n' "$CURRENT" | grep -c . || true)
+          BASELINED=$(printf '%s\n' "$BASELINE_ENTRIES" | grep -c . || true)
+          echo "Gate 44 OK — $TOTAL translation issue(s), all $BASELINED baselined."
+      - name: "Gate 45: FormType <-> Template field-reference drift"
+        # Complements Gate 29 (form_render_completeness): catches templates
+        # referencing form.X when the FormType has no ->add('X', ...) call.
+        # TODO §Implementation-Disziplin (Junior-ISB-Audit 2026-05-22).
+        run: python3 scripts/quality/check_form_template_fields.py --baseline scripts/quality/baselines/form_template_fields.txt --quiet
+      - name: "Gate 46: Entity setter param nullability matches property"
+        # Prevents InvalidTypeException 500 on form-bind: `private ?T $foo`
+        # must have `setFoo(?T $foo)`. Sweeps in #706 + #707 fixed history.
+        run: python3 scripts/quality/check_setter_nullability.py --baseline scripts/quality/baselines/setter_nullability.txt --quiet
+      - name: "Gate 47: NotBlank/NotNull Assert on NOT NULL scalar columns"
+        # Prevents NotNullConstraintViolationException 500 on flush. Without
+        # NotBlank, empty form submit bypasses validation and crashes at DB.
+        run: python3 scripts/quality/check_notblank_on_not_null.py --baseline scripts/quality/baselines/notblank_on_not_null.txt --quiet
+      - name: "Gate 48: No SQL reserved-keyword column names in entities"
+        # MariaDB/MySQL reserves words like `references`, `order`, `key`.
+        # Doctrine quotes them in CREATE TABLE but not in DML → INSERT/UPDATE
+        # blows up. Use `#[ORM\Column(name: 'safe_name')]` or rename the property.
+        run: python3 scripts/quality/check_entity_reserved_words.py --baseline scripts/quality/baselines/entity_reserved_words.txt --quiet
+      - name: "Gate 50: disabled FormField without mapped=>false"
+        # `'disabled' => true` without `'mapped' => false` lets Symfony bind
+        # empty POST values to the entity on submit → NOT NULL constraint
+        # violation (422). Fixed in bulk in PR #707 and PR #712 Pattern A.
+        # New occurrences are blocked here; 6 legacy fields are baselined for
+        # cleanup in Sprint S14. Add `// @intentional-bind: <reason>` if the
+        # bind is truly intentional.
+        run: python3 scripts/quality/check_disabled_mapped_pair.py --baseline scripts/quality/baselines/disabled_mapped_pair.txt --quiet
+      - name: "Gate 51: raw backed-enum in JsonResponse array"
+        # Returning a PHP backed-enum directly in a JSON array causes
+        # json_encode to return false → HTTP 500. Use ->getStatus()?->value
+        # to serialize the backing string.  Fixed in PR #705 and PR #712.
+        # Discovers enum-returning getters via entity return-type hints; 5
+        # pre-existing items are baselined (string-returning getters flagged
+        # by heuristic). Add `// @allow-raw-enum` to suppress if intentional.
+        run: python3 scripts/quality/check_enum_to_json_unwrap.py --baseline scripts/quality/baselines/enum_to_json_unwrap.txt --quiet
+      - name: "Gate 52: unsupported Twig 3.x tags (continue / break)"
+        # Twig 3.x has no {% continue %} or {% break %} tags. Using them
+        # throws a SyntaxError at runtime — caused 67+ test failures in
+        # PR #689. Replace with {% if condition %}...{% endif %} in the loop.
+        run: python3 scripts/quality/check_twig_unsupported_tags.py --baseline scripts/quality/baselines/twig_unsupported_tags.txt --quiet
+      - name: "Gate 53: renamed entity getters used in templates"
+        # A Twig accessor like incident.detectedDate resolves to getDetectedDate().
+        # When a field is renamed on the entity but a rarely-rendered email/PDF
+        # template still uses the old name, Twig throws a runtime RuntimeError
+        # (500) that lint:twig + unit tests never catch. Bitten us repeatedly
+        # (controls/incidents PDF, training/control emails, treatment-plan emails).
+        # Deny-list of known-dead accessors — add the old name here on rename.
+        run: python3 scripts/quality/check_template_entity_getters.py --quiet
+      - name: "Gate 54: sidebar main-area highlight parity"
+        # Every flyout-panel route must resolve, via the ordered nav_active
+        # resolver, to its own panel's area. Prevents the menu highlighting the
+        # wrong main area / none (the 44-defect Wave-5 drift, PR #788).
+        run: python3 scripts/quality/check_nav_area_parity.py --quiet
+      - name: "Gate 55: breadcrumb crumbs must link via url:"
+        # _breadcrumb.html.twig links a crumb only from `url:`; `path:`/`href:`
+        # keys render as silent dead text (~50 such crumbs fixed in PR #789).
+        run: python3 scripts/quality/check_breadcrumb_url_key.py --quiet
+      - name: "Gate 56: template path()/url() routes must exist"
+        # A literal path('typo') throws -> 500 at render; PHP unit tests miss it.
+        run: python3 scripts/quality/check_template_route_refs.py --quiet
+      - name: "Gate 57: controllers must not dispatch ExecuteJobMessage directly"
+        # Direct $messageBus->dispatch(new ExecuteJobMessage(...)) bypasses the
+        # in_request runner (the default) → job hangs at "pending". Use the
+        # JobDispatcher facade instead (fixed 7 such sites).
+        run: python3 scripts/quality/check_no_direct_job_messenger.py --quiet
+      # ── End Repo Quality Gates ─────────────────────────────────────────────
 
       # Hadolint — Dockerfile best-practice linting
       # Catches typical smells (apt-get install without --no-install-recommends,
       # missing pinned versions, root-as-default user, etc.)
       - name: Hadolint Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: Dockerfile
           # severity: only fail on errors, warnings reported but non-blocking
@@ -195,7 +520,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -217,25 +542,36 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Set up QEMU for multi-architecture builds
         uses: docker/setup-qemu-action@v4
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/little-isms-helper
+          # Dual-registry push: Docker Hub (canonical) + ghcr.io (OSS mirror,
+          # zero pull-rate-limit for GitHub Actions consumers).
+          images: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/little-isms-helper
+            ghcr.io/${{ github.repository_owner }}/little-isms-helper
           # Tagging strategy:
           #   Stable tag (e.g. v3.4.0)        → :3.4.0, :3.4, :latest
           #   Dev tag    (e.g. v3.4.0-dev.1)  → :3.4.0-dev.1, :dev   (NO :latest, NO :3.4)

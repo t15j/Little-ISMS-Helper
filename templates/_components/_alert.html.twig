@@ -44,16 +44,14 @@
     {% set title = props.title|default(null) %}
     {% set actions = props.actions|default(null) %}
 
-    {# Legacy-kompatible Classes (alert alert-{tone} + flash-{tone}) behalten —
-       bestehende Tests und CSS-Selektoren referenzieren sie. #}
-    {% set legacyTone = tone == 'danger' ? 'danger' : (tone == 'info' ? 'info' : tone) %}
-    <div class="fa-alert fa-alert--{{ tone }} alert alert-{{ legacyTone }} flash-{{ legacyTone }} {% if withAlva %}fa-alert--with-alva{% endif %} {% if dismissible %}fa-alert--dismissible{% endif %}"
+    <div class="fa-alert fa-alert--{{ tone }}{% if withAlva %} fa-alert--with-alva{% endif %}{% if dismissible %} fa-alert--dismissible{% endif %}"
          role="alert"
          {% if dismissible %}data-controller="aurora-alert"{% endif %}>
         {% if withAlva %}
             {{ alva.render(self._moodFor(tone)|trim, { size: 40, decorative: true, class: 'fa-alert__alva' }) }}
         {% elseif icon %}
-            <i class="bi {{ icon }} fa-alert__icon" aria-hidden="true"></i>
+            {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+            <i class="fa-icon fa-icon--{{ (icon starts with 'bi-') ? icon[3:] : icon }} fa-alert__icon" aria-hidden="true"></i>
         {% endif %}
 
         <div class="fa-alert__body">

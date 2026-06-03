@@ -104,40 +104,44 @@ class Incident
 
     #[ORM\Column(length: 50)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotBlank(message: 'Incident number is required')]
-    #[Assert\Length(max: 50, maxMessage: 'Incident number cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'incident.validation.number_required')]
+    #[Assert\Length(max: 50, maxMessage: 'incident.validation.number_max_length')]
     private ?string $incidentNumber = null;
 
     #[ORM\Column(length: 255)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotBlank(message: 'Incident title is required')]
-    #[Assert\Length(max: 255, maxMessage: 'Title cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'incident.validation.title_required')]
+    #[Assert\Length(max: 255, maxMessage: 'incident.validation.title_max_length')]
     private ?string $title = null;
 
     #[ORM\Column(type: Types::TEXT)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotBlank(message: 'Incident description is required')]
+    #[Assert\NotBlank(message: 'incident.validation.description_required')]
     private ?string $description = null;
 
     #[ORM\Column(length: 100)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotBlank(message: 'Incident category is required')]
-    #[Assert\Length(max: 100, maxMessage: 'Category cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'incident.validation.category_required')]
+    #[Assert\Length(max: 100, maxMessage: 'incident.validation.category_max_length')]
     private ?string $category = null;
 
     #[ORM\Column(type: 'string', length: 50, nullable: true, enumType: IncidentSeverity::class)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotNull(message: 'Severity is required')]
+    #[Assert\NotNull(message: 'incident.validation.severity_required')]
     private ?IncidentSeverity $severity = null;
 
     #[ORM\Column(type: 'string', length: 50, enumType: IncidentStatus::class)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotNull(message: 'Status is required')]
+    #[Assert\NotNull(message: 'incident.validation.status_required')]
     private ?IncidentStatus $status = IncidentStatus::Reported;
+
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotNull(message: 'Detection date is required')]
+    #[Assert\NotNull(message: 'incident.validation.detected_at_required')]
     private ?DateTimeInterface $detectedAt = null;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
@@ -146,16 +150,32 @@ class Incident
 
     #[ORM\Column(length: 100, nullable: true)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\Length(max: 100, maxMessage: 'Reporter name cannot exceed { limit } characters')]
+    #[Assert\Length(max: 100, maxMessage: 'incident.validation.reported_by_max_length')]
     private ?string $reportedBy = null;
 
     #[ORM\Column(length: 100, nullable: true)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\Length(max: 100, maxMessage: 'Assignee name cannot exceed { limit } characters')]
+    #[Assert\Length(max: 100, maxMessage: 'incident.validation.assigned_to_max_length')]
     private ?string $assignedTo = null;
 
+    /**
+     * Junior-ISB-Audit-2026-05-22 C2-01: Doppelpflege-Deprecation — use $affectedAssets.
+     *
+     * Freetext catalogue of affected systems. Superseded by the structured
+     * {@see self::$affectedAssets} ManyToMany collection (Asset entity) which
+     * satisfies ISO 27001 A.5.26 + DORA Art. 17 structured-incident-asset-linkage
+     * requirements. The column is retained for backward compatibility with
+     * pre-S13 records ("Legacy-Mode für Bestandsdaten"); a cleanup migration
+     * dropping the column is scheduled for S14 after one release cycle.
+     *
+     * Do NOT write to this field in new code. The Form input is `disabled`,
+     * the show-pages render it only when non-empty, and the API exposes it
+     * read-only via the `incident:read` group.
+     *
+     * @deprecated since S13 (2026-05-23) — use {@see self::$affectedAssets}.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
-    #[Groups(['incident:read', 'incident:write'])]
+    #[Groups(['incident:read'])]
     private ?string $affectedSystems = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
@@ -166,10 +186,28 @@ class Incident
     #[Groups(['incident:read', 'incident:write'])]
     private ?string $rootCause = null;
 
+    /**
+     * Junior-ISB-Audit-2026-05-22 M-07 Phase-1 — Legacy freetext column.
+     *
+     * @deprecated since 2026-05-23 (ADR docs/decisions/2026-05-23-capa-canonical-process.md).
+     *             Structured corrective actions now live in {@see \App\Entity\CorrectiveAction}
+     *             (source_type = 'incident', sourceIncident = this). The freetext is
+     *             retained as the analyst's UX entry point and pre-populates the
+     *             auto-materialised CA via
+     *             {@see \App\Listener\AutoReactionCorrectiveActionListenerForIncident}.
+     *             Canonical reporting reads CorrectiveAction, not this column.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['incident:read', 'incident:write'])]
     private ?string $correctiveActions = null;
 
+    /**
+     * Junior-ISB-Audit-2026-05-22 M-07 Phase-1 — Legacy freetext column.
+     *
+     * @deprecated since 2026-05-23 (ADR docs/decisions/2026-05-23-capa-canonical-process.md).
+     *             Preventive measures should be tracked as a CorrectiveAction with
+     *             actionType = 'preventive'. Retained for migration period only.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['incident:read', 'incident:write'])]
     private ?string $preventiveActions = null;
@@ -188,12 +226,12 @@ class Incident
 
     #[ORM\Column(type: Types::BOOLEAN)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotNull(message: 'Data breach flag is required')]
+    #[Assert\NotNull(message: 'incident.validation.data_breach_flag_required')]
     private ?bool $dataBreachOccurred = false;
 
     #[ORM\Column(type: Types::BOOLEAN)]
     #[Groups(['incident:read', 'incident:write'])]
-    #[Assert\NotNull(message: 'Notification required flag is required')]
+    #[Assert\NotNull(message: 'incident.validation.notification_required_flag_required')]
     private ?bool $notificationRequired = false;
 
     /**
@@ -228,7 +266,7 @@ class Incident
     #[Groups(['incident:read', 'incident:write'])]
     #[Assert\Choice(
         choices: ['operational', 'security', 'privacy', 'availability'],
-        message: 'NIS2 category must be one of: { choices }'
+        message: 'incident.validation.nis2_category_invalid'
     )]
     private ?string $nis2Category = null;
 
@@ -341,7 +379,12 @@ class Incident
         $this->affectedBusinessProcesses = new ArrayCollection();
         $this->relatedVulnerabilities = new ArrayCollection();
         $this->reportedByDeputyPersons = new ArrayCollection();
+        $this->criticalServicesAffected = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
+        // Junior-ISB-Audit-2026-05-22 K-01: SLA-Countdown anchor needs an unambiguous start time.
+        // GDPR Art. 33 (1) / NIS2 Art. 23 (4) 72h notification deadlines are measured from
+        // detectedAt; Doctrine never calls __construct on hydration, so editing an existing
+        // incident does NOT overwrite the persisted value.
         $this->detectedAt = new DateTimeImmutable();
     }
 
@@ -377,7 +420,7 @@ class Incident
         return $this->incidentNumber;
     }
 
-    public function setIncidentNumber(string $incidentNumber): static
+    public function setIncidentNumber(?string $incidentNumber): static
     {
         $this->incidentNumber = $incidentNumber;
         return $this;
@@ -388,7 +431,7 @@ class Incident
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -399,7 +442,7 @@ class Incident
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -410,7 +453,7 @@ class Incident
         return $this->category;
     }
 
-    public function setCategory(string $category): static
+    public function setCategory(?string $category): static
     {
         $this->category = $category;
         return $this;
@@ -438,12 +481,33 @@ class Incident
         return $this;
     }
 
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
+    }
+
+    /**
+     * String-based status accessor for Symfony Workflow marking_store compatibility.
+     * The Workflow component calls setStatusValue(string) — this bridge coerces
+     * the string back to the typed IncidentStatus enum.
+     */
+    public function getStatusValue(): string
+    {
+        return $this->status?->value ?? IncidentStatus::Reported->value;
+    }
+
+    public function setStatusValue(string $statusValue): static
+    {
+        $this->status = IncidentStatus::from($statusValue);
+        return $this;
+    }
+
     public function getDetectedAt(): ?DateTimeInterface
     {
         return $this->detectedAt;
     }
 
-    public function setDetectedAt(DateTimeInterface $detectedAt): static
+    public function setDetectedAt(?DateTimeInterface $detectedAt): static
     {
         $this->detectedAt = $detectedAt;
         return $this;
@@ -465,7 +529,7 @@ class Incident
         return $this->reportedBy;
     }
 
-    public function setReportedBy(string $reportedBy): static
+    public function setReportedBy(?string $reportedBy): static
     {
         $this->reportedBy = $reportedBy;
         return $this;
@@ -482,11 +546,22 @@ class Incident
         return $this;
     }
 
+    /**
+     * @deprecated since S13 (2026-05-23) — use {@see self::getAffectedAssets()}.
+     *             Junior-ISB-Audit-2026-05-22 C2-01: Doppelpflege-Deprecation.
+     */
     public function getAffectedSystems(): ?string
     {
         return $this->affectedSystems;
     }
 
+    /**
+     * @deprecated since S13 (2026-05-23) — use {@see self::addAffectedAsset()}.
+     *             Junior-ISB-Audit-2026-05-22 C2-01: Doppelpflege-Deprecation.
+     *             Retained for fixture/seed compatibility only — the Form
+     *             input is disabled and Show-pages render the value
+     *             read-only inside a "Legacy"-info alert.
+     */
     public function setAffectedSystems(?string $affectedSystems): static
     {
         $this->affectedSystems = $affectedSystems;
@@ -575,7 +650,7 @@ class Incident
         return $this->dataBreachOccurred;
     }
 
-    public function setDataBreachOccurred(bool $dataBreachOccurred): static
+    public function setDataBreachOccurred(?bool $dataBreachOccurred): static
     {
         $this->dataBreachOccurred = $dataBreachOccurred;
         return $this;
@@ -586,7 +661,7 @@ class Incident
         return $this->notificationRequired;
     }
 
-    public function setNotificationRequired(bool $notificationRequired): static
+    public function setNotificationRequired(?bool $notificationRequired): static
     {
         $this->notificationRequired = $notificationRequired;
         return $this;
@@ -597,7 +672,7 @@ class Incident
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -1339,6 +1414,390 @@ class Incident
             $this->reportedBy,
             $this->reportedByDeputyPersons,
         );
+    }
+
+    /**
+     * Person-Rollout Phase B2 — long-term governance owner of the
+     * incident, distinct from the action-bound `assigned_to` ticket
+     * assignee and the `reported_by_*` audit-trail. May be an external
+     * Person without a system login (e.g. CISO consultant).
+     */
+    #[ORM\ManyToOne(targetEntity: Person::class)]
+    #[ORM\JoinColumn(name: 'responsible_person_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?Person $responsiblePerson = null;
+
+    // -------------------------------------------------------------------------
+    // ISO 27001 A.5.24-A.5.28 — always-active fields (T31.2.2)
+    // -------------------------------------------------------------------------
+
+    /**
+     * ISO 27001 A.5.24 — Event vs. Incident classification for workflow routing.
+     * Allowed values: 'event' | 'incident'
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?string $incidentClassification = null;
+
+    /**
+     * ISO 27001 A.5.26 — Short-term containment vs. long-term remediation actions.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?string $containmentActions = null;
+
+    /**
+     * ISO 27001 A.5.28 — Confirm that digital evidence has been preserved.
+     */
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    #[Groups(['incident:read', 'incident:write'])]
+    private bool $evidencePreserved = false;
+
+    /**
+     * ISO 27001 A.5.28 — Evidence artifacts as JSON array (document refs / URLs).
+     * Stored as JSON to avoid an extra join table; formal M:N to Document
+     * can be added in a later sprint.
+     *
+     * @var list<string>|null
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?array $evidenceArtifactsJson = null;
+
+    // -------------------------------------------------------------------------
+    // DORA Art. 17-19 — module-gated fields (nis2_dora) (T31.2.2)
+    // -------------------------------------------------------------------------
+
+    /**
+     * DORA Art. 18 — Art. 3 RTS classification outcome.
+     * Allowed values: 'major_ict_incident' | 'significant_cyber_threat'
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?string $ictIncidentClassification = null;
+
+    /**
+     * DORA Art. 19(1)(a) — Data loss occurred during the incident.
+     */
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    #[Groups(['incident:read', 'incident:write'])]
+    private bool $dataLossOccurred = false;
+
+    /**
+     * DORA Art. 19(1)(d) — Data leakage (exfiltration) occurred.
+     */
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    #[Groups(['incident:read', 'incident:write'])]
+    private bool $dataLeakageOccurred = false;
+
+    /**
+     * DORA Art. 19(1)(b) — Economic impact in EUR (DECIMAL stored as string per Doctrine convention).
+     */
+    #[ORM\Column(type: Types::DECIMAL, precision: 15, scale: 2, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?string $economicImpact = null;
+
+    /**
+     * DORA Art. 19(1)(c) — Reputational impact on scale 1-5.
+     */
+    #[ORM\Column(type: Types::SMALLINT, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    #[Assert\Range(min: 1, max: 5)]
+    private ?int $reputationalImpact = null;
+
+    /**
+     * DORA Art. 19(1)(e) — Critical services affected (links to BCM BIA).
+     *
+     * @var Collection<int, BusinessProcess>
+     */
+    #[ORM\ManyToMany(targetEntity: BusinessProcess::class)]
+    #[ORM\JoinTable(name: 'incident_critical_services')]
+    #[Groups(['incident:read', 'incident:write'])]
+    #[MaxDepth(1)]
+    private Collection $criticalServicesAffected;
+
+    /**
+     * DORA Art. 19(1)(f) — Recurring incident flag.
+     */
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    #[Groups(['incident:read', 'incident:write'])]
+    private bool $recurringIncident = false;
+
+    /**
+     * DORA Art. 19 — Number of clients/counterparties affected.
+     */
+    #[ORM\Column(nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    #[Assert\PositiveOrZero]
+    private ?int $clientsAffected = null;
+
+    /**
+     * DORA Art. 19 — Financial volume of clients affected (EUR, DECIMAL as string).
+     */
+    #[ORM\Column(type: Types::DECIMAL, precision: 15, scale: 2, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?string $clientsAffectedFinancialVolume = null;
+
+    /**
+     * DORA Art. 19 — Service replicate / failover activated to contain impact.
+     */
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    #[Groups(['incident:read', 'incident:write'])]
+    private bool $replicationOfImpact = false;
+
+    /**
+     * DORA Art. 19(4)(a) — Initial report submitted (4-hour deadline, distinct from NIS2 24h).
+     */
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?\DateTimeImmutable $initialReportSubmittedAt = null;
+
+    /**
+     * DORA Art. 19(4)(b) — Intermediate report submitted (72-hour deadline).
+     */
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?\DateTimeImmutable $intermediateReportSubmittedAt = null;
+
+    /**
+     * DORA Art. 11(2) — Data recovery strategy / cross-ref to BCM continuity plan.
+     */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['incident:read', 'incident:write'])]
+    private ?string $dataRecoveryStrategy = null;
+
+    public function getResponsiblePerson(): ?Person
+    {
+        return $this->responsiblePerson;
+    }
+
+    public function setResponsiblePerson(?Person $responsiblePerson): static
+    {
+        $this->responsiblePerson = $responsiblePerson;
+        return $this;
+    }
+
+    /**
+     * Effective responsible-person display: prefer the new
+     * `responsiblePerson.fullName`, fall back to the legacy
+     * `assignedTo` string. Returns null when neither is set.
+     */
+    public function getEffectiveResponsiblePersonName(): ?string
+    {
+        return $this->responsiblePerson?->getFullName()
+            ?? $this->assignedTo;
+    }
+
+    // -------------------------------------------------------------------------
+    // Getters/Setters: ISO 27001 A.5.24-A.5.28 fields (T31.2.2)
+    // -------------------------------------------------------------------------
+
+    public function getIncidentClassification(): ?string
+    {
+        return $this->incidentClassification;
+    }
+
+    public function setIncidentClassification(?string $incidentClassification): static
+    {
+        $this->incidentClassification = $incidentClassification;
+        return $this;
+    }
+
+    public function getContainmentActions(): ?string
+    {
+        return $this->containmentActions;
+    }
+
+    public function setContainmentActions(?string $containmentActions): static
+    {
+        $this->containmentActions = $containmentActions;
+        return $this;
+    }
+
+    public function isEvidencePreserved(): bool
+    {
+        return $this->evidencePreserved;
+    }
+
+    public function setEvidencePreserved(bool $evidencePreserved): static
+    {
+        $this->evidencePreserved = $evidencePreserved;
+        return $this;
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    public function getEvidenceArtifactsJson(): ?array
+    {
+        return $this->evidenceArtifactsJson;
+    }
+
+    /**
+     * @param list<string>|null $evidenceArtifactsJson
+     */
+    public function setEvidenceArtifactsJson(?array $evidenceArtifactsJson): static
+    {
+        $this->evidenceArtifactsJson = $evidenceArtifactsJson;
+        return $this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Getters/Setters: DORA Art. 17-19 fields (T31.2.2)
+    // -------------------------------------------------------------------------
+
+    public function getIctIncidentClassification(): ?string
+    {
+        return $this->ictIncidentClassification;
+    }
+
+    public function setIctIncidentClassification(?string $ictIncidentClassification): static
+    {
+        $this->ictIncidentClassification = $ictIncidentClassification;
+        return $this;
+    }
+
+    public function isDataLossOccurred(): bool
+    {
+        return $this->dataLossOccurred;
+    }
+
+    public function setDataLossOccurred(bool $dataLossOccurred): static
+    {
+        $this->dataLossOccurred = $dataLossOccurred;
+        return $this;
+    }
+
+    public function isDataLeakageOccurred(): bool
+    {
+        return $this->dataLeakageOccurred;
+    }
+
+    public function setDataLeakageOccurred(bool $dataLeakageOccurred): static
+    {
+        $this->dataLeakageOccurred = $dataLeakageOccurred;
+        return $this;
+    }
+
+    public function getEconomicImpact(): ?string
+    {
+        return $this->economicImpact;
+    }
+
+    public function setEconomicImpact(?string $economicImpact): static
+    {
+        $this->economicImpact = $economicImpact;
+        return $this;
+    }
+
+    public function getReputationalImpact(): ?int
+    {
+        return $this->reputationalImpact;
+    }
+
+    public function setReputationalImpact(?int $reputationalImpact): static
+    {
+        $this->reputationalImpact = $reputationalImpact;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, BusinessProcess>
+     */
+    public function getCriticalServicesAffected(): Collection
+    {
+        return $this->criticalServicesAffected;
+    }
+
+    public function addCriticalServicesAffected(BusinessProcess $businessProcess): static
+    {
+        if (!$this->criticalServicesAffected->contains($businessProcess)) {
+            $this->criticalServicesAffected->add($businessProcess);
+        }
+        return $this;
+    }
+
+    public function removeCriticalServicesAffected(BusinessProcess $businessProcess): static
+    {
+        $this->criticalServicesAffected->removeElement($businessProcess);
+        return $this;
+    }
+
+    public function isRecurringIncident(): bool
+    {
+        return $this->recurringIncident;
+    }
+
+    public function setRecurringIncident(bool $recurringIncident): static
+    {
+        $this->recurringIncident = $recurringIncident;
+        return $this;
+    }
+
+    public function getClientsAffected(): ?int
+    {
+        return $this->clientsAffected;
+    }
+
+    public function setClientsAffected(?int $clientsAffected): static
+    {
+        $this->clientsAffected = $clientsAffected;
+        return $this;
+    }
+
+    public function getClientsAffectedFinancialVolume(): ?string
+    {
+        return $this->clientsAffectedFinancialVolume;
+    }
+
+    public function setClientsAffectedFinancialVolume(?string $clientsAffectedFinancialVolume): static
+    {
+        $this->clientsAffectedFinancialVolume = $clientsAffectedFinancialVolume;
+        return $this;
+    }
+
+    public function isReplicationOfImpact(): bool
+    {
+        return $this->replicationOfImpact;
+    }
+
+    public function setReplicationOfImpact(bool $replicationOfImpact): static
+    {
+        $this->replicationOfImpact = $replicationOfImpact;
+        return $this;
+    }
+
+    public function getInitialReportSubmittedAt(): ?\DateTimeImmutable
+    {
+        return $this->initialReportSubmittedAt;
+    }
+
+    public function setInitialReportSubmittedAt(?\DateTimeImmutable $initialReportSubmittedAt): static
+    {
+        $this->initialReportSubmittedAt = $initialReportSubmittedAt;
+        return $this;
+    }
+
+    public function getIntermediateReportSubmittedAt(): ?\DateTimeImmutable
+    {
+        return $this->intermediateReportSubmittedAt;
+    }
+
+    public function setIntermediateReportSubmittedAt(?\DateTimeImmutable $intermediateReportSubmittedAt): static
+    {
+        $this->intermediateReportSubmittedAt = $intermediateReportSubmittedAt;
+        return $this;
+    }
+
+    public function getDataRecoveryStrategy(): ?string
+    {
+        return $this->dataRecoveryStrategy;
+    }
+
+    public function setDataRecoveryStrategy(?string $dataRecoveryStrategy): static
+    {
+        $this->dataRecoveryStrategy = $dataRecoveryStrategy;
+        return $this;
     }
 
     /*

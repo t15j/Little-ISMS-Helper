@@ -1,0 +1,201 @@
+{% extends 'base.html.twig' %}
+{% trans_default_domain 'eu_authorities' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_section.html.twig' as _fa_section %}
+{% import '_components/_fa_table.html.twig' as _fa_table %}
+{% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
+
+{% block title %}{{ 'eu_authorities.dora_roi.page.title'|trans }}{% endblock %}
+
+{% block body %}
+<div class="container-fluid mt-4">
+    {% include '_components/_breadcrumb.html.twig' with {
+        breadcrumbs: [
+            { label: 'eu_authorities.page.title'|trans({}, 'eu_authorities'), icon: 'nav-building-shield' },
+            { label: 'eu_authorities.hub.page.title'|trans({}, 'eu_authorities'), url: path('authority_hub_index') },
+            { label: 'eu_authorities.dora_roi.page.title'|trans }
+        ]
+    } %}
+
+    {{ _fa_page_header.render({
+        badge:    { icon: 'nav-file-earmark-spreadsheet', label: 'DORA' },
+        title:    'eu_authorities.dora_roi.page.title'|trans,
+        subtitle: 'eu_authorities.dora_roi.page.subtitle'|trans,
+        actions:  []
+    }) }}
+
+    <main class="fa-aurora-surface">
+
+        {# ── Current year status ────────────────────────────────────────────────── #}
+        <div class="row mb-4">
+            <div class="col-12">
+                {% if currentYear and currentYear.isSubmitted %}
+                    <div class="alert alert-success d-flex align-items-center gap-2" role="alert">
+                        <i class="fa-icon fa-icon--ui-check fs-4" aria-hidden="true"></i>
+                        <div>
+                            <strong>{{ 'eu_authorities.dora_roi.status.submitted'|trans }}</strong>
+                            — {{ 'eu_authorities.dora_roi.status.submitted_body'|trans({
+                                '%date%': currentYear.submittedAt|date('d.m.Y'),
+                                '%number%': currentYear.confirmationNumber ?? 'N/A'
+                            }) }}
+                        </div>
+                    </div>
+                {% elseif currentYear %}
+                    <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
+                        <i class="fa-icon fa-icon--ui-clock fs-4" aria-hidden="true"></i>
+                        <div>
+                            <strong>{{ 'eu_authorities.dora_roi.status.generated_not_submitted'|trans }}</strong>
+                            — {{ 'eu_authorities.dora_roi.status.generated_body'|trans }}
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info d-flex align-items-center gap-2" role="alert">
+                        <i class="fa-icon fa-icon--ui-info fs-4" aria-hidden="true"></i>
+                        <div>
+                            <strong>{{ 'eu_authorities.dora_roi.status.not_yet_generated'|trans({
+                                '%year%': reportingYear
+                            }) }}</strong>
+                            — {{ 'eu_authorities.dora_roi.status.not_yet_generated_body'|trans }}
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {# ── Generate button ────────────────────────────────────────────────────── #}
+        <div class="row mb-4">
+            <div class="col-12">
+                <form method="POST" action="{{ path('dora_roi_generate') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('dora_roi_generate') }}">
+                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary">
+                        <i class="fa-icon fa-icon--nav-download me-1" aria-hidden="true"></i>
+                        {{ 'eu_authorities.dora_roi.action.generate'|trans({
+                            '%year%': reportingYear
+                        }) }}
+                    </button>
+                    <small class="text-body-secondary ms-2">{{ 'eu_authorities.dora_roi.action.generate_help'|trans }}</small>
+                </form>
+            </div>
+        </div>
+
+        {# ── Submission history ─────────────────────────────────────────────────── #}
+        {% if submissions|length > 0 %}
+        {{ _fa_section.render({
+            title: 'eu_authorities.dora_roi.section.history'|trans,
+        }) }}
+        {% embed '_components/_fa_table.html.twig' with {
+            id: 'dora-roi-submissions',
+            striped: false,
+            compact: false,
+            stickyHead: false,
+            sortable: false,
+            bulkSelect: false
+        } %}
+            {% block table_head %}
+                {% trans_default_domain 'eu_authorities' %}
+                <tr>
+                    <th scope="col" class="fa-table__th">{{ 'eu_authorities.dora_roi.field.reporting_date'|trans }}</th>
+                    <th scope="col" class="fa-table__th">{{ 'eu_authorities.dora_roi.field.scope'|trans }}</th>
+                    <th scope="col" class="fa-table__th">{{ 'eu_authorities.dora_roi.field.payload_hash'|trans }}</th>
+                    <th scope="col" class="fa-table__th">{{ 'eu_authorities.dora_roi.field.submitted_at'|trans }}</th>
+                    <th scope="col" class="fa-table__th">{{ 'eu_authorities.dora_roi.field.submitted_by'|trans }}</th>
+                    <th scope="col" class="fa-table__th">{{ 'eu_authorities.dora_roi.field.confirmation_number'|trans }}</th>
+                    <th scope="col" class="fa-table__th fa-table__th--actions">{{ 'common.actions'|trans({}, 'messages') }}</th>
+                </tr>
+            {% endblock %}
+            {% block table_body %}
+                {% trans_default_domain 'eu_authorities' %}
+                {% for record in submissions %}
+                    <tr class="fa-table__row">
+                        <td class="fa-table__cell">{{ record.reportingDate ? record.reportingDate|date('d.m.Y') : '—' }}</td>
+                        <td class="fa-table__cell">
+                            <span class="badge bg-secondary">
+                                {{ ('eu_authorities.dora_roi.scope.' ~ record.reportingScope)|trans }}
+                            </span>
+                        </td>
+                        <td class="fa-table__cell">
+                            <code class="small text-body-secondary" title="{{ record.payloadHash ?? '' }}">
+                                {{ record.payloadHash ? record.payloadHash|slice(0, 12) ~ '…' : '—' }}
+                            </code>
+                        </td>
+                        <td class="fa-table__cell">
+                            {% if record.isSubmitted %}
+                                <span class="text-success">
+                                    <i class="fa-icon fa-icon--ui-check me-1" aria-hidden="true"></i>
+                                    {{ record.submittedAt|date('d.m.Y') }}
+                                </span>
+                            {% else %}
+                                <span class="text-warning">{{ 'eu_authorities.dora_roi.status.pending'|trans }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="fa-table__cell">{{ record.submittedBy ? record.submittedBy.userIdentifier : '—' }}</td>
+                        <td class="fa-table__cell">{{ record.confirmationNumber ?? '—' }}</td>
+                        <td class="fa-table__cell fa-table__cell--actions">
+                            {% if not record.isSubmitted and is_granted('ROLE_ADMIN') %}
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-success"
+                                    data-controller="fa-modal-dispatcher" data-action="click->fa-modal-dispatcher#open" data-fa-modal-id="modal-mark-submitted-{{ record.id }}">
+                                <i class="fa-icon fa-icon--ui-check me-1" aria-hidden="true"></i>
+                                {{ 'eu_authorities.dora_roi.action.mark_submitted'|trans }}
+                            </button>
+
+                            {# Mark-submitted modal — fa-modal--confirm/success #}
+                            <div class="fa-modal fa-modal--confirm fa-modal--success" id="modal-mark-submitted-{{ record.id }}"
+                                 data-controller="fa-modal" data-fa-modal-mode-value="confirm" data-fa-modal-tone-value="success"
+                                 role="alertdialog" aria-modal="true" aria-labelledby="modal-mark-submitted-label-{{ record.id }}" aria-hidden="true">
+                                <div class="fa-modal__backdrop" data-fa-modal-target="backdrop" data-action="click->fa-modal#backdropClick" aria-hidden="true"></div>
+                                <div class="fa-modal__container" data-fa-modal-target="dialog">
+                                    <header class="fa-modal__header">
+                                        <span class="fa-modal__icon" aria-hidden="true"><i class="fa-icon fa-icon--ui-check"></i></span>
+                                        <div class="fa-modal__heading">
+                                            <h2 class="fa-modal__title" id="modal-mark-submitted-label-{{ record.id }}">
+                                                {{ 'eu_authorities.dora_roi.modal.mark_submitted_title'|trans }}
+                                            </h2>
+                                        </div>
+                                        <button type="button" class="fa-modal__close" data-action="fa-modal#cancel" aria-label="{{ 'common.close'|trans({}, 'messages') }}"><i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i></button>
+                                    </header>
+                                    <form method="POST" action="{{ path('dora_roi_mark_submitted', { id: record.id }) }}" data-fa-modal-target="form">
+                                        <div class="fa-modal__body">
+                                            <input type="hidden" name="_token"
+                                                   value="{{ csrf_token('dora_roi_mark_submitted_' ~ record.id) }}">
+                                            <label for="confirmation-number-{{ record.id }}" class="form-label fw-semibold">
+                                                {{ 'eu_authorities.dora_roi.field.confirmation_number'|trans }}
+                                                <span class="text-danger" aria-label="{{ 'common.required'|trans({}, 'messages') }}">*</span>
+                                            </label>
+                                            <input type="text"
+                                                   id="confirmation-number-{{ record.id }}"
+                                                   name="confirmation_number"
+                                                   class="form-control"
+                                                   placeholder="{{ 'eu_authorities.dora_roi.placeholder.confirmation_number'|trans }}"
+                                                   required>
+                                        </div>
+                                        <footer class="fa-modal__footer">
+                                            <button type="button" class="btn btn-secondary" data-action="fa-modal#cancel">
+                                                {{ 'common.cancel'|trans({}, 'messages') }}
+                                            </button>
+                                            <button type="submit" class="btn btn-success">
+                                                <i class="fa-icon fa-icon--ui-check me-1" aria-hidden="true"></i>
+                                                {{ 'eu_authorities.dora_roi.action.confirm_submission'|trans }}
+                                            </button>
+                                        </footer>
+                                    </form>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% endblock %}
+        {% endembed %}
+        {% else %}
+            {{ _fa_empty_state.render({
+                mood:     'info',
+                title:    'eu_authorities.dora_roi.empty.title'|trans,
+                body:     'eu_authorities.dora_roi.empty.body'|trans,
+                action:   null
+            }) }}
+        {% endif %}
+
+    </main>
+</div>
+{% endblock %}

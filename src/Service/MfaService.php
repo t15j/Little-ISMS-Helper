@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use InvalidArgumentException;
 use DateTimeImmutable;
 use App\Entity\MfaToken;
 use App\Entity\User;
@@ -23,11 +22,18 @@ use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
  * MFA Service for NIS2 Compliance (Art. 21.2.b)
  * Handles TOTP, Backup Codes, and Token Management
  */
-class MfaService
+final class MfaService
 {
     private const int BACKUP_CODES_COUNT = 10;
     private const int BACKUP_CODE_LENGTH = 8; // 5 minutes
 
+    /**
+     * @param array<string, int> $passwordHashOptions Argon2 cost options passed to
+     *     {@see password_hash()}. Defaults to PHP's compile-time Argon2 defaults
+     *     (production-safe). Override in the test environment via
+     *     `config/packages/test/services.yaml` to skip the ~125 ms-per-hash cost
+     *     for backup-code hashing in {@see self::hashBackupCodes()}.
+     */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly MfaTokenRepository $mfaTokenRepository,
@@ -35,6 +41,7 @@ class MfaService
         private readonly LoggerInterface $logger,
         private readonly MfaEncryptionService $mfaEncryptionService,
         private readonly string $appName = 'Little ISMS Helper',
+        private readonly array $passwordHashOptions = [],
     ) {
     }
 
@@ -81,7 +88,7 @@ class MfaService
     public function generateQrCode(MfaToken $mfaToken): string
     {
         if ($mfaToken->getTokenType() !== 'totp') {
-            throw new InvalidArgumentException('QR codes can only be generated for TOTP tokens');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('QR codes can only be generated for TOTP tokens', 'tokenType');
         }
 
         $user = $mfaToken->getUser();
@@ -113,7 +120,7 @@ class MfaService
     public function verifyTotp(MfaToken $mfaToken, string $code, bool $isSetup = false): bool
     {
         if ($mfaToken->getTokenType() !== 'totp') {
-            throw new InvalidArgumentException('Can only verify TOTP tokens');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('Can only verify TOTP tokens', 'tokenType');
         }
 
         // Rate limiting check
@@ -310,17 +317,6 @@ class MfaService
     }
 
     /**
-     * Generate a base32-encoded TOTP secret (RFC 6238 compatible).
-     * Kept for backwards compatibility with callers — production code should
-     * prefer TOTP::generate() which uses this encoding internally.
-     */
-    private function generateSecureSecret(): string
-    {
-        // 160-bit (20 byte) secret, base32 encoded for authenticator apps
-        return \ParagonIE\ConstantTime\Base32::encodeUpper(random_bytes(20));
-    }
-
-    /**
      * Generate backup codes
      */
     private function generateBackupCodes(): array
@@ -355,7 +351,12 @@ class MfaService
      */
     private function hashBackupCodes(array $codes): array
     {
-        return array_map(fn($code): string => password_hash((string) $code, PASSWORD_ARGON2ID), $codes);
+        $options = $this->passwordHashOptions;
+
+        return array_map(
+            fn($code): string => password_hash((string) $code, PASSWORD_ARGON2ID, $options),
+            $codes,
+        );
     }
 
     /**

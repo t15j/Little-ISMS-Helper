@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\Tenant;
+use App\Form\Type\JsonStructuredType;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
@@ -17,7 +18,7 @@ use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints as Assert;
 
-class TenantType extends AbstractType
+final class TenantType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -41,7 +42,7 @@ class TenantType extends AbstractType
                 'attr' => [
                     'placeholder' => 'tenant.placeholder.code',
                     'maxlength' => 100,
-                    'pattern' => '[a-zA-Z0-9_-]+',
+                    'pattern' => '[a-zA-Z0-9_\-]+',
                     'id' => 'tenant_code',
                     'class' => 'bg-light',
                 ],
@@ -69,15 +70,21 @@ class TenantType extends AbstractType
                 'mapped' => false,
                 'required' => false,
                 'attr' => [
-                    'accept' => 'image/jpeg,image/png,image/gif,image/webp',
+                    'accept' => 'image/jpeg,image/png,image/svg+xml,image/gif,image/webp',
                 ],
                 'constraints' => [
-                    new Assert\File(maxSize: '2M', mimeTypes: [
-                        'image/jpeg',
-                        'image/png',
-                        'image/gif',
-                        'image/webp',
-                    ], mimeTypesMessage: 'tenant.validation.logo_format'),
+                    new Assert\File(
+                        maxSize: '2M',
+                        mimeTypes: [
+                            'image/jpeg',
+                            'image/png',
+                            'image/svg+xml',
+                            'image/gif',
+                            'image/webp',
+                        ],
+                        mimeTypesMessage: 'file_upload.validation.mime_type_invalid',
+                        maxSizeMessage: 'file_upload.validation.max_size_exceeded',
+                    ),
                 ],
             ])
             ->add('azureTenantId', TextType::class, [
@@ -149,12 +156,70 @@ class TenantType extends AbstractType
                 'required' => false,
                 'attr' => ['maxlength' => 50, 'placeholder' => 'GmbH / AG / SE / ...'],
             ])
+            // Bucket-6a (DORA RoI Sprint 9) — ISO 17442 Legal Entity Identifier.
+            //
+            // @no-module-gate-required: LEI is used by multiple regulations beyond
+            //   DORA (NIS2 supplier register, MiFID II, etc.) and several auditors
+            //   request it pre-emptively even when DORA itself is dormant. Always-on.
+            ->add('leiCode', TextType::class, [
+                'label' => 'tenant.field.lei_code',
+                'help' => 'tenant.field.lei_code_help',
+                'required' => false,
+                'attr' => [
+                    'maxlength' => 20,
+                    'placeholder' => 'tenant.placeholder.lei_code',
+                    // ISO 17442: 18 LOU-prefix [A-Z0-9] + 2 ISO checksum digits.
+                    'pattern' => '[A-Z0-9]{18}[0-9]{2}',
+                    'title' => 'tenant.help.lei_code_format',
+                    'style' => 'text-transform: uppercase;',
+                ],
+                'constraints' => [
+                    new Assert\Length(max: 20),
+                    new Assert\Regex(
+                        pattern: '/^[A-Z0-9]{18}\d{2}$/',
+                        message: 'tenant.validation.lei_code_format',
+                    ),
+                ],
+            ])
+            // Bucket-6a — ISO 4217 reporting currency for DORA RoI XBRL.
+            ->add('reportingCurrency', ChoiceType::class, [
+                'label' => 'tenant.field.reporting_currency',
+                'help' => 'tenant.field.reporting_currency_help',
+                'required' => false,
+                'placeholder' => false,
+                'choices' => [
+                    'EUR — Euro' => 'EUR',
+                    'USD — US Dollar' => 'USD',
+                    'GBP — Pound Sterling' => 'GBP',
+                    'CHF — Swiss Franc' => 'CHF',
+                    'SEK — Swedish Krona' => 'SEK',
+                    'NOK — Norwegian Krone' => 'NOK',
+                    'DKK — Danish Krone' => 'DKK',
+                    'PLN — Polish Złoty' => 'PLN',
+                    'CZK — Czech Koruna' => 'CZK',
+                ],
+            ])
+            // @no-module-gate-required: NACE-Code is a general industry classifier (EU NACE Rev. 2).
+            //   It is used to *infer* whether NIS-2 applies — so it must be visible BEFORE the
+            //   nis2_dora module is activated.
             ->add('naceCode', TextType::class, [
                 'label' => 'corporate.field.nace_code',
                 'help' => 'corporate.field.nace_code_help',
                 'required' => false,
                 'attr' => ['maxlength' => 20, 'placeholder' => '62.03'],
+                // Junior-ISB-Audit-2026-05-22 S14: NACE Rev. 2 format check.
+                // EU 1893/2006 — section letter + 2 digits + optional .NN[.N].
+                // Optional letter prefix to accept legacy "62.01" entries without breaking BC.
+                'constraints' => [
+                    new Assert\Regex(
+                        pattern: '/^[A-U]?\d{2}(\.\d{1,2})?$/',
+                        message: 'tenant.validation.nace_code_format',
+                    ),
+                ],
             ])
+            // @no-module-gate-required: NIS-2 classification fields drive module activation —
+            //   they must be visible on the primary tenant form regardless of module state,
+            //   otherwise users could not enable nis2_dora in the first place.
             ->add('nis2Classification', ChoiceType::class, [
                 'label' => 'corporate.field.nis2_classification',
                 'help' => 'corporate.field.nis2_classification_help',
@@ -167,18 +232,21 @@ class TenantType extends AbstractType
                     'corporate.nis2.unknown' => Tenant::NIS2_UNKNOWN,
                 ],
             ])
+            // @no-module-gate-required: see nis2Classification — driver for module activation.
             ->add('nis2Sector', TextType::class, [
                 'label' => 'corporate.field.nis2_sector',
                 'help' => 'corporate.field.nis2_sector_help',
                 'required' => false,
                 'attr' => ['maxlength' => 150],
             ])
+            // @no-module-gate-required: see nis2Classification — driver for module activation.
             ->add('nis2ContactPoint', TextType::class, [
                 'label' => 'corporate.field.nis2_contact_point',
                 'help' => 'corporate.field.nis2_contact_point_help',
                 'required' => false,
                 'attr' => ['maxlength' => 255],
             ])
+            // @no-module-gate-required: see nis2Classification — driver for module activation.
             ->add('nis2RegisteredAt', DateType::class, [
                 'label' => 'corporate.field.nis2_registered_at',
                 'help' => 'corporate.field.nis2_registered_at_help',
@@ -186,17 +254,19 @@ class TenantType extends AbstractType
                 'widget' => 'single_text',
                 'input' => 'datetime_immutable',
             ])
-            ->add('settings', TextareaType::class, [
+            // Mapped JSON field — JsonStructuredType round-trips array<->JSON via
+            // App\Form\DataTransformer\JsonArrayTransformer. Invalid JSON surfaces
+            // as a user-friendly TransformationFailedException instead of silently
+            // overwriting settings with null (C-06).
+            ->add('settings', JsonStructuredType::class, [
                 'label' => 'tenant.field.settings',
                 'help' => 'tenant.field.settings_help',
                 'required' => false,
-                'mapped' => false,
                 'attr' => [
                     'rows' => 10,
                     'placeholder' => 'tenant.placeholder.settings',
                     'class' => 'font-monospace',
                 ],
-                'data' => $options['data']->getSettings() ? json_encode($options['data']->getSettings(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : null,
             ])
         ;
     }

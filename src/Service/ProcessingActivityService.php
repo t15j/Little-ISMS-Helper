@@ -6,9 +6,10 @@ namespace App\Service;
 
 use DateTime;
 use DateTimeInterface;
-use RuntimeException;
 use App\Entity\ProcessingActivity;
 use App\Entity\User;
+use App\Enum\ProcessingActivityStatus;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Repository\ProcessingActivityRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -19,7 +20,7 @@ use Symfony\Bundle\SecurityBundle\Security;
  * Service for managing Processing Activities (Verarbeitungstätigkeiten).
  * Provides CRUD operations, validation, compliance checking, and reporting.
  */
-class ProcessingActivityService
+final class ProcessingActivityService
 {
     public function __construct(
         private readonly ProcessingActivityRepository $processingActivityRepository,
@@ -27,7 +28,8 @@ class ProcessingActivityService
         private readonly TenantContext $tenantContext,
         private readonly Security $security,
         private readonly AuditLogger $auditLogger,
-        private readonly WorkflowAutoProgressionService $workflowAutoProgressionService
+        private readonly WorkflowAutoProgressionService $workflowAutoProgressionService,
+        private readonly ?LifecycleTransitionInterface $lifecycleService = null,
     ) {}
 
     /**
@@ -457,22 +459,49 @@ class ProcessingActivityService
     }
 
     /**
-     * Activate a draft processing activity
+     * Activate a draft processing activity (draft → published via lifecycle).
+     *
+     * Lifecycle X.1: delegates to LifecycleService::transition() using the
+     * `activate` transition (direct draft→published shortcut in
+     * processing_activity_lifecycle, ROLE_MANAGER only).
+     *
+     * C-07: previously fell back to direct setStatus() when LifecycleService
+     * was unavailable — that bypass skipped Voter / 4-eyes / audit-log /
+     * regulatory guards. Removed. The Symfony Workflow component MUST be
+     * available; LifecycleService is non-optional from the call-site contract.
+     * InvalidTransitionException / FourEyesRequiredException propagate to the
+     * Controller, which translates them into a flash message.
      */
     public function activate(ProcessingActivity $processingActivity): void
     {
         // Validate before activation
         $errors = $this->validate($processingActivity);
         if ($errors !== []) {
-            throw new RuntimeException(
+            throw new \App\Exception\BusinessRule\BusinessRuleException(
                 'Cannot activate processing activity with validation errors: ' . implode(', ', $errors)
             );
         }
 
-        $processingActivity->setStatus('active');
         $processingActivity->setStartDate(new DateTime());
 
-        $this->entityManager->flush();
+        $user = $this->security->getUser();
+        $lifecycleUser = $user instanceof User ? $user : null;
+
+        if ($this->lifecycleService === null) {
+            // @intentional-assertion: LifecycleService is required; the previous
+            // setStatus() fallback bypassed Voter / 4-eyes / audit-log (C-07).
+            throw new \LogicException(
+                'ProcessingActivityService::activate() requires LifecycleService; '
+                . 'direct setStatus() fallback removed (C-07).'
+            );
+        }
+        // S3 P-4 / Lifecycle X.1: canonical transition via Symfony Workflow.
+        $this->lifecycleService->transition(
+            $processingActivity,
+            'processing_activity_lifecycle',
+            'activate',
+            $lifecycleUser,
+        );
 
         $this->auditLogger->logCustom(
             'processing_activity.activated',
@@ -483,14 +512,37 @@ class ProcessingActivityService
     }
 
     /**
-     * Archive a processing activity (when processing ends)
+     * Archive a processing activity (when processing ends).
+     *
+     * Lifecycle X.1: delegates to LifecycleService::transition() using the
+     * `archive` transition (published→archived) in processing_activity_lifecycle.
+     *
+     * C-07: previously fell back to direct setStatus() when LifecycleService
+     * was unavailable — that bypass skipped Voter / 4-eyes / audit-log /
+     * regulatory guards. Removed; LifecycleService is required.
      */
     public function archive(ProcessingActivity $processingActivity): void
     {
-        $processingActivity->setStatus('archived');
         $processingActivity->setEndDate(new DateTime());
 
-        $this->entityManager->flush();
+        $user = $this->security->getUser();
+        $lifecycleUser = $user instanceof User ? $user : null;
+
+        if ($this->lifecycleService === null) {
+            // @intentional-assertion: LifecycleService is required; the previous
+            // setStatus() fallback bypassed Voter / 4-eyes / audit-log (C-07).
+            throw new \LogicException(
+                'ProcessingActivityService::archive() requires LifecycleService; '
+                . 'direct setStatus() fallback removed (C-07).'
+            );
+        }
+        // Lifecycle X.1: canonical transition via Symfony Workflow.
+        $this->lifecycleService->transition(
+            $processingActivity,
+            'processing_activity_lifecycle',
+            'archive',
+            $lifecycleUser,
+        );
 
         $this->auditLogger->logCustom(
             'processing_activity.archived',
@@ -544,7 +596,7 @@ class ProcessingActivityService
         }
 
         // Set status to draft
-        $clone->setStatus('draft');
+        $clone->setStatus(ProcessingActivityStatus::Draft); // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist clone; Symfony Workflow takes over after persist)
 
         return $this->create($clone);
     }

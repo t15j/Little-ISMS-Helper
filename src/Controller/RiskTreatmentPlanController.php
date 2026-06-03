@@ -27,7 +27,7 @@ class RiskTreatmentPlanController extends AbstractController
         private readonly TranslatorInterface $translator,
         private readonly TenantContext $tenantContext
     ) {}
-    #[Route('/risk-treatment-plan/', name: 'app_risk_treatment_plan_index')]
+    #[Route('/risk-treatment-plan', name: 'app_risk_treatment_plan_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(Request $request): Response
     {
@@ -89,7 +89,7 @@ class RiskTreatmentPlanController extends AbstractController
             'criticalPlans' => $criticalPlans,
         ]);
     }
-    #[Route('/risk-treatment-plan/new', name: 'app_risk_treatment_plan_new')]
+    #[Route('/risk-treatment-plan/new', name: 'app_risk_treatment_plan_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
@@ -103,16 +103,20 @@ class RiskTreatmentPlanController extends AbstractController
             $this->entityManager->persist($riskTreatmentPlan);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('risk_treatment_plan.success.created'));
+            $this->addFlash('success', $this->translator->trans('risk_treatment_plan.success.created', [], 'messages'));
             return $this->redirectToRoute('app_risk_treatment_plan_show', ['id' => $riskTreatmentPlan->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('risk_treatment_plan/new.html.twig', [
             'plan' => $riskTreatmentPlan,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/risk-treatment-plan/{id}', name: 'app_risk_treatment_plan_show', requirements: ['id' => '\d+'])]
+    #[Route('/risk-treatment-plan/{id}', name: 'app_risk_treatment_plan_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(RiskTreatmentPlan $riskTreatmentPlan): Response
     {
@@ -126,7 +130,7 @@ class RiskTreatmentPlanController extends AbstractController
             'totalAuditLogs' => count($auditLogs),
         ]);
     }
-    #[Route('/risk-treatment-plan/{id}/edit', name: 'app_risk_treatment_plan_edit', requirements: ['id' => '\d+'])]
+    #[Route('/risk-treatment-plan/{id}/edit', name: 'app_risk_treatment_plan_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, RiskTreatmentPlan $riskTreatmentPlan): Response
     {
@@ -137,14 +141,18 @@ class RiskTreatmentPlanController extends AbstractController
             $riskTreatmentPlan->setUpdatedAt(new DateTimeImmutable());
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('risk_treatment_plan.success.updated'));
+            $this->addFlash('success', $this->translator->trans('risk_treatment_plan.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_risk_treatment_plan_show', ['id' => $riskTreatmentPlan->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('risk_treatment_plan/edit.html.twig', [
             'plan' => $riskTreatmentPlan,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/risk-treatment-plan/{id}/delete', name: 'app_risk_treatment_plan_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -154,7 +162,7 @@ class RiskTreatmentPlanController extends AbstractController
             $this->entityManager->remove($riskTreatmentPlan);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('risk_treatment_plan.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('risk_treatment_plan.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_risk_treatment_plan_index');

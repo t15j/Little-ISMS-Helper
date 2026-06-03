@@ -1,0 +1,57 @@
+{% extends 'admin/layout.html.twig' %}
+{% trans_default_domain 'admin' %}
+{% import '_components/_fa_admin_hub_card.html.twig' as _fa_admin_hub_card %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+
+{% block admin_content %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'grid', label: 'admin.hub.title'|trans({}, 'admin') },
+        title: 'admin.hub.title'|trans({}, 'admin'),
+        subtitle: 'admin.hub.subtitle'|trans({'%count%': total_modules}, 'admin'),
+    }) }}
+<div class="fa-admin-hub" data-controller="admin-hub-search">
+    <div class="fa-admin-hub__search">
+        <i class="fa-icon fa-icon--ui-search" aria-hidden="true"></i>
+        <input
+            type="search"
+            class="fa-admin-hub__search-input"
+            placeholder="{{ 'admin.hub.search_placeholder'|trans({}, 'admin') }}"
+            aria-label="{{ 'admin.hub.search_label'|trans({}, 'admin') }}"
+            data-admin-hub-search-target="input"
+            data-action="input->admin-hub-search#filter">
+    </div>
+
+    {% for group in groups %}
+        <section class="fa-admin-hub-group" data-tone="{{ group.tone }}" data-admin-hub-search-target="group">
+            <header class="fa-admin-hub-group__header">
+                <span class="fa-admin-hub-group__icon" aria-hidden="true">
+                    <i class="fa-icon {{ group.icon }}" aria-hidden="true"></i>
+                </span>
+                <div>
+                    <h2 class="fa-admin-hub-group__title">{{ group.label|trans({}, 'admin') }}</h2>
+                    <p class="fa-admin-hub-group__desc">{{ group.description|trans({}, 'admin') }}</p>
+                </div>
+            </header>
+            <div class="fa-admin-hub-grid" data-admin-hub-search-target="grid">
+                {% for module in group.modules %}
+                    {% set href = module.route ? path(module.route, module.routeParams|default({})) : '#' %}
+                    {{ _fa_admin_hub_card.render({
+                        tone: module.tone|default(group.tone),
+                        icon: module.icon,
+                        title: module.label|trans({}, 'admin'),
+                        description: module.description|trans({}, 'admin'),
+                        href: href,
+                        coming_soon: module.coming_soon|default(false),
+                        badge: module.badge|default(null),
+                    }) }}
+                {% endfor %}
+            </div>
+        </section>
+    {% endfor %}
+
+    <div class="fa-admin-hub__empty" data-admin-hub-search-target="empty" hidden>
+        <i class="fa-icon fa-icon--ui-search" aria-hidden="true"></i>
+        <p>{{ 'admin.hub.no_results'|trans({}, 'admin') }}</p>
+    </div>
+</div>
+{% endblock %}

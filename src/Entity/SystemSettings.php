@@ -14,7 +14,7 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 #[ORM\Entity(repositoryClass: SystemSettingsRepository::class)]
 #[ORM\Table(name: 'system_settings')]
 #[ORM\UniqueConstraint(name: 'UNIQ_CATEGORY_KEY', columns: ['category', 'setting_key'])]
-#[UniqueEntity(fields: ['category', 'key'], message: 'This setting already exists in this category')]
+#[UniqueEntity(fields: ['category', 'key'], message: 'system_settings.validation.category_key_unique')]
 class SystemSettings
 {
     #[ORM\Id]
@@ -86,7 +86,7 @@ class SystemSettings
         return $this->category;
     }
 
-    public function setCategory(string $category): static
+    public function setCategory(?string $category): static
     {
         $this->category = $category;
         return $this;
@@ -97,7 +97,7 @@ class SystemSettings
         return $this->key;
     }
 
-    public function setKey(string $key): static
+    public function setKey(?string $key): static
     {
         $this->key = $key;
         return $this;
@@ -154,7 +154,7 @@ class SystemSettings
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;

@@ -1,43 +1,48 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'wizard' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_section.html.twig' as _fa_section %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 
 {% block title %}{{ config.name }} - {{ 'wizard.title'|trans }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid py-4">
-    {# Breadcrumb #}
-    <nav aria-label="breadcrumb" class="mb-4">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item">
-                <a href="{{ path('app_compliance_wizard_index') }}">{{ 'wizard.title'|trans }}</a>
-            </li>
-            <li class="breadcrumb-item active" aria-current="page">{{ config.name }}</li>
-        </ol>
-    </nav>
+    {# Aurora Breadcrumb #}
+    {% include '_components/_breadcrumb.html.twig' with {
+        breadcrumbs: [
+            { label: 'wizard.title'|trans({}, 'wizard'), url: path('app_compliance_wizard_index') },
+            { label: config.name }
+        ]
+    } %}
+
+    {# Aurora Page Header #}
+    {{ _fa_page_header.render({
+        title: config.name,
+        subtitle: config.description|trans,
+        badge: { icon: 'shield-check', label: config.code },
+        actions: [
+            { label: 'wizard.back'|trans({}, 'wizard'), href: path('app_compliance_wizard_index'), variant: 'ghost', icon: 'util-arrow-left' },
+            { label: 'wizard.run_assessment'|trans({}, 'wizard'), href: path('app_compliance_wizard_assess', {wizard: wizard}), variant: 'primary', icon: 'play' }
+        ]
+    }) }}
+{% set _global_hints = alva_hints('compliance_wizard_start') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 
     <div class="row">
         <div class="col-lg-8">
-            {# Wizard Header #}
-            {% embed '_components/_card.html.twig' with { 'class': 'mb-4 border-' ~ config.color } %}
-                {% block card_header %}
-                    <div class="card-header bg-{{ config.color }} bg-opacity-10 border-{{ config.color }}">
-                        <div class="d-flex align-items-center">
-                            <i class="{{ config.icon }} fs-2 text-{{ config.color }} me-3"></i>
-                            <div>
-                                <h1 class="h3 mb-0">{{ config.name }}</h1>
-                                {% include '_components/_badge.html.twig' with { variant: config.color, content: config.code } %}
-                            </div>
-                        </div>
-                    </div>
-                {% endblock %}
+            {# Wizard scope/categories overview #}
+            {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
                 {% block card_body %}
-                    <p class="lead">{{ config.description|trans }}</p>
-
-                    <hr>
-
+                    {% trans_default_domain 'wizard' %}
                     <h2 class="h5 mb-3">{{ 'wizard.assessment_scope'|trans }}</h2>
-                    <p class="text-muted">{{ 'wizard.assessment_scope_desc'|trans({'%framework%': config.name}) }}</p>
+                    <p class="text-muted">{{ 'wizard.assessment_scope_desc'|trans({'%framework%': config.name}, 'wizard') }}</p>
 
                     {# Categories Overview #}
                     <div class="row mt-4">
@@ -62,10 +67,75 @@
                 {% endblock %}
             {% endembed %}
 
+            {# Alva-fairy: shipped YAML mapping libraries available, no DB mappings yet (Data-Reuse) #}
+            {% if inheritance_source_frameworks|default([])|length == 0 and available_mapping_libraries|default([])|length > 0 %}
+            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info' } } %}
+                {% block alert_body %}
+                    {% trans_default_domain 'wizard' %}
+                    <div class="fa-alert__title">{{ 'wizard.mapping_library.fairy_title'|trans({}, 'wizard') }}</div>
+                    <p class="mb-2">
+                        {{ 'wizard.mapping_library.fairy_desc'|trans({
+                            '%count%': available_mapping_libraries|length,
+                            '%target%': config.name
+                        }, 'wizard') }}
+                    </p>
+                    <ul class="mb-2 list-unstyled">
+                        {% for lib in available_mapping_libraries %}
+                            <li class="mb-2">
+                                <form method="post" action="{{ path('app_compliance_wizard_import_mapping_library', {wizard: wizard}) }}" class="d-flex flex-wrap align-items-center gap-2">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('mapping-lib-' ~ config.code) }}">
+                                    <input type="hidden" name="path" value="{{ lib.path }}">
+                                    <span>
+                                        <strong>{{ lib.source_framework_name ?? lib.source_framework }}</strong>
+                                        <span class="text-muted">— {{ 'wizard.mapping_library.mapping_count'|trans({'%count%': lib.mapping_count}, 'wizard') }}</span>
+                                    </span>
+                                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--info fa-cyber-btn--sm ms-auto">
+                                        <i class="fa-icon fa-icon--ui-arrow-right" aria-hidden="true"></i>
+                                        {{ 'wizard.mapping_library.import'|trans({}, 'wizard') }}
+                                    </button>
+                                </form>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                    <p class="small text-muted mb-0">{{ 'wizard.mapping_library.fairy_hint'|trans({}, 'wizard') }}</p>
+                {% endblock %}
+            {% endembed %}
+            {% endif %}
+
+            {# On-demand data takeover from already-mapped frameworks (Data-Reuse) #}
+            {% if inheritance_source_frameworks|default([])|length > 0 %}
+            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info' } } %}
+                {% block alert_body %}
+                    {% trans_default_domain 'wizard' %}
+                    <div class="fa-alert__title">{{ 'wizard.inheritance.title'|trans({}, 'wizard') }}</div>
+                    <p class="mb-2">
+                        {{ 'wizard.inheritance.desc'|trans({
+                            '%count%': inheritance_source_frameworks|length,
+                            '%target%': config.name
+                        }, 'wizard') }}
+                    </p>
+                    <ul class="mb-2">
+                        {% for source_framework in inheritance_source_frameworks %}
+                            <li><strong>{{ source_framework.name }}</strong></li>
+                        {% endfor %}
+                    </ul>
+                    <p class="small text-muted mb-2">{{ 'wizard.inheritance.hint'|trans({}, 'wizard') }}</p>
+                    <form method="post" action="{{ path('app_compliance_inheritance_activate', {frameworkCode: config.code}) }}" class="d-inline">
+                        <input type="hidden" name="_token" value="{{ csrf_token('inherit-' ~ config.code) }}">
+                        <button type="submit" class="fa-cyber-btn fa-cyber-btn--info fa-cyber-btn--sm">
+                            <i class="fa-icon fa-icon--util-arrow-right" aria-hidden="true"></i>
+                            {{ 'wizard.inheritance.activate'|trans({}, 'wizard') }}
+                        </button>
+                    </form>
+                {% endblock %}
+            {% endembed %}
+            {% endif %}
+
             {# Missing Recommended Modules Warning #}
             {% if missing_recommended|length > 0 %}
             {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'warning' } } %}
                 {% block alert_body %}
+                    {% trans_default_domain 'wizard' %}
                     <div class="fa-alert__title">{{ 'wizard.missing_recommended_title'|trans }}</div>
                     <p class="mb-2">{{ 'wizard.missing_recommended_desc'|trans }}</p>
                     <ul class="mb-0">
@@ -81,13 +151,10 @@
             {% endembed %}
             {% endif %}
 
-            {# Start Button #}
-            <div class="d-grid gap-2 d-md-flex justify-content-md-between">
-                <a href="{{ path('app_compliance_wizard_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                    <i class="fa-icon fa-icon--util-arrow-left me-1" aria-hidden="true"></i>{{ 'wizard.back'|trans }}
-                </a>
-                <a href="{{ path('app_compliance_wizard_assess', {wizard: wizard}) }}" class="btn btn-{{ config.color }} btn-lg">
-                    <i class="bi bi-play-circle me-2" aria-hidden="true"></i>{{ 'wizard.run_assessment'|trans }}
+            {# Start Button (duplicate of header CTA for accessibility / scroll convenience) #}
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                <a href="{{ path('app_compliance_wizard_assess', {wizard: wizard}) }}" class="fa-cyber-btn fa-cyber-btn--primary fa-cyber-btn--lg">
+                    <i class="fa-icon fa-icon--status-info" aria-hidden="true"></i>{{ 'wizard.run_assessment'|trans }}
                 </a>
             </div>
         </div>
@@ -97,16 +164,18 @@
             {# Active Modules #}
             {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
                 {% block card_header %}
+                    {% trans_default_domain 'wizard' %}
                     <div class="card-header">
                         <h3 class="card-title h6 mb-0">
-                            <i class="bi bi-puzzle me-2" aria-hidden="true"></i>{{ 'wizard.active_modules'|trans }}
+                            <i class="fa-icon me-2 fa-icon--nav-puzzle" aria-hidden="true"></i>{{ 'wizard.active_modules'|trans }}
                         </h3>
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% trans_default_domain 'wizard' %}
                     <p class="small text-muted mb-3">{{ 'wizard.data_sources_info'|trans }}</p>
                     {% for mod in active_modules %}
-                        {% include '_components/_badge.html.twig' with { variant: 'success', class: 'me-1 mb-1', icon: 'bi-check-circle', content: mod } %}
+                        {% include '_components/_badge.html.twig' with { variant: 'success', class: 'me-1 mb-1', icon: 'status-ok', content: mod } %}
                     {% endfor %}
                 {% endblock %}
             {% endembed %}
@@ -114,6 +183,7 @@
             {# What to expect #}
             {% embed '_components/_card.html.twig' %}
                 {% block card_header %}
+                    {% trans_default_domain 'wizard' %}
                     <div class="card-header">
                         <h3 class="card-title h6 mb-0">
                             <i class="fa-icon fa-icon--ui-lightbulb me-2" aria-hidden="true"></i>{{ 'wizard.what_to_expect'|trans }}
@@ -121,6 +191,7 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% trans_default_domain 'wizard' %}
                     <ul class="list-unstyled mb-0">
                         <li class="mb-2">
                             <i class="fa-icon fa-icon--ui-clock me-2" aria-hidden="true"></i>

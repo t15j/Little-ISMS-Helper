@@ -23,6 +23,7 @@ class RiskControllerTest extends WebTestCase
     private ?Tenant $testTenant = null;
     private ?User $testUser = null;
     private ?Risk $testRisk = null;
+    private ?Asset $testAsset = null;
 
     protected function setUp(): void
     {
@@ -149,6 +150,7 @@ class RiskControllerTest extends WebTestCase
         $testAsset->setIntegrityValue(3);
         $testAsset->setAvailabilityValue(3);
         $this->entityManager->persist($testAsset);
+        $this->testAsset = $testAsset;
 
         // Create test risk
         $this->testRisk = new Risk();
@@ -159,7 +161,9 @@ class RiskControllerTest extends WebTestCase
         $this->testRisk->setVulnerability('Test vulnerability');
         $this->testRisk->setAsset($testAsset);
         $this->testRisk->setProbability(3);
+        $this->testRisk->setLikelihoodJustification('Test likelihood justification for setup');
         $this->testRisk->setImpact(4);
+        $this->testRisk->setImpactJustification('Test impact justification for setup');
         $this->testRisk->setResidualProbability(2);
         $this->testRisk->setResidualImpact(2);
         $this->testRisk->setTreatmentStrategy(\App\Enum\TreatmentStrategy::Mitigate);
@@ -187,7 +191,7 @@ class RiskControllerTest extends WebTestCase
     #[Test]
     public function testIndexRequiresAuthentication(): void
     {
-        $this->client->request('GET', '/en/risk/');
+        $this->client->request('GET', '/en/risk');
 
         $this->assertResponseRedirects();
     }
@@ -197,7 +201,7 @@ class RiskControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/risk/');
+        $crawler = $this->client->request('GET', '/en/risk');
 
         $this->assertResponseIsSuccessful();
         $this->assertSelectorExists('html');
@@ -208,7 +212,7 @@ class RiskControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/risk/', [
+        $crawler = $this->client->request('GET', '/en/risk', [
             'level' => 'high'
         ]);
 
@@ -220,7 +224,7 @@ class RiskControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/risk/', [
+        $crawler = $this->client->request('GET', '/en/risk', [
             'status' => 'identified'
         ]);
 
@@ -232,7 +236,7 @@ class RiskControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/risk/', [
+        $crawler = $this->client->request('GET', '/en/risk', [
             'treatment' => 'mitigate'
         ]);
 
@@ -244,7 +248,7 @@ class RiskControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/risk/', [
+        $crawler = $this->client->request('GET', '/en/risk', [
             'owner' => 'Test'
         ]);
 
@@ -256,7 +260,7 @@ class RiskControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/risk/', [
+        $crawler = $this->client->request('GET', '/en/risk', [
             'view' => 'own'
         ]);
 
@@ -330,6 +334,7 @@ class RiskControllerTest extends WebTestCase
             'risk[treatmentStrategy]' => 'mitigate',
             'risk[status]' => 'identified',
             'risk[riskOwner]' => $this->testUser->getId(),
+            'risk[asset]' => (string) $this->testAsset->getId(),
         ]);
 
         $this->client->submit($form);
@@ -364,6 +369,7 @@ class RiskControllerTest extends WebTestCase
             'risk[treatmentStrategy]' => 'mitigate',
             'risk[status]' => 'identified',
             'risk[riskOwner]' => $this->testUser->getId(),
+            'risk[asset]' => (string) $this->testAsset->getId(),
         ]);
 
         $this->client->submit($form);
@@ -433,9 +439,11 @@ class RiskControllerTest extends WebTestCase
         $this->loginAsUser($this->testUser);
 
         $crawler = $this->client->request('GET', '/en/risk/' . $this->testRisk->getId() . '/edit');
+        // Status is intentionally NOT submitted: RiskType marks `status` as
+        // `disabled => true` (Lifecycle-bypass fix). Status transitions flow
+        // through LifecycleService::transition() — not via the edit form.
         $form = $crawler->filter('form[name="risk"]')->form([
             'risk[title]' => 'Updated Risk Title',
-            'risk[status]' => 'assessed',
         ]);
 
         $this->client->submit($form);
@@ -446,7 +454,9 @@ class RiskControllerTest extends WebTestCase
         $riskRepository = $this->entityManager->getRepository(Risk::class);
         $updatedRisk = $riskRepository->find($this->testRisk->getId());
         $this->assertEquals('Updated Risk Title', $updatedRisk->getTitle());
-        $this->assertEquals(\App\Enum\RiskStatus::Assessed, $updatedRisk->getStatus());
+        // Status MUST remain at the seed value — proves the form's disabled-status
+        // field cannot be used to bypass the lifecycle.
+        $this->assertEquals(\App\Enum\RiskStatus::Identified, $updatedRisk->getStatus());
     }
 
     #[Test]
@@ -506,7 +516,7 @@ class RiskControllerTest extends WebTestCase
         ]);
 
         // Admin user can access the delete route and gets redirected
-        $this->assertResponseRedirects('/en/risk/');
+        $this->assertResponseRedirects('/en/risk');
     }
 
     #[Test]
@@ -533,7 +543,7 @@ class RiskControllerTest extends WebTestCase
         ]);
 
         // Should redirect but not delete
-        $this->assertResponseRedirects('/en/risk/');
+        $this->assertResponseRedirects('/en/risk');
 
         // Verify risk was NOT deleted
         $riskRepository = $this->entityManager->getRepository(Risk::class);
@@ -868,7 +878,7 @@ class RiskControllerTest extends WebTestCase
         // Login first to establish user context
         $this->loginAsUser($user);
         // Make a request to initialize session in browser context
-        $this->client->request('GET', '/en/risk/');
+        $this->client->request('GET', '/en/risk');
         // Get session from the last request and generate token directly
         $session = $this->client->getRequest()->getSession();
         // Generate a random token and store it in session

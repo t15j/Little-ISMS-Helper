@@ -6,14 +6,17 @@ namespace App\Controller;
 
 use DateTime;
 use DateTimeImmutable;
+use App\Controller\Trait\BulkActionTrait;
 use App\Entity\Control;
 use App\Entity\User;
 use App\Entity\Tenant;
 use App\Form\ControlType;
+use App\Repository\CommentRepository;
 use App\Repository\ComplianceRequirementRepository;
 use App\Repository\ControlRepository;
 use App\Service\AnnexAControlsBootstrapService;
 use App\Service\AuditLogger;
+use App\Service\InverseCoverageService;
 use App\Service\MappingSuggestionService;
 use App\Service\ModuleConfigurationService;
 use App\Service\SoAReportService;
@@ -24,6 +27,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsCsrfTokenValid;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
@@ -31,6 +35,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 
 class StatementOfApplicabilityController extends AbstractController
 {
+    use BulkActionTrait;
     public function __construct(
         private readonly ControlRepository $controlRepository,
         private readonly EntityManagerInterface $entityManager,
@@ -44,13 +49,25 @@ class StatementOfApplicabilityController extends AbstractController
         private readonly AnnexAControlsBootstrapService $annexBootstrap,
         private readonly ModuleConfigurationService $moduleConfiguration,
         private readonly ?AuditLogger $auditLogger = null,
+        private readonly ?InverseCoverageService $inverseCoverageService = null,
+        private readonly ?CommentRepository $commentRepository = null,
     ) {}
-    #[Route('/soa/', name: 'app_soa_index')]
+    #[Route('/soa', name: 'app_soa_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
         // Get current user's tenant
         $user = $this->security->getUser();
         $tenant = $user?->getTenant();
+
+        // Short-circuit: user without tenant assignment cannot see any
+        // multi-tenant data. Render dedicated landing page with concrete
+        // next steps instead of a 0/0/0/0% KPI dashboard the junior cannot
+        // act on.
+        if ($tenant === null) {
+            return $this->render('soa/_no_tenant.html.twig', [
+                'isAdmin' => $this->isGranted('ROLE_ADMIN'),
+            ]);
+        }
 
         // Get filter parameters — URL-persisted so SoA views are shareable/bookmarkable (UXC-11)
         $view = $request->query->get('view', 'inherited'); // Default: inherited
@@ -63,15 +80,19 @@ class StatementOfApplicabilityController extends AbstractController
         // Essential-for-small-business filter (KMU/SME toggle)
         $essential = $request->query->get('essential');
 
-        // Get controls based on view filter
+        // Get controls based on view filter.
+        // $unfilteredControls holds the full DB result; applied filters narrow it
+        // to $controls for the table. Both reference the same already-hydrated
+        // objects — no second DB round-trip for mrisStats (perf fix B-1).
         if ($tenant) {
-            $controls = match ($view) {
+            $unfilteredControls = match ($view) {
                 'own' => $this->controlRepository->findByTenant($tenant),
                 'subsidiaries' => $this->controlRepository->findByTenantIncludingSubsidiaries($tenant),
                 default => $this->controlRepository->findByTenantIncludingParent($tenant),
             };
-            // Sort by ISO order using natural sort for proper numeric ordering (A.5.2 before A.5.10)
-            usort($controls, function($a, $b): int {
+            // Sort by ISO order using natural sort for proper numeric ordering (A.5.2 before A.5.10).
+            // DB uses LENGTH+ASC but that's lexicographic; strnatcmp is the canonical PHP sort.
+            usort($unfilteredControls, static function (Control $a, Control $b): int {
                 $aRef = $a->getIsoReference() ?? $a->getControlId() ?? '';
                 $bRef = $b->getIsoReference() ?? $b->getControlId() ?? '';
                 return strnatcmp($aRef, $bRef);
@@ -82,13 +103,18 @@ class StatementOfApplicabilityController extends AbstractController
                 'currentView' => $view
             ];
         } else {
-            $controls = [];
+            // Defensive: short-circuited above, but keep the empty branch so
+            // unrelated callers (filter pipelines) keep working.
+            $unfilteredControls = [];
             $inheritanceInfo = [
                 'hasParent' => false,
                 'hasSubsidiaries' => false,
                 'currentView' => 'own'
             ];
         }
+
+        // Apply URL filters to produce the display set.
+        $controls = $unfilteredControls;
 
         // WS-5: framework-tag filter via ?tag=NIS2
         $tagFilter = $request->query->get('tag');
@@ -110,7 +136,7 @@ class StatementOfApplicabilityController extends AbstractController
         }
         if ($q !== '') {
             $needle = mb_strtolower($q);
-            $controls = array_filter($controls, function (Control $c) use ($needle): bool {
+            $controls = array_filter($controls, static function (Control $c) use ($needle): bool {
                 $haystack = mb_strtolower(
                     ($c->getName() ?? '')
                     . ' ' . ($c->getDescription() ?? '')
@@ -129,28 +155,34 @@ class StatementOfApplicabilityController extends AbstractController
             ? $this->controlRepository->countByCategory($tenant)
             : [];
 
-        // Calculate detailed statistics based on origin
+        // Calculate detailed statistics based on origin.
+        // Use $unfilteredControls so the KPI breakdown always reflects the full tenant set
+        // regardless of which display filters are active.
         if ($tenant) {
-            $detailedStats = $this->calculateDetailedStats($controls, $tenant);
+            $detailedStats = $this->calculateDetailedStats($unfilteredControls, $tenant);
         } else {
-            $detailedStats = ['own' => count($controls), 'inherited' => 0, 'subsidiaries' => 0, 'total' => count($controls)];
+            $detailedStats = ['own' => count($unfilteredControls), 'inherited' => 0, 'subsidiaries' => 0, 'total' => count($unfilteredControls)];
         }
 
-        // MRIS-Verteilung pro Kategorie (alle Controls, nicht gefiltert) — für UI-Filter-Counts
+        // MRIS-Verteilung pro Kategorie (alle Controls, nicht gefiltert) — für UI-Filter-Counts.
+        // Reuse $unfilteredControls — eliminates the previous second identical DB query (perf fix B-1).
         $mrisStats = ['standfest' => 0, 'degradiert' => 0, 'reibung' => 0, 'nicht_betroffen' => 0];
         if ($tenant) {
-            $allControls = match ($view) {
-                'own' => $this->controlRepository->findByTenant($tenant),
-                'subsidiaries' => $this->controlRepository->findByTenantIncludingSubsidiaries($tenant),
-                default => $this->controlRepository->findByTenantIncludingParent($tenant),
-            };
-            foreach ($allControls as $c) {
+            foreach ($unfilteredControls as $c) {
                 $cat = $c->getMythosResilience();
                 if ($cat !== null && isset($mrisStats[$cat])) {
                     $mrisStats[$cat]++;
                 }
             }
         }
+
+        // Junior-ISB-Audit-2026-05-22 S14 §14: MRIS-Filter is gated by the
+        // `mris` module AND the tenant-level kpis_enabled toggle. Both must
+        // be true for the filter/column to render. Defaults to OFF — MRIS is
+        // a niche custom framework (Peddi 2026, MRIS v1.5), most tenants
+        // never need it.
+        $mrisEnabled = $this->moduleConfiguration->isModuleActive('mris')
+            && (($tenant->getSettings() ?? [])['mris']['kpis_enabled'] ?? false) === true;
 
         return $this->render('soa/index.html.twig', [
             'controls' => $controls,
@@ -162,9 +194,10 @@ class StatementOfApplicabilityController extends AbstractController
             'mrisStats' => $mrisStats,
             'mrisFilter' => $mris,
             'essentialFilter' => $essential,
+            'mrisEnabled' => $mrisEnabled,
         ]);
     }
-    #[Route('/soa/category/{category}', name: 'app_soa_by_category')]
+    #[Route('/soa/category/{category}', name: 'app_soa_by_category', methods: ['GET'])]
     public function byCategory(string $category): Response
     {
         $user = $this->security->getUser();
@@ -194,7 +227,7 @@ class StatementOfApplicabilityController extends AbstractController
             'iso_27001_active' => $controlsModuleActive,
         ]);
     }
-    #[Route('/soa/report/export', name: 'app_soa_export')]
+    #[Route('/soa/report/export', name: 'app_soa_export', methods: ['GET'])]
     public function export(Request $request): Response
     {
         $user = $this->security->getUser();
@@ -211,7 +244,7 @@ class StatementOfApplicabilityController extends AbstractController
             'generatedAt' => new DateTime(),
         ]);
     }
-    #[Route('/soa/report/pdf', name: 'app_soa_export_pdf')]
+    #[Route('/soa/report/pdf', name: 'app_soa_export_pdf', methods: ['GET'])]
     public function exportPdf(Request $request): Response
     {
         // Close session to prevent blocking other requests during PDF generation
@@ -219,19 +252,31 @@ class StatementOfApplicabilityController extends AbstractController
 
         return $this->soaReportService->downloadSoAReport();
     }
-    #[Route('/soa/report/pdf/preview', name: 'app_soa_preview_pdf')]
+    #[Route('/soa/report/pdf/preview', name: 'app_soa_preview_pdf', methods: ['GET'])]
     public function previewPdf(): Response
     {
         return $this->soaReportService->streamSoAReport();
     }
-    #[Route('/soa/{id}', name: 'app_soa_show', requirements: ['id' => '\d+'])]
+    #[Route('/soa/{id}', name: 'app_soa_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Control $control): Response
     {
         $suggestions = $this->mappingSuggestionService->suggestForControl($control);
+        // V3 B6 / EF-4: Inverse-Coverage Impact-Analyse
+        $impactCoverage = $this->inverseCoverageService?->forControl($control) ?? ['total' => 0, 'frameworks' => []];
+
+        // V4 LB-4: Comment-Thread adoption — load thread for this Control.
+        $comments = [];
+        $tenant = $this->security->getUser()?->getTenant();
+        if ($this->commentRepository !== null && $tenant !== null && $control->getId() !== null) {
+            $comments = $this->commentRepository->findThread($tenant, 'Control', $control->getId());
+        }
+
         return $this->render('soa/show.html.twig', [
             'control' => $control,
             'mapping_suggestions' => $suggestions,
             'mapping_suggestions_total' => $this->mappingSuggestionService->totalCount($suggestions),
+            'impact_coverage' => $impactCoverage,
+            'comments' => $comments,
         ]);
     }
 
@@ -432,10 +477,14 @@ class StatementOfApplicabilityController extends AbstractController
             return $this->redirectToRoute('app_soa_show', ['id' => $control->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('soa/edit.html.twig', [
             'control' => $control,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     /**
      * Calculate detailed statistics showing breakdown by origin
@@ -477,5 +526,61 @@ class StatementOfApplicabilityController extends AbstractController
             'subsidiaries' => $subsidiariesCount,
             'total' => $ownCount + $inheritedCount + $subsidiariesCount
         ];
+    }
+
+    /**
+     * Bulk CSV export of selected SoA controls.
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/soa/bulk-export', name: 'app_soa_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $user   = $this->security->getUser();
+        $tenant = $user instanceof User ? $user->getTenant() : null;
+
+        $controls = [];
+        foreach ($ids as $rawId) {
+            $control = $this->controlRepository->find((int) $rawId);
+            if ($control === null) {
+                continue;
+            }
+            if ($tenant !== null && $control->getTenant()?->getId() !== $tenant->getId()) {
+                continue;
+            }
+            $controls[] = $control;
+        }
+
+        if ($controls === []) {
+            return $this->json(['error' => 'No exportable SoA controls'], 404);
+        }
+
+        $headers = ['ID', 'Control ID', 'Name', 'Control Type', 'Control Maturity'];
+
+        return $this->streamCsvExport(
+            $controls,
+            $headers,
+            static function (Control $c): array {
+                return [
+                    (string) $c->getId(),
+                    (string) $c->getControlId(),
+                    (string) $c->getName(),
+                    (string) $c->getControlType(),
+                    (string) $c->getControlMaturity(),
+                ];
+            },
+            'soa-controls-export',
+            'Control',
+            $this->auditLogger,
+        );
     }
 }

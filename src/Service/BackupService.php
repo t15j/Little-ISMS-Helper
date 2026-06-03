@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace App\Service;
 
 use DateTime;
-use Exception;
 use App\Entity\Tenant;
 use App\Entity\UserSession;
-use RuntimeException;
-use InvalidArgumentException;
 use DateTimeInterface;
 use Composer\InstalledVersions;
 use App\Entity\AuditLog;
@@ -33,21 +30,41 @@ class BackupService
      * or relative paths under public/ (Tenant logo).
      */
     private const array FILE_REFERENCE_FIELDS = [
-        'Document' => 'filePath',   // stored as '/uploads/documents/foo.pdf'
-        'Tenant'   => 'logoPath',   // stored as 'uploads/tenants/logo.png'
+        'Document'        => 'filePath',   // stored as '/uploads/documents/foo.pdf'
+        'DocumentVersion' => 'filePath',   // version-specific upload (history)
+        'Tenant'          => 'logoPath',   // stored as 'uploads/tenants/logo.png'
+        'TenantBranding'  => 'logoPath',   // separate branding overrides (subsidiaries)
     ];
     // Entities that contain productive user data
-    // Order matters: entities with foreign keys must come after their dependencies
+    // Order matters: entities with foreign keys must come after their dependencies.
+    //
+    // EVERY entity class in `src/Entity/` MUST be either listed here OR in
+    // EXCLUDED_FROM_BACKUP below — enforced by Gate 43
+    // (`scripts/quality/check_backup_entity_coverage.py`).
     private const array PRODUCTIVE_ENTITIES = [
         // Core entities (no dependencies)
         'Tenant',
         'Role',
         'Permission',
+        'OrganizationSecurityProfile',
         'User',
         'Person',
         'Location',
         'Supplier',
         'SystemSettings',
+        'Department', // S18 B3: tenant-scoped Abteilung, FK target for responsibleDepartmentEntity
+
+        // Tenant-level overrides / branding
+        'TenantBranding',           // FK: Tenant, User (has logoPath upload)
+        'TenantPolicySetting',      // FK: Tenant, User
+        'TenantPolicySettingChangeAttempt', // FK: Tenant, User (audit-trail)
+        'LifecycleConfig',          // FK: Tenant, User — per-tenant lifecycle override
+
+        // SSO / Identity (after User + Role + Tenant)
+        'IdentityProvider',                  // FK: Tenant
+        'IdentityProviderRoleMapping',       // FK: Tenant, IdentityProvider, Role
+        'IdentityProviderUserMapping',       // FK: Tenant, IdentityProvider, User
+        'SsoUserApproval',                   // FK: Tenant, IdentityProvider, User
 
         // Configuration entities (Phase 8 / QW-5)
         'RiskApprovalConfig',       // Phase 8L.F1 — FK: Tenant, User
@@ -56,6 +73,7 @@ class BackupService
         'KpiThresholdConfig',       // FK: Tenant
         'Tag',                      // FK: Tenant
         'EntityTag',                // FK: Tag, User
+        'AssetSubType',             // S18 B2 — FK: Tenant — tenant-konfigurierbare Asset-Sub-Types
 
         // ISMS Core
         'Asset',
@@ -64,6 +82,7 @@ class BackupService
         'RiskAppetite',
         'RiskTreatmentPlan',
         'Incident',
+        'RiskIncidentLink',         // FK: Tenant, Risk, Incident, User
         'Vulnerability',
         'Patch',
         'ThreatIntelligence',
@@ -72,6 +91,7 @@ class BackupService
         'BusinessProcess',
         'BusinessContinuityPlan',
         'BCExercise',
+        'Bsi2004ExerciseLog',       // FK: Tenant, BCExercise, User — BSI-200-4 evidence
         'CrisisTeam',
 
         // Compliance
@@ -79,6 +99,7 @@ class BackupService
         'ComplianceRequirement',
         'ComplianceMapping',
         'ComplianceRequirementFulfillment',
+        'FulfillmentInheritanceLog', // FK: Tenant, ComplianceRequirementFulfillment, ComplianceMapping, User — audit-trail
         'MappingGapItem',
 
         // GDPR/Privacy (CRITICAL - was missing!)
@@ -88,9 +109,21 @@ class BackupService
         'Consent',
         'DataSubjectRequest',       // DSGVO Art. 15-22 — FK: Tenant, User, ProcessingActivity
 
+        // Policies & templates (global PolicyTemplate, tenant-scoped acknowledgements)
+        'PolicyTemplate',           // GLOBAL (no tenant_id) — productive catalogue with custom edits
+        'AuthorityTemplate',        // FK: Tenant — TISAX / authority template
+        'PolicyAcknowledgement',    // FK: Tenant, Document, User — sign-offs
+
         // Documents & Training
         'Document',
+        'DocumentVersion',          // FK: Tenant, Document, User (has filePath upload)
+        'DocumentSection',          // FK: Tenant, Document, User — review/approve flow
+        'DocumentControlLink',      // FK: Document, Control — link table
         'Training',
+        'TrainingParticipation',    // FK: Tenant, Training, User — sign-offs
+
+        // Comments (polymorphic, after all target entities)
+        'Comment',                  // FK: Tenant, User — polymorphic threads
 
         // Audit & Reviews
         'InternalAudit',
@@ -109,11 +142,15 @@ class BackupService
         'InterestedParty',
         'CorporateGovernance',
 
+        // TISAX / Prototype Protection
+        'PrototypeProtectionAssessment', // FK: Tenant, Supplier, Location, User, Person
+
         // Operations
         'ChangeRequest',
         'CryptographicOperation',
         'PhysicalAccessLog',
         'FourEyesApprovalRequest',  // FK: Tenant, User (requester/approver/reviewer)
+        'EvidenceReverificationTask', // FK: Tenant, DocumentVersion, Control, ComplianceRequirementFulfillment, User
 
         // Workflows
         'Workflow',
@@ -125,11 +162,55 @@ class BackupService
         'CustomReport',             // FK: User (tenantId as raw int)
         'AppliedBaseline',          // FK: Tenant, User
         'KpiSnapshot',              // FK: Tenant
+        'SoaSnapshot',              // FK: Tenant, User — productive ISO 27001 SoA snapshot
+
+        // Import audit-trail (after target entities + Document)
+        'BulkImportBatch',          // FK: Tenant, Document, User — bulk-import receipts
+        'BulkImportRow',            // FK: BulkImportBatch
+        'ImportSession',            // FK: Tenant, User — OSCAL/CSV session
+        'ImportRowEvent',           // FK: ImportSession
+        'SampleDataImport',         // FK: Tenant, User — sample-data origin marker (kept for re-run idempotency)
+
+        // Wizards
+        'WizardRun',                // FK: Tenant, User — productive wizard run
+        'WizardSession',            // FK: Tenant, User — wizard checkpoint state
 
         // User Preferences (optional but useful)
         'DashboardLayout',
         'MfaToken',
         'ScheduledTask',
+        'PushSubscription',         // FK: Tenant, User — Web-Push endpoints (auth-token)
+
+        // Alva-Hint user state + telemetry
+        'AlvaHintDismissal',        // FK: Tenant, User — per-user dismiss state
+        'AlvaHintRenderCount',      // FK: Tenant — telemetry (kept for trend continuity)
+
+        // Misc tenant customizations
+        'GuidedTourStepOverride',   // FK: Tenant — tour customizations
+        'AssetDependency',
+        'DoraDataFlow',
+        'DoraExitPlan',
+        'DoraSubcontractor',
+
+        // Audit-Program (ISO 19011 §5.4 Jahresplan) — Phase 2.5
+        'AuditProgram',             // FK: Tenant, User — links to InternalAudit children
+
+        // TISAX BYO-Import disclaimer-trail (legal evidence)
+        'TisaxLicenseConfirmation', // FK: Tenant, User — ISO 27001 Cl. 7.5.3 audit trail
+    ];
+
+    // Entities deliberately NOT backed up — enforced by Gate 43
+    // (scripts/quality/check_backup_entity_coverage.py) and BackupServiceTest.
+    private const array EXCLUDED_FROM_BACKUP = [
+        // Global seeded catalogues (re-loadable via App\Command\Load*Command)
+        'UserTenantAssignment' => 'stub for multi-tenant spec (Option A), schema migration deferred',
+        'IndustryBaseline'      => 'global seeded catalogue, re-loadable via LoadIndustryBaseline commands',
+        'IndustryPresetBundle'  => 'global seeded catalogue (no tenant_id) — wizard W4-B preset bundles',
+        'ElementaryThreat'      => 'global BSI threat catalogue, re-loadable via LoadElementaryThreats command',
+
+        // Derived / re-computable snapshots
+        'PortfolioSnapshot'     => 'derived trend-cache, re-computable from primary entities',
+        'ReuseTrendSnapshot'    => 'derived trend-cache, re-computable from primary entities',
     ];
 
     // Fields to exclude from backup (sensitive or regeneratable)
@@ -230,7 +311,7 @@ class BackupService
                     'entity' => $entityName,
                     'count'  => count($entities),
                 ]);
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 $this->logger->error('Error backing up entity', [
                     'entity' => $entityName,
                     'error'  => $e->getMessage(),
@@ -257,7 +338,7 @@ class BackupService
                 $backup['statistics']['AuditLog'] = count($entities);
 
                 $this->logger->info('Backed up audit log', ['count' => count($entities)]);
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 $this->logger->error('Error backing up audit log', ['error' => $e->getMessage()]);
             }
         }
@@ -272,7 +353,7 @@ class BackupService
                     $backup['statistics']['UserSession'] = count($sessions);
 
                     $this->logger->info('Backed up user sessions', ['count' => count($sessions)]);
-                } catch (Exception $e) {
+                } catch (\Exception $e) {
                     $this->logger->error('Error backing up user sessions', ['error' => $e->getMessage()]);
                 }
             }
@@ -342,7 +423,7 @@ class BackupService
                     return true;
                 }
             }
-        } catch (Exception) {
+        } catch (\Exception) {
             // Entity not registered with Doctrine (e.g. in tests) → treat as no tenant field
         }
 
@@ -440,12 +521,12 @@ class BackupService
 
         $json = json_encode($backup, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($json === false) {
-            throw new RuntimeException('Failed to encode backup data to JSON: ' . json_last_error_msg());
+            throw new \App\Exception\Io\IoException('Failed to encode backup data to JSON: ' . json_last_error_msg());
         }
 
         $zip = new ZipArchive();
         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-            throw new RuntimeException('Could not create ZIP archive: ' . $zipPath);
+            throw new \App\Exception\Io\IoException('Could not create ZIP archive: ' . $zipPath);
         }
 
         $zip->addFromString('backup.json', $json);
@@ -487,7 +568,7 @@ class BackupService
 
         $json = json_encode($backup, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($json === false) {
-            throw new RuntimeException('Failed to encode backup data to JSON: ' . json_last_error_msg());
+            throw new \App\Exception\Io\IoException('Failed to encode backup data to JSON: ' . json_last_error_msg());
         }
 
         if (file_put_contents($filepath, $json) === false) {
@@ -510,11 +591,25 @@ class BackupService
     }
 
     /**
-     * Get list of available backups
+     * Get list of available backups.
      *
-     * @return array List of backup files with metadata
+     * When $scope is null, all backups are returned (SUPER_ADMIN behaviour).
+     * When $scope is a Tenant, the listing is filtered to backups whose embedded
+     * tenant_scope intersects with the scope's accessible tree (self + subsidiaries).
+     *
+     * Detection order for each file:
+     *   1. Sidecar `<filename>.meta.json` (preferred — fast, no decompression)
+     *   2. Read metadata from backup payload (ZIP/gz/json) — opportunistically writes a sidecar
+     *   3. Legacy filename without metadata → tenant_scope is null
+     *
+     * Legacy backups without detectable scope are EXCLUDED from non-SUPER listings
+     * (safer default). SUPER (scope=null) always sees them.
+     *
+     * @param Tenant|null $scope When set, restricts the listing to backups in scope's tree
+     * @return array List of backup files with metadata (filename, path, size, created_at,
+     *               tenant_scope_ids, scope_type)
      */
-    public function listBackups(): array
+    public function listBackups(?Tenant $scope = null): array
     {
         $backupDir = $this->projectDir . '/var/backups';
 
@@ -523,7 +618,9 @@ class BackupService
         }
 
         // Include both created backups (backup_*) and uploaded files (uploaded_*)
-        // Support compressed (.gz), uncompressed (.json), and ZIP (.zip) files
+        // Support compressed (.gz), uncompressed (.json), and ZIP (.zip) files.
+        // Sidecar `*.meta.json` files match the `backup_*.json` glob too, so
+        // they are filtered out below.
         $files = array_merge(
             glob($backupDir . '/backup_*.zip') ?: [],
             glob($backupDir . '/backup_*.json.gz') ?: [],
@@ -533,14 +630,39 @@ class BackupService
             glob($backupDir . '/uploaded_*.json') ?: [],
             glob($backupDir . '/uploaded_*.gz') ?: []
         );
+
+        // Strip Phase-5 sidecar files (`*.meta.json`) from the listing.
+        $files = array_values(array_filter(
+            $files,
+            static fn(string $f): bool => !str_ends_with($f, '.meta.json')
+        ));
+
+        $accessibleIds = $this->resolveScopeIds($scope);
         $backups = [];
 
         foreach ($files as $file) {
+            $tenantScopeIds = $this->detectBackupTenantScope($file);
+
+            // Apply tenant filter when a scope is active
+            if ($scope !== null) {
+                if ($tenantScopeIds === null) {
+                    // Legacy backup without scope info — exclude from non-SUPER listings
+                    continue;
+                }
+                if ($tenantScopeIds !== [] && array_intersect($tenantScopeIds, $accessibleIds) === []) {
+                    continue;
+                }
+            }
+
             $backups[] = [
-                'filename' => basename($file),
-                'path' => $file,
-                'size' => filesize($file),
-                'created_at' => date('Y-m-d H:i:s', filemtime($file)),
+                'filename'         => basename($file),
+                'path'             => $file,
+                'size'             => filesize($file),
+                'created_at'       => date('Y-m-d H:i:s', filemtime($file)),
+                'tenant_scope_ids' => $tenantScopeIds,
+                'scope_type'       => $tenantScopeIds === null
+                    ? 'unknown'
+                    : ($tenantScopeIds === [] ? 'global' : 'tenant'),
             ];
         }
 
@@ -548,6 +670,113 @@ class BackupService
         usort($backups, fn(array $a, array $b): int => $b['created_at'] <=> $a['created_at']);
 
         return $backups;
+    }
+
+    /**
+     * Detect the tenant_scope embedded in a backup file.
+     *
+     * Returns:
+     *  - array of tenant IDs (possibly empty = global backup) when detectable
+     *  - null when not detectable (legacy filename without sidecar / unreadable metadata)
+     *
+     * Performs opportunistic sidecar caching: when scope is detected from the
+     * backup payload (slow path), a `<filename>.meta.json` is written alongside
+     * so subsequent listBackups() calls hit the fast path without decompression.
+     *
+     * @return int[]|null
+     */
+    private function detectBackupTenantScope(string $filepath): ?array
+    {
+        $sidecarPath = $filepath . '.meta.json';
+
+        // Fast path: sidecar file
+        if (is_file($sidecarPath)) {
+            $sidecar = @json_decode((string) @file_get_contents($sidecarPath), true);
+            if (is_array($sidecar) && array_key_exists('tenant_scope', $sidecar)) {
+                $scope = $sidecar['tenant_scope'];
+                return is_array($scope)
+                    ? array_values(array_map(static fn($v): int => (int) $v, $scope))
+                    : null;
+            }
+        }
+
+        // Slow path: read metadata from the backup payload
+        $metadata = $this->readBackupMetadata($filepath);
+        if ($metadata === null) {
+            return null;
+        }
+
+        $scope = $metadata['tenant_scope'] ?? null;
+        if ($scope === null) {
+            // Backup metadata present but no tenant_scope — treat as unknown (legacy/global)
+            return null;
+        }
+
+        $scopeIds = is_array($scope)
+            ? array_values(array_map(static fn($v): int => (int) $v, $scope))
+            : [];
+
+        // Opportunistic sidecar write (best-effort — silent on failure)
+        @file_put_contents(
+            $sidecarPath,
+            (string) json_encode(['tenant_scope' => $scopeIds, 'detected_at' => date('c')])
+        );
+
+        return $scopeIds;
+    }
+
+    /**
+     * Read the `metadata` section of a backup file without restoring data.
+     *
+     * Supports .zip (reads backup.json), .json.gz, .gz, and .json.
+     * Returns null on any failure (corrupt file, missing extension support, …).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function readBackupMetadata(string $filepath): ?array
+    {
+        try {
+            if ($this->isZipFile($filepath)) {
+                if (!class_exists(ZipArchive::class)) {
+                    return null;
+                }
+                $zip = new ZipArchive();
+                if ($zip->open($filepath) !== true) {
+                    return null;
+                }
+                $json = $zip->getFromName('backup.json');
+                $zip->close();
+                if ($json === false) {
+                    return null;
+                }
+            } elseif (str_ends_with($filepath, '.gz')) {
+                if (!extension_loaded('zlib')) {
+                    return null;
+                }
+                $raw = @file_get_contents($filepath);
+                if ($raw === false) {
+                    return null;
+                }
+                $json = @gzdecode($raw);
+                if ($json === false) {
+                    return null;
+                }
+            } else {
+                $json = @file_get_contents($filepath);
+                if ($json === false) {
+                    return null;
+                }
+            }
+
+            $decoded = json_decode($json, true);
+            if (!is_array($decoded) || !isset($decoded['metadata']) || !is_array($decoded['metadata'])) {
+                return null;
+            }
+
+            return $decoded['metadata'];
+        } catch (\Exception) {
+            return null;
+        }
     }
 
     /**
@@ -568,7 +797,7 @@ class BackupService
     public function loadBackupFromFile(string $filepath): array
     {
         if (!file_exists($filepath)) {
-            throw new InvalidArgumentException('Backup file not found: ' . $filepath);
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('Backup file not found: ' . $filepath, 'filepath');
         }
 
         // Auto-detect ZIP by magic bytes (PK\x03\x04) for robustness
@@ -580,12 +809,12 @@ class BackupService
         if (str_ends_with($filepath, '.gz')) {
             // Check if zlib extension is available
             if (!extension_loaded('zlib')) {
-                throw new RuntimeException('Cannot decompress backup: ext-zlib extension not available');
+                throw new \App\Exception\Io\IoException('Cannot decompress backup: ext-zlib extension not available');
             }
 
             $json = @gzdecode(file_get_contents($filepath)); // Suppress warning for intentionally corrupted test files
             if ($json === false) {
-                throw new RuntimeException('Failed to decompress backup file');
+                throw new \App\Exception\Io\IoException('Failed to decompress backup file');
             }
         } else {
             $json = file_get_contents($filepath);
@@ -593,7 +822,7 @@ class BackupService
 
         $backup = json_decode($json, true);
         if ($backup === null) {
-            throw new RuntimeException('Failed to decode backup JSON: ' . json_last_error_msg());
+            throw new \App\Exception\Io\IoException('Failed to decode backup JSON: ' . json_last_error_msg());
         }
 
         return $backup;
@@ -608,24 +837,24 @@ class BackupService
     private function loadFromZip(string $filepath): array
     {
         if (!class_exists(ZipArchive::class)) {
-            throw new RuntimeException('ZipArchive extension is not available — cannot read ZIP backup');
+            throw new \App\Exception\Io\IoException('ZipArchive extension is not available — cannot read ZIP backup');
         }
 
         $zip = new ZipArchive();
         if ($zip->open($filepath) !== true) {
-            throw new RuntimeException('Failed to open ZIP backup: ' . $filepath);
+            throw new \App\Exception\Io\IoException('Failed to open ZIP backup: ' . $filepath);
         }
 
         $jsonContent = $zip->getFromName('backup.json');
         if ($jsonContent === false) {
             $zip->close();
-            throw new RuntimeException('ZIP backup does not contain backup.json');
+            throw new \App\Exception\Io\IoException('ZIP backup does not contain backup.json');
         }
 
         $backup = json_decode($jsonContent, true);
         if ($backup === null) {
             $zip->close();
-            throw new RuntimeException('Failed to decode backup JSON from ZIP: ' . json_last_error_msg());
+            throw new \App\Exception\Io\IoException('Failed to decode backup JSON from ZIP: ' . json_last_error_msg());
         }
 
         // Extract embedded files into public/uploads/ (before entity restore so paths resolve)
@@ -728,9 +957,11 @@ class BackupService
 
                 // Derive a safe ZIP entry path based on entity type
                 $zipEntry = match ($entityName) {
-                    'Document' => 'documents/' . basename($absPath),
-                    'Tenant'   => 'tenant_logos/' . basename($absPath),
-                    default    => $entityName . '/' . basename($absPath),
+                    'Document'        => 'documents/' . basename($absPath),
+                    'DocumentVersion' => 'document_versions/' . basename($absPath),
+                    'Tenant'          => 'tenant_logos/' . basename($absPath),
+                    'TenantBranding'  => 'tenant_logos/' . basename($absPath),
+                    default           => $entityName . '/' . basename($absPath),
                 };
 
                 $refs[$zipEntry] = $absPath;
@@ -883,7 +1114,7 @@ class BackupService
                 // Strip the namespace prefix for readability: keep only the timestamp part
                 return preg_replace('/^.*\\\\/', '', (string) $row['version']) ?? (string) $row['version'];
             }
-        } catch (Exception) {
+        } catch (\Exception) {
             // Table may not exist in test environments or on fresh installs
         }
         return 'unknown';
@@ -899,7 +1130,7 @@ class BackupService
                 $packages = InstalledVersions::getAllRawData()[0]['versions'] ?? [];
                 return $packages['doctrine/orm']['version'] ?? 'unknown';
             }
-        } catch (Exception) {
+        } catch (\Exception) {
             // Fallback if Composer runtime API is not available
         }
         return 'unknown';

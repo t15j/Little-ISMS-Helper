@@ -6,10 +6,30 @@
 
 {% block step_content %}
     {% import '_components/_step_header.html.twig' as step_header %}
-    {% import '_components/_toggle_card.html.twig' as tc %}
     {% import '_components/_alert.html.twig' as faAlert %}
     {% import '_components/_status_pill.html.twig' as pill %}
     {% import '_components/_cyber_button.html.twig' as btn %}
+
+{% set _module_icon_map = {
+    'shield-check': 'nav-shield-check', 'database': 'nav-database',
+    'exclamation-triangle': 'nav-exclamation-triangle', 'list-check': 'nav-list-check',
+    'bell': 'ui-bell', 'clipboard-check': 'nav-clipboard-check',
+    'graduation-cap': 'nav-mortarboard', 'users': 'nav-users',
+    'rotate': 'ui-refresh', 'scale-balanced': 'compliance-shield',
+    'user-shield': 'nav-shield', 'file-lines': 'audit-trail',
+    'shield-lock': 'nav-shield-lock', 'building-shield': 'nav-building-shield',
+    'cpu': 'nav-cpu', 'cloud': 'asset-cloud', 'bug': 'util-bug',
+    'building-columns': 'nav-building', 'car-front': 'nav-patch-check',
+    'chart-line': 'nav-bar-chart', 'robot': 'nav-robot', 'package': 'nav-hdd',
+    'list-ordered': 'nav-list-ordered', 'file-earmark-text': 'nav-file-earmark-text',
+    'truck': 'nav-truck', 'geo-alt': 'geo-alt', 'person-badge': 'file-person',
+    'people': 'nav-people', 'bullseye': 'nav-bullseye', 'arrow-left-right': 'nav-change',
+    'bandaid': 'nav-patch', 'wrench': 'nav-wrench', 'paperclip': 'attachment',
+    'diagram-3': 'nav-workflow', 'speedometer': 'nav-speedometer',
+    'journal-check': 'risk-register', 'bar-chart-line': 'nav-bar-chart',
+    'layout-text-sidebar': 'nav-reports', 'calendar-check': 'nav-calendar-check',
+    'collection': 'nav-collection'
+} %}
 
     {{ step_header.render(8, 12, step.kind, 'setup.step7.header'|trans({}, 'setup'), 'setup.step7.intro'|trans({}, 'setup'))|raw }}
 
@@ -17,7 +37,7 @@
         {{ faAlert.render(
             'setup.step7.recommendations.description'|trans({}, 'setup'),
             'info',
-            { title: 'setup.step7.recommendations.title'|trans({}, 'setup'), icon: 'bi-lightbulb' }
+            { title: 'setup.step7.recommendations.title'|trans({}, 'setup'), icon: 'ui-lightbulb' }
         )|raw }}
     {% endif %}
 
@@ -28,7 +48,7 @@
 
         {# Required Modules #}
         <h2 class="fa-setup-section-title">
-            <i class="bi bi-star-fill" style="color: var(--warning);" aria-hidden="true"></i>
+            <i class="fa-icon fa-icon--ui-star" style="color: var(--warning);" aria-hidden="true"></i>
             {{ 'setup.step7.required_modules'|trans({}, 'setup') }}
         </h2>
 
@@ -47,7 +67,7 @@
                         </span>
                         <div class="fa-toggle-card__body">
                             <div class="fa-toggle-card__title">
-                                <i class="bi bi-{{ module.icon }}" aria-hidden="true"></i>
+                                <i class="fa-icon fa-icon--{{ _module_icon_map[module.icon] ?? 'nav-shield' }}" aria-hidden="true"></i>
                                 {{ module.name }}
                                 <span class="fa-toggle-card__badge">{{ 'setup.step7.badge.required'|trans({}, 'setup') }}</span>
                             </div>
@@ -60,7 +80,7 @@
 
         {# Optional Modules #}
         <h2 class="fa-setup-section-title">
-            <i class="bi bi-toggle-on" style="color: var(--primary);" aria-hidden="true"></i>
+            <i class="fa-icon fa-icon--ui-check" style="color: var(--primary);" aria-hidden="true"></i>
             {{ 'setup.step7.optional_modules'|trans({}, 'setup') }}
         </h2>
 
@@ -83,7 +103,7 @@
                     </span>
                     <div class="fa-toggle-card__body">
                         <div class="fa-toggle-card__title">
-                            <i class="bi bi-{{ module.icon }}" aria-hidden="true"></i>
+                            <i class="fa-icon fa-icon--{{ _module_icon_map[module.icon] ?? 'nav-shield' }}" aria-hidden="true"></i>
                             {{ module.name }}
                             {% if isRecommended %}
                                 <span class="fa-toggle-card__badge">{{ 'setup.step7.badge.recommended'|trans({}, 'setup') }}</span>
@@ -92,7 +112,7 @@
                         <div class="fa-toggle-card__sub">{{ module.description }}</div>
                         {% if module.dependencies|length > 0 %}
                             <div class="fa-toggle-card__meta">
-                                <i class="bi bi-link-45deg" aria-hidden="true"></i>
+                                <i class="fa-icon fa-icon--ui-link" aria-hidden="true"></i>
                                 <span style="color: var(--warning-text);">{{ 'setup.step7.dependencies'|trans({}, 'setup') }}</span>
                                 {% for dep in module.dependencies %}
                                     {{ pill.render(all_modules[dep].name, 'warning', { size: 'sm', noDot: true })|raw }}
@@ -105,7 +125,7 @@
         </div>
 
         <div class="fa-setup-modules-summary">
-            <i class="bi bi-pie-chart" aria-hidden="true"></i>
+            <i class="fa-icon fa-icon--nav-pie-chart" aria-hidden="true"></i>
             <strong>{{ 'setup.step7.summary.title'|trans({}, 'setup') }}</strong>
             <span>
                 {{ 'setup.step7.summary.selected'|trans({'%selected%': '<span id="selected-count">0</span>', '%total%': all_modules|length}, 'setup')|raw }}
@@ -115,11 +135,11 @@
         <div class="fa-nav-bar">
             <div class="fa-nav-bar__left">
                 {{ btn.link(path('setup_step6_organisation_info'), 'setup.common.back'|trans({}, 'setup'),
-                   { variant: 'secondary', icon: 'bi-arrow-left' }) }}
+                   { variant: 'secondary', icon: 'util-arrow-left' }) }}
             </div>
             <div class="fa-nav-bar__right">
                 {{ btn.submit('setup.next_step'|trans({'%step%': 8, '%name%': 'setup.steps.compliance_frameworks'|trans({}, 'setup')}, 'messages'),
-                   { variant: 'primary', icon: 'bi-arrow-right', iconAfter: true }) }}
+                   { variant: 'primary', icon: 'util-arrow-right', iconAfter: true }) }}
             </div>
         </div>
     </form>

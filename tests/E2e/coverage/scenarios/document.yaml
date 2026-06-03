@@ -1,0 +1,16 @@
+# Document/Policy scenarios (ISO 27001 Cl. 7.5).
+#
+# DocumentType requires a file upload on `new` (required=true) and the L2
+# schema's `fill` map doesn't support setInputFiles — full create-flow is
+# deferred until the spec gets a `files:` block. Show + edit-route smoke
+# stays covered by L1 route-smoke; clone is covered by clone_flows.yaml.
+
+scenarios:
+  - name: document_index_render
+    label: "Dokument-Liste rendern (GET-Smoke)"
+    route: /de/document
+    category: document
+    submit: 'a[href$="/document/new"]'
+    expect:
+      status_lt: 500
+      url_pattern: '/de/document/(new|$)'

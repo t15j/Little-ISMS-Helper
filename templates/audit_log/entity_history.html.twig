@@ -1,5 +1,7 @@
 {% extends 'admin/layout.html.twig' %}
+{% trans_default_domain 'audit_log' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_audit_row.html.twig' as _fa_audit_row %}
 
 {% block admin_title %}{{ 'entity_history.title'|trans({}, 'messages') }}{% endblock %}
 {% block admin_subtitle %}
@@ -24,48 +26,33 @@
 <div class="mt-4">
     <h2>{{ 'entity_history.section'|trans({}, 'messages') }}</h2>
 
-    <div class="mt-3">
-    {% embed '_components/_table.html.twig' with {
-        'noMargin': true,
-        'responsive': true
-    } %}
-        {% block table_head %}
-            <tr>
-                <th scope="col" class="table-cell text-left">{{ 'audit_log.field.timestamp'|trans({}, 'audit_log') }}</th>
-                <th scope="col" class="table-cell text-left">{{ 'audit_log.field.action'|trans({}, 'audit_log') }}</th>
-                <th scope="col" class="table-cell text-left">{{ 'audit_log.field.user'|trans({}, 'audit_log') }}</th>
-                <th scope="col" class="table-cell text-left">{{ 'audit_log.field.description'|trans({}, 'audit_log') }}</th>
-                <th scope="col" class="table-cell text-left">{{ 'common.details'|trans({}, 'messages') }}</th>
-            </tr>
-        {% endblock %}
-        {% block table_body %}
-            {% for log in auditLogs %}
-            <tr>
-                <td class="table-cell small">
-                    {{ log.createdAt|date('d.m.Y H:i:s') }}
-                </td>
-                <td class="table-cell">
-                    <span class="badge badge-{{ log.action }}">{{ log.action|capitalize }}</span>
-                </td>
-                <td class="table-cell">
-                    <a href="{{ path('app_audit_log_user', {userName: log.userName}) }}"
-                       class="link-primary">
-                        {{ log.userName }}
-                    </a>
-                </td>
-                <td class="table-cell small">
-                    {{ log.description|default('-') }}
-                </td>
-                <td class="table-cell">
-                    <a href="{{ path('app_audit_log_detail', {id: log.id}) }}"
-                       class="link-primary">
-                        {{ 'entity_history.show_details'|trans({}, 'messages') }}
-                    </a>
-                </td>
-            </tr>
-            {% endfor %}
-        {% endblock %}
-    {% endembed %}
+    {# Aurora fa-audit-feed (CRUD change-log per #480 canonical pattern) #}
+    <div class="fa-audit-feed mt-4">
+        {% for log in auditLogs %}
+            {%- set sev = log.action in ['delete', 'force_delete'] ? 'danger'
+                : (log.action in ['error', 'failed'] ? 'danger'
+                : (log.action in ['update', 'modify', 'change', 'login_failed'] ? 'warning'
+                : 'info')) -%}
+            {{ _fa_audit_row.render({
+                ts:     log.createdAt|date('Y-m-d H:i:s'),
+                sev:    sev,
+                actor:  log.userName,
+                action: log.action,
+                target: log.entityType ~ '#' ~ log.entityId,
+                pill:   log.description|default('')|slice(0, 60),
+                hash:   log.id|default('')|slice(0, 12)
+            }) }}
+            {# Actor profile + detail navigation rendered below each row #}
+            <div class="small ps-1 pb-1 d-flex gap-3">
+                <a href="{{ path('app_audit_log_user', {userName: log.userName}) }}" class="link-primary">
+                    <i class="fa-icon fa-icon--nav-users" aria-hidden="true"></i>
+                    {{ log.userName }}
+                </a>
+                <a href="{{ path('app_audit_log_detail', {id: log.id}) }}" class="link-primary">
+                    {{ 'entity_history.show_details'|trans({}, 'messages') }}
+                </a>
+            </div>
+        {% endfor %}
     </div>
 </div>
 {% else %}

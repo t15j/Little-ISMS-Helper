@@ -18,7 +18,7 @@ use Symfony\Component\Validator\Constraints\NotBlank;
  *
  * Accepts a CSV or BSI-Profile-XML file and the desired format. Currently
  * supported: `csv_generic_v1`, `bsi_profile_xml_v1`. Further formats
- * (Verinice, NIST-CSF) will be added through the same wizard entry point.
+ * (XML-profile-v2, NIST-CSF) will be added through the same wizard entry point.
  */
 final class ComplianceImportUploadType extends AbstractType
 {
@@ -37,7 +37,6 @@ final class ComplianceImportUploadType extends AbstractType
                 'help' => 'compliance_import.upload.format_help',
                 'attr' => [
                     'id' => 'compliance_import_format',
-                    'aria-describedby' => 'compliance_import_format_help',
                 ],
                 'constraints' => [
                     new NotBlank(),
@@ -46,12 +45,12 @@ final class ComplianceImportUploadType extends AbstractType
             ->add('file', FileType::class, [
                 'label' => 'compliance_import.upload.file_label',
                 'translation_domain' => 'compliance_import',
+                'help' => 'compliance_import.upload.file_help',
                 'mapped' => false,
                 'required' => true,
                 'attr' => [
                     'accept' => '.csv,text/csv,.xml,application/xml,text/xml',
                     'id' => 'compliance_import_file',
-                    'aria-describedby' => 'compliance_import_file_help',
                 ],
                 'constraints' => [
                     new NotBlank(),
@@ -61,11 +60,13 @@ final class ComplianceImportUploadType extends AbstractType
                             'text/csv',
                             'text/plain',
                             'application/csv',
+                            'application/json',
                             'application/vnd.ms-excel',
                             'application/xml',
                             'text/xml',
                         ],
-                        mimeTypesMessage: 'compliance_import.upload.file_type_error',
+                        mimeTypesMessage: 'file_upload.validation.mime_type_invalid',
+                        maxSizeMessage: 'file_upload.validation.max_size_exceeded',
                     ),
                 ],
             ])

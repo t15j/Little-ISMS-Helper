@@ -7,24 +7,34 @@ namespace App\Controller;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Exception;
 use DateTimeImmutable;
+use App\Controller\Trait\BulkActionTrait;
+use App\Controller\Trait\ModuleGatedControllerTrait;
 use App\Entity\Supplier;
 use App\Form\SupplierType;
 use App\Repository\ComplianceFrameworkRepository;
 use App\Repository\SupplierRepository;
+use App\Service\AuditLogger;
+use App\Service\Clone\SupplierCloner;
 use App\Service\InverseCoverageService;
+use App\Service\ModuleConfigurationService;
 use App\Service\SupplierService;
 use App\Service\TagFilterService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 class SupplierController extends AbstractController
 {
+    use BulkActionTrait;
+    use ModuleGatedControllerTrait;
+
     public function __construct(
         private readonly SupplierRepository $supplierRepository,
         private readonly SupplierService $supplierService,
@@ -33,12 +43,16 @@ class SupplierController extends AbstractController
         private readonly Security $security,
         private readonly TagFilterService $tagFilterService,
         private readonly ComplianceFrameworkRepository $complianceFrameworkRepository,
+        private readonly ModuleConfigurationService $moduleService,
         private readonly ?InverseCoverageService $inverseCoverageService = null,
+        private readonly ?AuditLogger $auditLogger = null,
+        private readonly ?SupplierCloner $supplierCloner = null,
     ) {}
-    #[Route('/supplier/', name: 'app_supplier_index')]
+    #[Route('/supplier', name: 'app_supplier_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(Request $request): Response
     {
+        if ($redirect = $this->checkModuleActive('suppliers')) return $redirect;
         // Get current tenant
         $user = $this->security->getUser();
         $tenant = $user?->getTenant();
@@ -92,6 +106,23 @@ class SupplierController extends AbstractController
             $suppliers = $this->tagFilterService->filterByTagName($suppliers, Supplier::class, $tagFilter);
         }
 
+        // LkSG risk-category filter via ?lksg_risk=high
+        $lksgRiskFilter = $request->query->get('lksg_risk');
+        if (is_string($lksgRiskFilter) && in_array($lksgRiskFilter, ['low', 'medium', 'high', 'critical'], true)) {
+            $suppliers = array_values(array_filter(
+                $suppliers,
+                fn(Supplier $s): bool => $s->getLksgRiskCategory() === $lksgRiskFilter,
+            ));
+        }
+
+        // DORA Phase 1: filter-chip "Nur DORA-relevant" via ?dora_relevant=1
+        if ($request->query->get('dora_relevant') === '1') {
+            $suppliers = array_values(array_filter(
+                $suppliers,
+                fn(Supplier $s): bool => $s->isDoraRelevant(),
+            ));
+        }
+
         // MINOR-6: DORA Register-of-Information export only when framework is active.
         $doraFramework = $this->complianceFrameworkRepository->findOneBy(['code' => 'DORA']);
         $doraActive = $doraFramework !== null && $doraFramework->isActive();
@@ -108,10 +139,11 @@ class SupplierController extends AbstractController
             'doraActive' => $doraActive,
         ]);
     }
-    #[Route('/supplier/new', name: 'app_supplier_new')]
+    #[Route('/supplier/new', name: 'app_supplier_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
+        if ($redirect = $this->checkModuleActive('suppliers')) return $redirect;
         $supplier = new Supplier();
 
         // Set tenant from current user
@@ -127,19 +159,42 @@ class SupplierController extends AbstractController
             $this->entityManager->persist($supplier);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('supplier.success.created'));
+            $this->addFlash('success', $this->translator->trans('supplier.success.created', [], 'messages'));
             return $this->redirectToRoute('app_supplier_show', ['id' => $supplier->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('supplier/new.html.twig', [
             'supplier' => $supplier,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * Suppliers have no blocking FK relations — returns empty dependencies.
+     */
+    #[Route('/supplier/bulk-delete-check', name: 'app_supplier_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        if (!$this->moduleService->isModuleActive('suppliers')) {
+            return new JsonResponse(['error' => 'module_inactive'], 403);
+        }
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = (array) ($data['ids'] ?? []);
+        return new JsonResponse(['dependencies' => [], 'checked_count' => count($ids)]);
+    }
+
     #[Route('/supplier/bulk-delete', name: 'app_supplier_bulk_delete', methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function bulkDelete(Request $request): Response
     {
+        if (!$this->moduleService->isModuleActive('suppliers')) {
+            return $this->json(['error' => 'module_inactive'], 403);
+        }
         $data = json_decode($request->getContent(), true);
         $ids = $data['ids'] ?? [];
 
@@ -193,10 +248,11 @@ class SupplierController extends AbstractController
             'message' => "$deleted suppliers deleted successfully"
         ]);
     }
-    #[Route('/supplier/{id}', name: 'app_supplier_show', requirements: ['id' => '\d+'])]
+    #[Route('/supplier/{id}', name: 'app_supplier_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(Supplier $supplier): Response
     {
+        if ($redirect = $this->checkModuleActive('suppliers')) return $redirect;
         $user = $this->security->getUser();
         $tenant = $user?->getTenant();
 
@@ -231,16 +287,52 @@ class SupplierController extends AbstractController
             'inverse_coverage' => $inverseCoverage,
         ]);
     }
-    #[Route('/supplier/{id}/edit', name: 'app_supplier_edit', requirements: ['id' => '\d+'])]
+    /**
+     * Clone a Supplier (C4-C1 — Klon-Funktionen). Open to ROLE_USER. Keeps
+     * description, service-type, security requirements, certification flags;
+     * resets evaluation state + contract dates.
+     */
+    #[Route('/supplier/{id}/clone', name: 'app_supplier_clone', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function clone(Request $request, Supplier $supplier): Response
+    {
+        if ($redirect = $this->checkModuleActive('suppliers')) return $redirect;
+        if (!$this->isCsrfTokenValid('clone_supplier_' . $supplier->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+        if ($this->supplierCloner === null) {
+            throw $this->createNotFoundException('Supplier clone service is not available.');
+        }
+
+        $clone = $this->supplierCloner->clone(
+            $supplier,
+            null,
+            trim((string) $request->request->get('title_override', '')) ?: null,
+        );
+        $this->entityManager->flush();
+
+        $this->auditLogger?->logCreate(
+            entityType: 'Supplier',
+            entityId: $clone->getId(),
+            newValues: ['cloned_from_id' => $supplier->getId(), 'name' => $clone->getName()],
+            description: 'Cloned from Supplier #' . $supplier->getId(),
+        );
+
+        $this->addFlash('success', $this->translator->trans('supplier.clone.success', [], 'suppliers'));
+        return $this->redirectToRoute('app_supplier_edit', ['id' => $clone->getId()]);
+    }
+
+    #[Route('/supplier/{id}/edit', name: 'app_supplier_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, Supplier $supplier): Response
     {
+        if ($redirect = $this->checkModuleActive('suppliers')) return $redirect;
         $user = $this->security->getUser();
         $tenant = $user?->getTenant();
 
         // Check if supplier can be edited (not inherited) - only if user has tenant
         if ($tenant && !$this->supplierService->canEditSupplier($supplier, $tenant)) {
-            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_edit_inherited'));
+            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_edit_inherited', [], 'messages'));
             return $this->redirectToRoute('app_supplier_show', ['id' => $supplier->getId()]);
         }
 
@@ -251,25 +343,30 @@ class SupplierController extends AbstractController
             $supplier->setUpdatedAt(new DateTimeImmutable());
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('supplier.success.updated'));
+            $this->addFlash('success', $this->translator->trans('supplier.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_supplier_show', ['id' => $supplier->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('supplier/edit.html.twig', [
             'supplier' => $supplier,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/supplier/{id}/delete', name: 'app_supplier_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function delete(Request $request, Supplier $supplier): Response
     {
+        if ($redirect = $this->checkModuleActive('suppliers')) return $redirect;
         $user = $this->security->getUser();
         $tenant = $user?->getTenant();
 
         // Check if supplier can be deleted (not inherited) - only if user has tenant
         if ($tenant && !$this->supplierService->canEditSupplier($supplier, $tenant)) {
-            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_delete_inherited'));
+            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_delete_inherited', [], 'messages'));
             return $this->redirectToRoute('app_supplier_index');
         }
 
@@ -277,7 +374,7 @@ class SupplierController extends AbstractController
             $this->entityManager->remove($supplier);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('supplier.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('supplier.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_supplier_index');
@@ -322,5 +419,62 @@ class SupplierController extends AbstractController
             'subsidiaries' => $subsidiariesCount,
             'total' => $ownCount + $inheritedCount + $subsidiariesCount
         ];
+    }
+
+    /**
+     * Bulk CSV export of selected suppliers.
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/supplier/bulk-export', name: 'app_supplier_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        if ($redirect = $this->checkModuleActive('suppliers')) return $redirect;
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $user   = $this->security->getUser();
+        $tenant = $user?->getTenant();
+
+        $suppliers = [];
+        foreach ($ids as $rawId) {
+            $supplier = $this->supplierRepository->find((int) $rawId);
+            if ($supplier === null) {
+                continue;
+            }
+            if ($tenant !== null && $supplier->getTenant() !== $tenant) {
+                continue;
+            }
+            $suppliers[] = $supplier;
+        }
+
+        if ($suppliers === []) {
+            return $this->json(['error' => 'No exportable suppliers'], 404);
+        }
+
+        $headers = ['ID', 'Name', 'Status', 'Contact Person', 'Country'];
+
+        return $this->streamCsvExport(
+            $suppliers,
+            $headers,
+            static function (Supplier $s): array {
+                return [
+                    (string) $s->getId(),
+                    (string) $s->getName(),
+                    (string) $s->getStatus(),
+                    (string) $s->getContactPerson(),
+                    (string) $s->getCountryOfHeadOffice(),
+                ];
+            },
+            'suppliers-export',
+            'Supplier',
+            $this->auditLogger,
+        );
     }
 }

@@ -5,12 +5,19 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\Asset;
+use App\Entity\BusinessProcess;
 use App\Entity\Incident;
 use App\Entity\Person;
 use App\Entity\User;
 use App\Enum\IncidentSeverity;
 use App\Enum\IncidentStatus;
+use App\Form\Trait\ModuleAwareFormTrait;
+use App\Form\Trait\OwnerPickerFormTrait;
+use App\Repository\TenantPolicySettingRepository;
+use App\Service\ModuleConfigurationService;
+use App\Service\TenantContext;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
@@ -18,17 +25,81 @@ use Symfony\Component\Form\Extension\Core\Type\DateTimeType;
 use Symfony\Component\Form\Extension\Core\Type\EnumType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\MoneyType;
+use Symfony\Component\Form\Extension\Core\Type\NumberType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
+use Symfony\Component\Form\FormEvent;
+use Symfony\Component\Form\FormEvents;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints\Callback;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class IncidentType extends AbstractType
+final class IncidentType extends AbstractType
 {
+    use ModuleAwareFormTrait;
+    use OwnerPickerFormTrait;
+
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleConfiguration,
+        private readonly TenantContext $tenantContext,
+        private readonly TenantPolicySettingRepository $tenantPolicySettingRepository,
+        private readonly Security $security,
+    ) {
+    }
+
+    // Junior-ISB-Audit-2026-05-22 4.11: Owner pre-fill — UX-Polish
+    protected function getSecurityForOwnerPicker(): ?Security
+    {
+        return $this->security;
+    }
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 Schicht-5: Module-Gate-Polish (T11.7).
+     *
+     * Returns true when the current tenant is flagged as a KRITIS-operator
+     * via the tenant-policy-setting `org.is_kritis_operator`. KRITIS is a
+     * BSI-Kritis-V regulatory designation (essential service operator),
+     * not a feature-module — it lives as a per-tenant setting per
+     * KritisOperatorReadinessRule. Used to decide whether to show an
+     * "activate KRITIS-operator-status for full NIS2 detection" hint
+     * in the NIS2 reporting section.
+     */
+    private function isKritisOperator(): bool
+    {
+        $tenant = $this->tenantContext->getCurrentTenant();
+        if ($tenant === null) {
+            return false;
+        }
+        $setting = $this->tenantPolicySettingRepository->findOneByTenantAndKey(
+            $tenant,
+            'org.is_kritis_operator',
+        );
+        if ($setting === null) {
+            return false;
+        }
+        $value = $setting->getValue();
+        if (is_array($value) && array_key_exists('value', $value)) {
+            $value = $value['value'];
+        }
+        return $value === true || $value === 'true' || $value === 1 || $value === '1';
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
+        // Junior-ISB-Audit-2026-05-22 K-01: SLA-Countdown anchor needs an unambiguous start time.
+        // GDPR Art. 33 (1) / NIS2 Art. 23 (4) 72h notification deadlines are measured from
+        // detectedAt. Incident::__construct() already sets a default; this form-layer listener
+        // is a defence-in-depth so the SLA contract is explicit and survives any future entity
+        // refactor. Only fires when detectedAt is null on the bound entity — editing an
+        // existing incident does NOT overwrite the persisted value.
+        $builder->addEventListener(FormEvents::PRE_SET_DATA, static function (FormEvent $event): void {
+            $entity = $event->getData();
+            if ($entity instanceof Incident && $entity->getDetectedAt() === null) {
+                $entity->setDetectedAt(new \DateTimeImmutable());
+            }
+        });
+
         $builder
             ->add('title', TextType::class, [
                 'label' => 'incident.field.title',
@@ -90,60 +161,75 @@ class IncidentType extends AbstractType
                 'input' => 'datetime_immutable',
                 'required' => false,
             ])
-            ->add('reportedByUser', EntityType::class, [
-                'label' => 'incident.field.reported_by',
-                'class' => User::class,
-                'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
-                'required' => false,
-                'placeholder' => 'incident.placeholder.reported_by_user',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'incident.help.reported_by_user',
-            ])
-            ->add('reportedByPerson', EntityType::class, [
-                'label' => 'incident.field.reported_by_person',
+        ;
+
+        // ── ReportedBy cluster (audit-s4 P-1) ───────────────────────────────
+        // Replaces 4 hand-rolled add() calls (reportedByUser / reportedByPerson
+        // / reportedByDeputyPersons / reportedBy). The "responsiblePerson"
+        // slot stays separate (Governance Role) per SOLUTIONS_FOUNDATION P-1
+        // exception list — an Incident has BOTH a Reporter AND a Responsible.
+        $this->addOwnerPicker($builder, [
+            'user_field'         => 'reportedByUser',
+            'person_field'       => 'reportedByPerson',
+            'deputies_field'     => 'reportedByDeputyPersons',
+            'legacy_field'       => 'reportedBy',
+            'translation_prefix' => 'incident',
+            'user_label'         => 'incident.field.reported_by',
+            'user_placeholder'   => 'incident.placeholder.reported_by_user',
+            'user_help'          => 'incident.help.reported_by_user',
+            'person_label'       => 'incident.field.reported_by_person',
+            'person_placeholder' => 'incident.placeholder.reported_by_person',
+            'person_help'        => 'incident.help.reported_by_person',
+            'deputies_label'     => 'incident.field.reported_by_deputies',
+            'deputies_help'      => 'incident.help.reported_by_deputies',
+            'legacy_label'       => 'incident.field.reported_by_legacy',
+            'legacy_placeholder' => 'incident.placeholder.reported_by',
+            // Junior-ISB-Audit-2026-05-22 4.11: Owner pre-fill — UX-Polish
+            'default_to_current_user' => true,
+        ]);
+
+        $builder
+            ->add('responsiblePerson', EntityType::class, [
+                'label' => 'incident.field.responsible_person',
                 'class' => Person::class,
                 'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
                 'required' => false,
-                'placeholder' => 'incident.placeholder.reported_by_person',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'incident.help.reported_by_person',
-            ])
-            ->add('reportedByDeputyPersons', EntityType::class, [
-                'label' => 'incident.field.reported_by_deputies',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'multiple' => true,
-                'expanded' => false,
+                'placeholder' => 'incident.placeholder.responsible_person',
+                'help' => 'incident.help.responsible_person',
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
-                'help' => 'incident.help.reported_by_deputies',
             ])
-            ->add('reportedBy', TextType::class, [
-                'label' => 'incident.field.reported_by_legacy',
-                'required' => false,
-                'attr' => [
-                    'maxlength' => 100,
-                    'placeholder' => 'incident.placeholder.reported_by',
-                ],
-            ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix) ──────────────
+            // Owned by `incident_lifecycle`. YAML 4-eyes on `close`.
+            // Transitions via LifecycleService::transition() only.
             ->add('status', EnumType::class, [
                 'label' => 'incident.field.status',
+                'help' => 'incident.help.status_readonly',
                 'class' => IncidentStatus::class,
                 'choice_label' => fn(IncidentStatus $s): string => 'incident.status.' . $s->value,
-                'required' => true,
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
                 'choice_translation_domain' => 'incident',
             ])
+            // Junior-ISB-Audit-2026-05-22 C2-01: Doppelpflege-Deprecation.
+            // Freetext superseded by structured `affectedAssets` (Asset entity
+            // multi-select). Disabled in the Form; Show-pages render the value
+            // read-only as "Legacy" only when non-empty. Column kept until S14
+            // cleanup migration so Bestandsdaten remain accessible.
             ->add('affectedSystems', TextareaType::class, [
                 'label' => 'incident.field.affected_systems',
                 'required' => false,
+                'disabled' => true,
                 'attr' => [
                     'rows' => 3,
                     'placeholder' => 'incident.placeholder.affected_systems',
+                    'readonly' => true,
                 ],
-                'help' => 'incident.help.affected_systems',
+                'help' => 'incident.help.affected_systems_deprecated',
             ])
             ->add('rootCause', TextareaType::class, [
                 'label' => 'incident.field.root_cause',
@@ -152,7 +238,9 @@ class IncidentType extends AbstractType
                     'rows' => 3,
                     'placeholder' => 'incident.placeholder.root_cause',
                 ],
-                'help' => 'incident.help.resolution_after_investigation',
+                // T11.9 (UX-P1): differentiate root-cause vs corrective-action
+                // help so juniors see the distinction (Doppelpflege-trap).
+                'help' => 'incident.help.root_cause_vs_corrective',
             ])
             ->add('correctiveActions', TextareaType::class, [
                 'label' => 'incident.field.corrective_actions',
@@ -186,85 +274,6 @@ class IncidentType extends AbstractType
                 'help' => 'incident.help.visible_to_holding',
                 'required' => false,
             ])
-
-            // NIS2 Article 23 - Reporting Timeline Fields
-            ->add('nis2Category', ChoiceType::class, [
-                'label' => 'incident.field.nis2_category',
-                'choices' => [
-                    'incident.nis2_category.operational' => 'operational',
-                    'incident.nis2_category.security' => 'security',
-                    'incident.nis2_category.privacy' => 'privacy',
-                    'incident.nis2_category.availability' => 'availability',
-                ],
-                'required' => false,
-                'placeholder' => 'incident.placeholder.nis2_category',
-                'help' => 'incident.help.nis2_category',
-                    'choice_translation_domain' => 'incident',
-            ])
-            ->add('earlyWarningReportedAt', DateTimeType::class, [
-                'label' => 'incident.field.early_warning_reported_at',
-                'widget' => 'single_text',
-                'input' => 'datetime_immutable',
-                'required' => false,
-                'help' => 'incident.help.early_warning_24h',
-            ])
-            ->add('detailedNotificationReportedAt', DateTimeType::class, [
-                'label' => 'incident.field.detailed_notification_reported_at',
-                'widget' => 'single_text',
-                'input' => 'datetime_immutable',
-                'required' => false,
-                'help' => 'incident.help.detailed_notification_72h',
-            ])
-            ->add('finalReportSubmittedAt', DateTimeType::class, [
-                'label' => 'incident.field.final_report_submitted_at',
-                'widget' => 'single_text',
-                'input' => 'datetime_immutable',
-                'required' => false,
-                'help' => 'incident.help.final_report_1month',
-            ])
-            ->add('crossBorderImpact', ChoiceType::class, [
-                'label' => 'incident.field.cross_border_impact',
-                'choices' => [
-                    'common.yes' => true,
-                    'common.no' => false,
-                ],
-                'expanded' => true,
-                'required' => false,
-                'help' => 'incident.help.cross_border_impact',
-                    'choice_translation_domain' => 'messages',
-            ])
-            ->add('affectedUsersCount', IntegerType::class, [
-                'label' => 'incident.field.affected_users_count',
-                'required' => false,
-                'attr' => [
-                    'min' => 0,
-                    'placeholder' => '0',
-                ],
-                'help' => 'incident.help.affected_users_count',
-            ])
-            ->add('estimatedFinancialImpact', MoneyType::class, [
-                'label' => 'incident.field.estimated_financial_impact',
-                'currency' => 'EUR',
-                'required' => false,
-                'help' => 'incident.help.estimated_financial_impact',
-            ])
-            ->add('nationalAuthorityNotified', TextType::class, [
-                'label' => 'incident.field.national_authority_notified',
-                'required' => false,
-                'attr' => [
-                    'maxlength' => 255,
-                    'placeholder' => 'incident.placeholder.national_authority',
-                ],
-                'help' => 'incident.help.national_authority',
-            ])
-            ->add('authorityReferenceNumber', TextType::class, [
-                'label' => 'incident.field.authority_reference_number',
-                'required' => false,
-                'attr' => [
-                    'maxlength' => 100,
-                    'placeholder' => 'incident.placeholder.authority_reference',
-                ],
-            ])
             ->add('affectedAssets', EntityType::class, [
                 'label' => 'incident.field.affected_assets',
                 'class' => Asset::class,
@@ -273,12 +282,222 @@ class IncidentType extends AbstractType
                 'required' => false,
                 'help' => 'incident.help.affected_assets',
                 'attr' => [
-                    'class' => 'form-select',
                     'size' => 5,
                     'data-controller' => 'tom-select',
                 ],
             ])
+
+            // ISO 27001 A.5.24-A.5.28 — always-active fields (T31.2.2)
+            ->add('incidentClassification', ChoiceType::class, [
+                'label' => 'incident.field.incident_classification',
+                'choices' => [
+                    'incident.classification.event' => 'event',
+                    'incident.classification.incident' => 'incident',
+                ],
+                'required' => false,
+                'placeholder' => 'incident.placeholder.classification',
+                'help' => 'incident.help.incident_classification',
+                'choice_translation_domain' => 'incident',
+            ])
+            ->add('containmentActions', TextareaType::class, [
+                'label' => 'incident.field.containment_actions',
+                'required' => false,
+                'attr' => ['rows' => 3, 'placeholder' => 'incident.placeholder.containment_actions'],
+                'help' => 'incident.help.containment_actions',
+            ])
+            ->add('evidencePreserved', CheckboxType::class, [
+                'label' => 'incident.field.evidence_preserved',
+                'required' => false,
+                'help' => 'incident.help.evidence_preserved',
+            ])
         ;
+
+        // NIS2 Art. 23 + DORA Art. 17-19 — both sit behind nis2_dora module-gate
+        // (T31.2.2 + S2-P6). NIS2 reporting timeline fields used to be unconditional
+        // — moved here to keep the form Aurora-clean for tenants without an EU-cyber
+        // reporting obligation. Templates already wrap the corresponding fieldset in
+        // {% if is_module_active('nis2_dora') %}.
+        //
+        // Junior-ISB-Audit-2026-05-22 Schicht-5: Module-Gate-Polish (T11.7).
+        // When nis2_dora is active but the tenant has NOT flagged itself as a
+        // KRITIS-operator (`org.is_kritis_operator`), the help-text on the entry
+        // field guides the user to set the KRITIS flag for sector-specific
+        // mandatory-field detection. See isKritisOperator() above.
+        $nis2CategoryHelp = $this->isModuleActive('nis2_dora') && !$this->isKritisOperator()
+            ? 'incident.help.nis2_category_kritis_hint'
+            : 'incident.help.nis2_category';
+        if ($this->isModuleActive('nis2_dora')) {
+            $builder
+                // NIS2 Article 23 - Reporting Timeline Fields
+                ->add('nis2Category', ChoiceType::class, [
+                    'label' => 'incident.field.nis2_category',
+                    'choices' => [
+                        'incident.nis2_category.operational' => 'operational',
+                        'incident.nis2_category.security' => 'security',
+                        'incident.nis2_category.privacy' => 'privacy',
+                        'incident.nis2_category.availability' => 'availability',
+                    ],
+                    'required' => false,
+                    'placeholder' => 'incident.placeholder.nis2_category',
+                    'help' => $nis2CategoryHelp,
+                    'choice_translation_domain' => 'incident',
+                ])
+                ->add('earlyWarningReportedAt', DateTimeType::class, [
+                    'label' => 'incident.field.early_warning_reported_at',
+                    'widget' => 'single_text',
+                    'input' => 'datetime_immutable',
+                    'required' => false,
+                    'help' => 'incident.help.early_warning_24h',
+                ])
+                ->add('detailedNotificationReportedAt', DateTimeType::class, [
+                    'label' => 'incident.field.detailed_notification_reported_at',
+                    'widget' => 'single_text',
+                    'input' => 'datetime_immutable',
+                    'required' => false,
+                    'help' => 'incident.help.detailed_notification_72h',
+                ])
+                ->add('finalReportSubmittedAt', DateTimeType::class, [
+                    'label' => 'incident.field.final_report_submitted_at',
+                    'widget' => 'single_text',
+                    'input' => 'datetime_immutable',
+                    'required' => false,
+                    'help' => 'incident.help.final_report_1month',
+                ])
+                ->add('crossBorderImpact', ChoiceType::class, [
+                    'label' => 'incident.field.cross_border_impact',
+                    'choices' => [
+                        'common.yes' => true,
+                        'common.no' => false,
+                    ],
+                    'expanded' => true,
+                    'required' => false,
+                    'help' => 'incident.help.cross_border_impact',
+                    'choice_translation_domain' => 'messages',
+                ])
+                ->add('affectedUsersCount', IntegerType::class, [
+                    'label' => 'incident.field.affected_users_count',
+                    'required' => false,
+                    'attr' => [
+                        'min' => 0,
+                        'placeholder' => '0',
+                    ],
+                    'help' => 'incident.help.affected_users_count',
+                ])
+                ->add('estimatedFinancialImpact', MoneyType::class, [
+                    'label' => 'incident.field.estimated_financial_impact',
+                    'currency' => 'EUR',
+                    'required' => false,
+                    'help' => 'incident.help.estimated_financial_impact',
+                ])
+                ->add('nationalAuthorityNotified', TextType::class, [
+                    'label' => 'incident.field.national_authority_notified',
+                    'required' => false,
+                    'attr' => [
+                        'maxlength' => 255,
+                        'placeholder' => 'incident.placeholder.national_authority',
+                    ],
+                    'help' => 'incident.help.national_authority',
+                ])
+                ->add('authorityReferenceNumber', TextType::class, [
+                    'label' => 'incident.field.authority_reference_number',
+                    'required' => false,
+                    'attr' => [
+                        'maxlength' => 100,
+                        'placeholder' => 'incident.placeholder.authority_reference',
+                    ],
+                ])
+                // DORA Art. 17-19 — ICT-Incident-Reporting fields
+                ->add('ictIncidentClassification', ChoiceType::class, [
+                    'label' => 'incident.field.ict_incident_classification',
+                    'choices' => [
+                        'incident.dora_classification.major' => 'major_ict_incident',
+                        'incident.dora_classification.significant' => 'significant_cyber_threat',
+                    ],
+                    'required' => false,
+                    'placeholder' => 'incident.placeholder.ict_classification',
+                    'help' => 'incident.help.ict_incident_classification',
+                    'choice_translation_domain' => 'incident',
+                ])
+                ->add('dataLossOccurred', CheckboxType::class, [
+                    'label' => 'incident.field.data_loss_occurred',
+                    'required' => false,
+                ])
+                ->add('dataLeakageOccurred', CheckboxType::class, [
+                    'label' => 'incident.field.data_leakage_occurred',
+                    'required' => false,
+                ])
+                ->add('economicImpact', NumberType::class, [
+                    'label' => 'incident.field.economic_impact',
+                    'required' => false,
+                    'scale' => 2,
+                    'attr' => ['placeholder' => 'incident.placeholder.economic_impact', 'min' => 0, 'step' => '0.01'],
+                    'help' => 'incident.help.economic_impact',
+                ])
+                ->add('reputationalImpact', ChoiceType::class, [
+                    'label' => 'incident.field.reputational_impact',
+                    'choices' => [
+                        'incident.impact.minimal' => 1,
+                        'incident.impact.minor' => 2,
+                        'incident.impact.moderate' => 3,
+                        'incident.impact.major' => 4,
+                        'incident.impact.severe' => 5,
+                    ],
+                    'required' => false,
+                    'placeholder' => 'incident.placeholder.reputational_impact',
+                    'choice_translation_domain' => 'incident',
+                ])
+                ->add('criticalServicesAffected', EntityType::class, [
+                    'label' => 'incident.field.critical_services_affected',
+                    'class' => BusinessProcess::class,
+                    'choice_label' => 'name',
+                    'multiple' => true,
+                    'required' => false,
+                    'help' => 'incident.help.critical_services_affected',
+                    'attr' => [
+                        'data-controller' => 'tom-select',
+                    ],
+                ])
+                ->add('recurringIncident', CheckboxType::class, [
+                    'label' => 'incident.field.recurring_incident',
+                    'required' => false,
+                ])
+                ->add('clientsAffected', IntegerType::class, [
+                    'label' => 'incident.field.clients_affected',
+                    'required' => false,
+                    'attr' => ['min' => 0],
+                ])
+                ->add('clientsAffectedFinancialVolume', NumberType::class, [
+                    'label' => 'incident.field.clients_affected_financial_volume',
+                    'required' => false,
+                    'scale' => 2,
+                    'attr' => ['min' => 0, 'step' => '0.01'],
+                    'help' => 'incident.help.clients_affected_financial_volume',
+                ])
+                ->add('replicationOfImpact', CheckboxType::class, [
+                    'label' => 'incident.field.replication_of_impact',
+                    'required' => false,
+                    'help' => 'incident.help.replication_of_impact',
+                ])
+                ->add('initialReportSubmittedAt', DateTimeType::class, [
+                    'widget' => 'single_text',
+                    'input' => 'datetime_immutable',
+                    'label' => 'incident.field.initial_report_submitted_at',
+                    'required' => false,
+                    'help' => 'incident.help.initial_report_submitted_at_dora',
+                ])
+                ->add('intermediateReportSubmittedAt', DateTimeType::class, [
+                    'widget' => 'single_text',
+                    'input' => 'datetime_immutable',
+                    'label' => 'incident.field.intermediate_report_submitted_at',
+                    'required' => false,
+                ])
+                ->add('dataRecoveryStrategy', TextareaType::class, [
+                    'label' => 'incident.field.data_recovery_strategy',
+                    'required' => false,
+                    'attr' => ['rows' => 3],
+                    'help' => 'incident.help.data_recovery_strategy',
+                ]);
+        }
     }
 
     public function configureOptions(OptionsResolver $resolver): void

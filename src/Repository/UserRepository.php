@@ -53,6 +53,26 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
     }
 
     /**
+     * Find all users with their customRoles eagerly loaded via LEFT JOIN.
+     *
+     * Replaces bare findAll() on the admin user list, eliminating the N+1
+     * pattern where each user.customRoles access triggered an individual
+     * SELECT (one per user). Before: 1 + N queries. After: 2 queries.
+     *
+     * @return User[]
+     */
+    public function findAllWithRoles(): array
+    {
+        return $this->createQueryBuilder('u')
+            ->leftJoin('u.customRoles', 'cr')
+            ->addSelect('cr')
+            ->orderBy('u.lastName', 'ASC')
+            ->addOrderBy('u.firstName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Find user by Azure Object ID
      */
     public function findByAzureObjectId(string $azureObjectId): ?User
@@ -116,6 +136,90 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             ->addOrderBy('u.firstName', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * Find active users carrying the given role string within a tenant.
+     *
+     * Used by Policy-Wizard step partials (DPO-picker, BCM-Officer-picker,
+     * approver-picker) so the dropdowns are scoped to the run's tenant.
+     *
+     * @param string                          $role   Symfony role string (e.g. 'ROLE_DPO')
+     * @param \App\Entity\Tenant|int|null     $tenant Tenant entity, id or null for global
+     *
+     * @return list<User>
+     */
+    public function findByRoleInTenant(string $role, mixed $tenant = null): array
+    {
+        $tenantId = null;
+        if ($tenant instanceof \App\Entity\Tenant) {
+            $tenantId = $tenant->getId();
+        } elseif (is_int($tenant)) {
+            $tenantId = $tenant;
+        }
+
+        $qb = $this->createQueryBuilder('u')
+            ->andWhere('u.roles LIKE :role')
+            ->andWhere('u.isActive = :active')
+            ->setParameter('role', '%"' . $role . '"%')
+            ->setParameter('active', true)
+            ->orderBy('u.lastName', 'ASC')
+            ->addOrderBy('u.firstName', 'ASC');
+
+        if ($tenantId !== null) {
+            $qb->andWhere('u.tenant = :tenantId')
+               ->setParameter('tenantId', $tenantId);
+        }
+
+        /** @var list<User> $rows */
+        $rows = $qb->getQuery()->getResult();
+        return $rows;
+    }
+
+    /**
+     * Find active users in a tenant who can serve as policy approvers.
+     *
+     * Approver pool = users carrying any of: ROLE_GROUP_CISO, ROLE_DPO,
+     * ROLE_ADMIN. Mirrors LifecycleStep approver-per-template selection.
+     *
+     * @param \App\Entity\Tenant|int|null $tenant Tenant entity, id or null for global
+     *
+     * @return list<User>
+     */
+    public function findApproversInTenant(mixed $tenant = null): array
+    {
+        $approverRoles = ['ROLE_GROUP_CISO', 'ROLE_DPO', 'ROLE_ADMIN'];
+
+        $tenantId = null;
+        if ($tenant instanceof \App\Entity\Tenant) {
+            $tenantId = $tenant->getId();
+        } elseif (is_int($tenant)) {
+            $tenantId = $tenant;
+        }
+
+        $qb = $this->createQueryBuilder('u')
+            ->andWhere('u.isActive = :active')
+            ->setParameter('active', true);
+
+        $orParts = [];
+        foreach ($approverRoles as $idx => $r) {
+            $param = 'role' . $idx;
+            $orParts[] = sprintf('u.roles LIKE :%s', $param);
+            $qb->setParameter($param, '%"' . $r . '"%');
+        }
+        $qb->andWhere(implode(' OR ', $orParts));
+
+        if ($tenantId !== null) {
+            $qb->andWhere('u.tenant = :tenantId')
+               ->setParameter('tenantId', $tenantId);
+        }
+
+        $qb->orderBy('u.lastName', 'ASC')
+           ->addOrderBy('u.firstName', 'ASC');
+
+        /** @var list<User> $rows */
+        $rows = $qb->getQuery()->getResult();
+        return $rows;
     }
 
     /**
@@ -203,6 +307,48 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             ->andWhere('u.lastLoginAt IS NOT NULL')
             ->orderBy('u.lastLoginAt', 'DESC')
             ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Count active users for a given tenant (used by AlvaHint rules).
+     */
+    public function countActiveByTenant(\App\Entity\Tenant $tenant): int
+    {
+        return (int) $this->createQueryBuilder('u')
+            ->select('COUNT(u.id)')
+            ->andWhere('u.tenant = :tenant')
+            ->andWhere('u.isActive = :active')
+            ->setParameter('tenant', $tenant)
+            ->setParameter('active', true)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * Count users with NO tenant assignment. Such accounts cannot see any
+     * multi-tenant data (controls, risks, VVT, …) because every repository
+     * scopes to `u.tenant = :tenant`. Surfaced on the Tenant-Admin index
+     * so admins notice orphan accounts.
+     */
+    public function countOrphan(): int
+    {
+        return (int) $this->createQueryBuilder('u')
+            ->select('COUNT(u.id)')
+            ->andWhere('u.tenant IS NULL')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * @return User[]
+     */
+    public function findOrphan(): array
+    {
+        return $this->createQueryBuilder('u')
+            ->andWhere('u.tenant IS NULL')
+            ->orderBy('u.email', 'ASC')
             ->getQuery()
             ->getResult();
     }

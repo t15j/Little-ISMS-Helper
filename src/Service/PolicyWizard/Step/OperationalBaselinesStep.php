@@ -1,0 +1,516 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Service\PolicyWizard\Step;
+
+use App\Entity\WizardRun;
+use App\Service\PolicyWizard\WizardStepKeys;
+
+/**
+ * Step 5 — Operational Baselines.
+ *
+ * Crypto-allow-list, backup RPO target tier, patch-cadence SLAs (per
+ * severity), continuity RTO targets per criticality (only when BCM is
+ * in scope) and the DORA-specific block (only when DORA is in scope).
+ *
+ * Form-Audit follow-up (May 2026): the step also collects the
+ * operational responsible-persons (DPO, BCM-Officer) so the cross-step
+ * consistency validator can flag missing assignments before the user
+ * lands on Step 7. The role-assignment in Step 3 (RolesStep) remains
+ * the authoritative source — Step 5 simply lets the user CONFIRM /
+ * OVERRIDE for the operational baselines context (DORA significant
+ * entity → DPO required; BCM-in-scope → BCM-Officer required).
+ */
+final class OperationalBaselinesStep extends AbstractStep
+{
+    public const ALLOWED_CRYPTO_ALGOS = ['AES-256-GCM', 'AES-128-GCM', 'CHACHA20-POLY1305', 'RSA-3072', 'RSA-4096', 'ECDSA-P256', 'ECDSA-P384'];
+
+    /**
+     * Junior-ISB-friendly default crypto allow-list per BSI TR-02102-1
+     * (2024-1 edition) plus modern AEAD/EdDSA suites widely accepted by
+     * NIST SP 800-131A. Used by {@see self::defaults()} when the user
+     * lands on Step 5 with an empty `crypto_allowlist` slot — the user
+     * can still deselect anything they do not want.
+     *
+     * Set is intentionally narrow: AES-GCM (symmetric), modern hashes
+     * (SHA-256+ / SHA3) and modern asymmetric/AEAD (ECDSA on NIST
+     * curves, RSA ≥ 3072, EdDSA, ChaCha20-Poly1305). 3DES, MD5, SHA-1
+     * and RSA < 3072 are intentionally absent.
+     */
+    public const BSI_TR02102_DEFAULT_ALGOS = [
+        'AES-128-GCM',
+        'AES-192-GCM',
+        'AES-256-GCM',
+        'CHACHA20-POLY1305',
+        'SHA-256',
+        'SHA-384',
+        'SHA-512',
+        'SHA3-256',
+        'SHA3-384',
+        'SHA3-512',
+        'ECDH-P256',
+        'ECDH-P384',
+        'ECDH-P521',
+        'ECDH-BRAINPOOLP256R1',
+        'ECDH-BRAINPOOLP384R1',
+        'ECDH-BRAINPOOLP512R1',
+        'ECDSA-P256',
+        'ECDSA-P384',
+        'ECDSA-P521',
+        'RSA-3072',
+        'RSA-4096',
+        'ED25519',
+        'ED448',
+    ];
+
+    public const PATCH_SEVERITIES = ['critical', 'high', 'medium'];
+
+    public const CONTINUITY_CRITICALITY_LEVELS = ['high', 'medium', 'low'];
+
+    public const MFA_SCOPE_OPTIONS = ['all_users', 'privileged_only', 'external_facing_only'];
+
+    public const LOGGING_RETENTION_CATEGORIES = ['security', 'app', 'system'];
+
+    public const VULN_SCAN_CADENCE_OPTIONS = ['weekly', 'monthly', 'quarterly'];
+
+    public const WORKING_MODES_OPTIONS = ['office', 'hybrid', 'fully_remote'];
+
+    public const DORA_ENTITY_TYPES = [
+        'kreditinstitut',
+        'wertpapierfirma',
+        'zahlungsdienstleister',
+        'e_geld_institut',
+        'fmi',
+        'sonstige',
+    ];
+
+    public const DORA_COMPETENT_AUTHORITIES = [
+        'BaFin',
+        'Bundesbank',
+        'ECB',
+        'EBA',
+        'sonstige',
+    ];
+
+    /**
+     * Tenant industry-preset bundles that are clearly NOT in DORA's
+     * primary scope (financial services). Used by {@see self::defaults()}
+     * to surface a "DORA-not-applicable" hint when the user has a
+     * non-financial preset selected but DORA is still in their
+     * Step-1 standards-mix.
+     *
+     * @var list<string>
+     */
+    public const NON_FINANCIAL_BUNDLE_KEYS = [
+        'ot_iec62443',
+        'b2c_saas',
+        'public_sector',
+        'custom_general',
+    ];
+
+    public function key(): string
+    {
+        return WizardStepKeys::STEP_OPERATIONAL_BASELINES;
+    }
+
+    /**
+     * Pre-fill helpers for Junior ISB. Currently:
+     *   - BSI-TR-02102-2024 conformant `crypto_allowlist` when the slot
+     *     is empty (Wish #1 from Junior-Implementer-Persona feedback).
+     *   - `dora.not_applicable_hint` flag when DORA is in scope but the
+     *     tenant picked a non-financial industry-preset bundle (Wish #4).
+     *
+     * Existing user input always wins — this method only fills empty
+     * slots, never overrides explicit choices.
+     */
+    public function defaults(WizardRun $run): array
+    {
+        $existing = parent::defaults($run);
+
+        if (!isset($existing['crypto_allowlist'])
+            || !is_array($existing['crypto_allowlist'])
+            || $existing['crypto_allowlist'] === []
+        ) {
+            $existing['crypto_allowlist'] = self::BSI_TR02102_DEFAULT_ALGOS;
+        }
+
+        // Access review cadence (months)
+        if (!isset($existing['access_review_cadence_months'])) {
+            $existing['access_review_cadence_months'] = 6;
+        }
+
+        // MFA scope
+        if (!isset($existing['mfa_scope']) || !in_array($existing['mfa_scope'], self::MFA_SCOPE_OPTIONS, true)) {
+            $existing['mfa_scope'] = 'all_users';
+        }
+
+        // Logging retention months per category
+        if (!isset($existing['logging_retention_months']) || !is_array($existing['logging_retention_months'])) {
+            $existing['logging_retention_months'] = ['security' => 12, 'app' => 3, 'system' => 3];
+        } else {
+            foreach (['security' => 12, 'app' => 3, 'system' => 3] as $cat => $defaultVal) {
+                if (!isset($existing['logging_retention_months'][$cat])) {
+                    $existing['logging_retention_months'][$cat] = $defaultVal;
+                }
+            }
+        }
+
+        // Vulnerability scan cadence
+        if (!isset($existing['vuln_scan_cadence']) || !is_array($existing['vuln_scan_cadence'])) {
+            $existing['vuln_scan_cadence'] = ['external_cadence' => 'monthly', 'internal_cadence' => 'weekly'];
+        } else {
+            if (!isset($existing['vuln_scan_cadence']['external_cadence'])) {
+                $existing['vuln_scan_cadence']['external_cadence'] = 'monthly';
+            }
+            if (!isset($existing['vuln_scan_cadence']['internal_cadence'])) {
+                $existing['vuln_scan_cadence']['internal_cadence'] = 'weekly';
+            }
+        }
+
+        // Working modes (multi-select)
+        if (!isset($existing['working_modes']) || !is_array($existing['working_modes']) || $existing['working_modes'] === []) {
+            $existing['working_modes'] = ['office', 'hybrid'];
+        }
+
+        // Cloud/on-prem mix percentage
+        if (!isset($existing['cloud_onprem_mix_pct'])) {
+            $existing['cloud_onprem_mix_pct'] = 50;
+        }
+
+        // DORA-not-applicable detection — only when DORA is in scope.
+        $standards = $run->getStandardsAdopted() ?? [];
+        if (in_array('dora', $standards, true)) {
+            $welcomeSlot = $this->readSlot($run, WizardStepKeys::STEP_WELCOME);
+            // Support multi-key (canonical) and single-key (backwards-compat).
+            $bundleKeys = is_array($welcomeSlot['industry_preset_bundle_keys'] ?? null)
+                ? $welcomeSlot['industry_preset_bundle_keys']
+                : (is_string($welcomeSlot['industry_preset_bundle_key'] ?? null)
+                    && $welcomeSlot['industry_preset_bundle_key'] !== ''
+                    ? [$welcomeSlot['industry_preset_bundle_key']]
+                    : []);
+            $doraSlot = is_array($existing['dora'] ?? null) ? $existing['dora'] : [];
+            $entityType = is_string($doraSlot['entity_type'] ?? null) && $doraSlot['entity_type'] !== ''
+                ? $doraSlot['entity_type']
+                : null;
+
+            // Hint fires only when ALL selected bundles are non-financial
+            // (if the user added even one financial bundle, DORA likely applies).
+            $allNonFinancial = $bundleKeys !== [] && count(array_filter(
+                $bundleKeys,
+                static fn (string $k): bool => !in_array($k, self::NON_FINANCIAL_BUNDLE_KEYS, true),
+            )) === 0;
+
+            $existing['_dora_not_applicable_hint'] = $allNonFinancial && $entityType === null;
+        } else {
+            $existing['_dora_not_applicable_hint'] = false;
+        }
+
+        return $existing;
+    }
+
+    public function validate(WizardRun $run, array $input): array
+    {
+        $errors = [];
+
+        // Crypto allow-list
+        $crypto = $input['crypto_allowlist'] ?? [];
+        if (!is_array($crypto)) {
+            $errors['crypto_allowlist'][] = 'policy_wizard.error.crypto_allowlist_invalid';
+            $crypto = [];
+        }
+        $crypto = array_values(array_unique(array_filter(array_map(
+            static fn ($v): string => is_string($v) ? strtoupper(trim($v)) : '',
+            $crypto,
+        ))));
+        if ($crypto === []) {
+            $errors['crypto_allowlist'][] = 'policy_wizard.error.crypto_allowlist_required';
+        }
+
+        // Backup RPO (hours) — must be a positive integer.
+        $rpoHours = $input['backup_rpo_hours'] ?? null;
+        if ($rpoHours === null || !is_numeric($rpoHours)) {
+            $errors['backup_rpo_hours'][] = 'policy_wizard.error.backup_rpo_required';
+            $rpoHours = null;
+        } else {
+            $rpoHours = (int) $rpoHours;
+            if ($rpoHours <= 0 || $rpoHours > 24 * 30) {
+                $errors['backup_rpo_hours'][] = 'policy_wizard.error.backup_rpo_invalid';
+                $rpoHours = null;
+            }
+        }
+
+        // Patch cadence SLAs by severity.
+        $patchSlaHours = $input['patch_sla_hours'] ?? [];
+        if (!is_array($patchSlaHours)) {
+            $errors['patch_sla_hours'][] = 'policy_wizard.error.patch_sla_invalid';
+            $patchSlaHours = [];
+        }
+        // Sensible BSI/Industry-Default-SLAs per severity (User-Feedback: high
+        // + medium hatten keinen Standardwert, validate forderte Pflichteingabe
+        // → Fehlertapete). Defaults match the form's tooltip "üblich"-Werte.
+        $patchSlaDefaults = ['critical' => 4, 'high' => 24, 'medium' => 168];
+        $normalisedSla = [];
+        foreach (self::PATCH_SEVERITIES as $sev) {
+            $val = $patchSlaHours[$sev] ?? null;
+            // Empty / null = use the default — silent skip with sensible BSI
+            // value, no error. User can override via the form input.
+            if ($val === null || $val === '') {
+                $normalisedSla[$sev] = $patchSlaDefaults[$sev] ?? 24;
+                continue;
+            }
+            if (is_numeric($val) && (int) $val > 0) {
+                $normalisedSla[$sev] = (int) $val;
+            } else {
+                $errors['patch_sla_hours'][] = 'policy_wizard.error.patch_sla_required.' . $sev;
+            }
+        }
+
+        $standards = $run->getStandardsAdopted() ?? [];
+
+        // Continuity RTO — only when BCM in scope.
+        $continuityRto = null;
+        if (in_array('bcm', $standards, true)) {
+            $rto = $input['continuity_rto_hours'] ?? [];
+            if (!is_array($rto)) {
+                $errors['continuity_rto_hours'][] = 'policy_wizard.error.continuity_rto_invalid';
+                $rto = [];
+            }
+            $continuityRto = [];
+            foreach ($rto as $criticality => $hours) {
+                if (!is_string($criticality) || !is_numeric($hours)) {
+                    continue;
+                }
+                $continuityRto[$criticality] = (int) $hours;
+            }
+            if ($continuityRto === []) {
+                $errors['continuity_rto_hours'][] = 'policy_wizard.error.continuity_rto_required';
+            }
+        }
+
+        // DORA-specific block — only when DORA in scope.
+        $doraBlock = null;
+        if (in_array('dora', $standards, true)) {
+            $dora = $input['dora'] ?? [];
+            if (!is_array($dora)) {
+                $errors['dora'][] = 'policy_wizard.error.dora_block_invalid';
+                $dora = [];
+            }
+
+            // Junior-ISB Self-Check (DORA Art. 16 + RTS) — derive
+            // `is_significant` server-side from three guided questions
+            // when the user filled the Self-Check. Threshold: ≥ 2 yes
+            // out of 3 → significant. The raw answers are persisted so
+            // the next render restores the Self-Check state.
+            $q1 = $this->parseBool($dora['significance_q1'] ?? null);
+            $q2 = $this->parseBool($dora['significance_q2'] ?? null);
+            $q3 = $this->parseBool($dora['significance_q3'] ?? null);
+            $hasSelfCheckAnswers = array_key_exists('significance_q1', $dora)
+                || array_key_exists('significance_q2', $dora)
+                || array_key_exists('significance_q3', $dora);
+            $derivedSignificant = (((int) $q1) + ((int) $q2) + ((int) $q3)) >= 2;
+
+            $doraBlock = [
+                'entity_type' => is_string($dora['entity_type'] ?? null) ? $dora['entity_type'] : null,
+                'significance_q1' => $q1,
+                'significance_q2' => $q2,
+                'significance_q3' => $q3,
+                // is_significant is server-derived from the Self-Check
+                // when the user answered any question; otherwise we
+                // honour the legacy boolean flag (backwards-compat for
+                // sandbox runs / API callers that bypass the wizard UI).
+                'is_significant' => $hasSelfCheckAnswers
+                    ? $derivedSignificant
+                    : (bool) ($dora['is_significant'] ?? false),
+                // Backwards-compat: previously stored as `significance` string.
+                'significance' => is_string($dora['significance'] ?? null) ? $dora['significance'] : null,
+                'competent_authority' => is_string($dora['competent_authority'] ?? null)
+                    ? $dora['competent_authority']
+                    : null,
+                'ictt_concentration_threshold_pct' => is_numeric($dora['ictt_concentration_threshold_pct'] ?? null)
+                    ? (int) $dora['ictt_concentration_threshold_pct']
+                    : null,
+                'is_ctpp_self_assessment' => (bool) ($dora['is_ctpp_self_assessment'] ?? false),
+            ];
+            // `significance` is derived from is_significant when not
+            // explicitly provided so older runs keep working.
+            if ($doraBlock['significance'] === null || $doraBlock['significance'] === '') {
+                $doraBlock['significance'] = $doraBlock['is_significant'] ? 'significant' : 'standard';
+            }
+            foreach (['entity_type', 'competent_authority'] as $req) {
+                if ($doraBlock[$req] === null || $doraBlock[$req] === '') {
+                    $errors['dora'][] = 'policy_wizard.error.dora_block_required.' . $req;
+                }
+            }
+            if ($doraBlock['ictt_concentration_threshold_pct'] !== null) {
+                $pct = $doraBlock['ictt_concentration_threshold_pct'];
+                if ($pct < 1 || $pct > 100) {
+                    $errors['dora'][] = 'policy_wizard.error.dora_block_invalid_threshold';
+                    $doraBlock['ictt_concentration_threshold_pct'] = null;
+                }
+            }
+        }
+
+        // Operational responsible-persons (DPO + BCM-Officer). Optional
+        // here — RolesStep is authoritative; Step 5 just confirms.
+        $dpoUserId = $input['dpo_user_id'] ?? null;
+        $dpoUserId = is_numeric($dpoUserId) && (int) $dpoUserId > 0 ? (int) $dpoUserId : null;
+
+        $bcmOfficerUserId = $input['bcm_officer_user_id'] ?? null;
+        $bcmOfficerUserId = is_numeric($bcmOfficerUserId) && (int) $bcmOfficerUserId > 0
+            ? (int) $bcmOfficerUserId
+            : null;
+
+        // ── New baselines (plan spec: 6 missing fields) ─────────────────────
+
+        // 1. Access review cadence (months, 1..24)
+        $accessReviewCadence = $input['access_review_cadence_months'] ?? null;
+        if ($accessReviewCadence === null || $accessReviewCadence === '') {
+            $accessReviewCadence = 6;
+        } elseif (is_numeric($accessReviewCadence)) {
+            $accessReviewCadence = (int) $accessReviewCadence;
+            if ($accessReviewCadence < 1 || $accessReviewCadence > 24) {
+                $errors['access_review_cadence_months'][] = 'policy_wizard.error.access_review_cadence_invalid';
+                $accessReviewCadence = 6;
+            }
+        } else {
+            $errors['access_review_cadence_months'][] = 'policy_wizard.error.access_review_cadence_invalid';
+            $accessReviewCadence = 6;
+        }
+
+        // 2. MFA scope
+        $mfaScope = is_string($input['mfa_scope'] ?? null) ? trim($input['mfa_scope']) : 'all_users';
+        if (!in_array($mfaScope, self::MFA_SCOPE_OPTIONS, true)) {
+            $errors['mfa_scope'][] = 'policy_wizard.error.mfa_scope_invalid';
+            $mfaScope = 'all_users';
+        }
+
+        // 3. Logging retention months per category (1..120)
+        $loggingRetentionRaw = $input['logging_retention_months'] ?? [];
+        if (!is_array($loggingRetentionRaw)) {
+            $errors['logging_retention_months'][] = 'policy_wizard.error.logging_retention_invalid';
+            $loggingRetentionRaw = [];
+        }
+        $loggingRetentionDefaults = ['security' => 12, 'app' => 3, 'system' => 3];
+        $loggingRetention = [];
+        foreach (self::LOGGING_RETENTION_CATEGORIES as $cat) {
+            $val = $loggingRetentionRaw[$cat] ?? null;
+            if ($val === null || $val === '') {
+                $loggingRetention[$cat] = $loggingRetentionDefaults[$cat];
+            } elseif (is_numeric($val) && (int) $val >= 1 && (int) $val <= 120) {
+                $loggingRetention[$cat] = (int) $val;
+            } else {
+                $errors['logging_retention_months'][] = 'policy_wizard.error.logging_retention_invalid.' . $cat;
+                $loggingRetention[$cat] = $loggingRetentionDefaults[$cat];
+            }
+        }
+
+        // 4. Vulnerability scan cadence
+        $vulnScanRaw = $input['vuln_scan_cadence'] ?? [];
+        if (!is_array($vulnScanRaw)) {
+            $errors['vuln_scan_cadence'][] = 'policy_wizard.error.vuln_scan_cadence_invalid';
+            $vulnScanRaw = [];
+        }
+        $vulnScanCadence = [];
+        foreach (['external_cadence' => 'monthly', 'internal_cadence' => 'weekly'] as $key => $default) {
+            $val = is_string($vulnScanRaw[$key] ?? null) ? trim($vulnScanRaw[$key]) : '';
+            if (in_array($val, self::VULN_SCAN_CADENCE_OPTIONS, true)) {
+                $vulnScanCadence[$key] = $val;
+            } else {
+                $vulnScanCadence[$key] = $default;
+            }
+        }
+
+        // 5. Working modes (multi-select, at least one)
+        $workingModesRaw = $input['working_modes'] ?? [];
+        if (!is_array($workingModesRaw)) {
+            $errors['working_modes'][] = 'policy_wizard.error.working_modes_invalid';
+            $workingModesRaw = [];
+        }
+        $workingModes = array_values(array_filter(
+            array_map(static fn ($v): string => is_string($v) ? trim($v) : '', $workingModesRaw),
+            static fn (string $v): bool => in_array($v, self::WORKING_MODES_OPTIONS, true),
+        ));
+        if ($workingModes === []) {
+            $workingModes = ['office', 'hybrid'];
+        }
+
+        // 6. Cloud/on-prem mix percentage (0..100)
+        $cloudMixPct = $input['cloud_onprem_mix_pct'] ?? null;
+        if ($cloudMixPct === null || $cloudMixPct === '') {
+            $cloudMixPct = 50;
+        } elseif (is_numeric($cloudMixPct)) {
+            $cloudMixPct = (int) $cloudMixPct;
+            if ($cloudMixPct < 0 || $cloudMixPct > 100) {
+                $errors['cloud_onprem_mix_pct'][] = 'policy_wizard.error.cloud_onprem_mix_pct_invalid';
+                $cloudMixPct = 50;
+            }
+        } else {
+            $errors['cloud_onprem_mix_pct'][] = 'policy_wizard.error.cloud_onprem_mix_pct_invalid';
+            $cloudMixPct = 50;
+        }
+
+        // IndustryPresetBundle picker — optional one-shot apply hint.
+        // Accept multi-key (canonical) or single-key (backwards-compat).
+        $rawMultiKeys = $input['industry_preset_bundle_keys'] ?? null;
+        if (is_array($rawMultiKeys) && $rawMultiKeys !== []) {
+            $industryPresetBundleKeys = array_values(array_filter(array_map(
+                static fn ($v): string => is_string($v) ? trim($v) : '',
+                $rawMultiKeys,
+            ), static fn (string $k): bool => $k !== ''));
+        } else {
+            $singleRaw = $input['industry_preset_bundle_key'] ?? null;
+            $singleKey = is_string($singleRaw) && $singleRaw !== '' ? trim($singleRaw) : null;
+            $industryPresetBundleKeys = $singleKey !== null ? [$singleKey] : [];
+        }
+        // Backwards-compat: last key is the single-key value.
+        $industryPresetBundleKey = $industryPresetBundleKeys !== []
+            ? end($industryPresetBundleKeys)
+            : null;
+
+        $normalised = [
+            'crypto_allowlist' => $crypto,
+            'backup_rpo_hours' => $rpoHours,
+            'patch_sla_hours' => $normalisedSla,
+            'continuity_rto_hours' => $continuityRto,
+            'dora' => $doraBlock,
+            'dpo_user_id' => $dpoUserId,
+            'bcm_officer_user_id' => $bcmOfficerUserId,
+            // Multi-key (canonical, new runs).
+            'industry_preset_bundle_keys' => $industryPresetBundleKeys,
+            // Single-key (backwards-compat).
+            'industry_preset_bundle_key' => $industryPresetBundleKey,
+            // New baselines (plan spec: 6 missing fields).
+            'access_review_cadence_months' => $accessReviewCadence,
+            'mfa_scope' => $mfaScope,
+            'logging_retention_months' => $loggingRetention,
+            'vuln_scan_cadence' => $vulnScanCadence,
+            'working_modes' => $workingModes,
+            'cloud_onprem_mix_pct' => $cloudMixPct,
+        ];
+
+        return [
+            'errors' => $errors,
+            'normalised_input' => $normalised,
+        ];
+    }
+
+    /**
+     * Permissive boolean coercion for HTML-form submitted values.
+     * Accepts: true, '1', 1, 'true', 'yes', 'ja', 'on'. Everything
+     * else (incl. null, '0', empty string, '') → false.
+     */
+    private function parseBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value)) {
+            return $value === 1;
+        }
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'ja', 'on'], true);
+        }
+        return false;
+    }
+}

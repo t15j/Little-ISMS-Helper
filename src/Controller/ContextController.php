@@ -27,7 +27,7 @@ class ContextController extends AbstractController
         private readonly TranslatorInterface $translator,
         private readonly InterestedPartyRepository $interestedPartyRepository,
     ) {}
-    #[Route('/context/', name: 'app_context_index')]
+    #[Route('/context', name: 'app_context_index', methods: ['GET'])]
     public function index(): Response
     {
         $context = $this->ismsContextService->getCurrentContext();
@@ -87,7 +87,7 @@ class ContextController extends AbstractController
 
             $this->addFlash('danger', $this->translator->trans('corporate.inheritance.cannot_edit_inherited_long', [
                 '%parent%' => $parentName
-            ]));
+            ], 'messages'));
 
             return $this->redirectToRoute('app_context_index');
         }
@@ -104,17 +104,21 @@ class ContextController extends AbstractController
 
             $this->ismsContextService->saveContext($context);
 
-            $this->addFlash('success', $this->translator->trans('context.success.updated'));
+            $this->addFlash('success', $this->translator->trans('context.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_context_index');
         }
 
         // Get current tenant for navigation
         $tenant = $context->getTenant();
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('context/edit.html.twig', [
             'context' => $context,
             'form' => $form,
             'tenant' => $tenant, // NEW: Current tenant for navigation links
-        ]);
+        ], new Response(status: $status));
     }
 }

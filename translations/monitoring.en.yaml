@@ -10,12 +10,12 @@ monitoring:
         error: Error
         last_checked: 'Last Checked'
         json_api: 'JSON API'
-        yes: 'Yes'
-        no: 'No'
+        'yes': 'Yes'
+        'no': 'No'
         not_used: 'Not used'
         exists: 'Exists'
-        on: 'ON'
-        off: 'OFF'
+        'on': 'ON'
+        'off': 'OFF'
         present: 'Present'
     action:
         optimize_disk: 'Optimize Disk Space'
@@ -126,6 +126,19 @@ monitoring:
         no_log_file_text: 'The log file <code>%file%</code> does not exist yet. Errors will be logged here once they occur.'
         show_full: 'Show full log entry'
         important_notes: 'Important Notes'
+        filter:
+            level: Level
+            channel: Channel
+            since: 'Time range'
+            since_all: All
+            since_1h: 'Last hour'
+            since_24h: 'Last 24 hours'
+            since_7d: 'Last 7 days'
+            since_30d: 'Last 30 days'
+            search: Search
+            search_placeholder: 'Error text...'
+            apply: Apply
+            reset: Reset
     audit_log:
         title: 'Audit Log'
         total_entries: 'Total Entries'

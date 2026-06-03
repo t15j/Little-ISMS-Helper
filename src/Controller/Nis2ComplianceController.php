@@ -7,11 +7,15 @@ namespace App\Controller;
 use DateTime;
 use App\Entity\Incident;
 use App\Repository\ComplianceFrameworkRepository;
+use App\Repository\ComplianceRequirementRepository;
 use App\Repository\IncidentRepository;
 use App\Repository\MfaTokenRepository;
 use App\Repository\UserRepository;
 use App\Repository\VulnerabilityRepository;
 use App\Repository\PatchRepository;
+use App\Controller\Trait\ModuleGatedControllerTrait;
+use App\Service\ModuleConfigurationService;
+use App\Service\Nis2Art21CoverageService;
 use App\Service\Nis2ComplianceService;
 use App\Service\PdfExportService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -33,8 +37,11 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 #[IsGranted('ROLE_MANAGER')]
 class Nis2ComplianceController extends AbstractController
 {
+    use ModuleGatedControllerTrait;
+
     public function __construct(
         private readonly ComplianceFrameworkRepository $complianceFrameworkRepository,
+        private readonly ComplianceRequirementRepository $complianceRequirementRepository,
         private readonly IncidentRepository $incidentRepository,
         private readonly MfaTokenRepository $mfaTokenRepository,
         private readonly UserRepository $userRepository,
@@ -43,12 +50,18 @@ class Nis2ComplianceController extends AbstractController
         private readonly PdfExportService $pdfExportService,
         private readonly TranslatorInterface $translator,
         private readonly Nis2ComplianceService $nis2ComplianceService,
+        private readonly Nis2Art21CoverageService $nis2Art21CoverageService,
+        private readonly ModuleConfigurationService $moduleService,
     ) {
     }
 
-    #[Route('/nis2-compliance', name: 'app_nis2_compliance_dashboard')]
+    #[Route('/nis2-compliance', name: 'app_nis2_compliance_dashboard', methods: ['GET'])]
     public function dashboard(): Response
     {
+        if ($redirect = $this->checkModuleActive('nis2_dora')) {
+            return $redirect;
+        }
+
         // Check if NIS2 framework exists and is active
         $nis2Framework = $this->complianceFrameworkRepository->findOneBy(['code' => 'NIS2']);
 
@@ -178,6 +191,54 @@ class Nis2ComplianceController extends AbstractController
     }
 
     /**
+     * NIS2 Art. 21(2) Requirements Catalogue
+     *
+     * Shows the 10 Art. 21(2)(a)-(j) measures as first-class ComplianceRequirement rows
+     * with live coverage metrics merged from Nis2ComplianceService.
+     */
+    #[Route('/nis2-compliance/requirements', name: 'app_nis2_art21_requirements', methods: ['GET'])]
+    public function art21Requirements(): Response
+    {
+        if ($redirect = $this->checkModuleActive('nis2_dora')) {
+            return $redirect;
+        }
+
+        $nis2Framework = $this->complianceFrameworkRepository->findOneBy(['code' => 'NIS2']);
+
+        if (!$nis2Framework) {
+            $this->addFlash('info', $this->translator->trans('nis2.not_installed', [], 'nis2'));
+
+            return $this->redirectToRoute('app_compliance_index');
+        }
+
+        if (!$nis2Framework->isActive()) {
+            $this->addFlash('warning', $this->translator->trans('nis2.not_active', [], 'nis2'));
+
+            return $this->redirectToRoute('app_compliance_index');
+        }
+
+        $coverageRollup = $this->nis2Art21CoverageService->getCoverageRollup();
+
+        // Requirements loaded in DB for this framework (top-level only — the KPI
+        // counts canonical requirements, not imported sub-requirements)
+        $dbRequirements = $this->complianceRequirementRepository->findTopLevelByFramework($nis2Framework);
+
+        // Counts for page header KPIs
+        $totalRequirements = count($coverageRollup);
+        $criticalCount = count(array_filter($coverageRollup, fn ($r) => $r['priority'] === 'critical'));
+        $loadedInDb = count($dbRequirements);
+
+        return $this->render('nis2_compliance/requirements.html.twig', [
+            'framework'          => $nis2Framework,
+            'coverage_rollup'    => $coverageRollup,
+            'total_requirements' => $totalRequirements,
+            'critical_count'     => $criticalCount,
+            'loaded_in_db'       => $loadedInDb,
+            'db_requirements'    => $dbRequirements,
+        ]);
+    }
+
+    /**
      * Generate a structured NIS2 Art. 23 incident notification PDF report.
      *
      * Produces a 3-section report following the NIS2 notification timeline:
@@ -185,7 +246,7 @@ class Nis2ComplianceController extends AbstractController
      * - Section 2: Incident Notification (72h) - Nature, scope, severity, IoCs, actions
      * - Section 3: Final Report (1 month) - Root cause, corrective/preventive actions, lessons
      */
-    #[Route('/nis2/incident-report/{id}/pdf', name: 'app_nis2_incident_report_pdf')]
+    #[Route('/nis2/incident-report/{id}/pdf', name: 'app_nis2_incident_report_pdf', methods: ['GET'])]
     #[IsGranted('ROLE_MANAGER')]
     public function incidentReportPdf(Incident $incident): Response
     {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
-use RuntimeException;
+use DateTimeImmutable;
 use DateTimeInterface;
 use Deprecated;
 use DateTime;
@@ -13,6 +13,9 @@ use App\Entity\Incident;
 use App\Entity\ProcessingActivity;
 use App\Entity\Tenant;
 use App\Entity\User;
+use App\Exception\Tenant\TenantOrphanException;
+use App\Exception\Workflow\InvalidStatusTransitionException;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Repository\DataBreachRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -22,7 +25,7 @@ use Psr\Log\LoggerInterface;
  *
  * CRITICAL: Handles 72-hour notification deadline tracking!
  */
-class DataBreachService
+final class DataBreachService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -31,6 +34,7 @@ class DataBreachService
         private readonly AuditLogger $auditLogger,
         private readonly LoggerInterface $logger,
         private readonly WorkflowAutoProgressionService $workflowAutoProgressionService,
+        private readonly LifecycleTransitionInterface $lifecycleService,
     ) {
     }
 
@@ -42,7 +46,7 @@ class DataBreachService
     {
         $tenant = $this->tenantContext->getCurrentTenant();
         if (!$tenant instanceof Tenant) {
-            throw new RuntimeException('No tenant context available');
+            throw new TenantOrphanException(null, 'No tenant context available');
         }
 
         $referenceNumber = $this->dataBreachRepository->getNextReferenceNumber($tenant);
@@ -50,7 +54,7 @@ class DataBreachService
         $dataBreach = new DataBreach();
         $dataBreach->setTenant($tenant);
         $dataBreach->setReferenceNumber($referenceNumber);
-        $dataBreach->setStatus('draft');
+        $dataBreach->setStatus('draft'); // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist entity; 'draft' is the data_breach_lifecycle initial_marking)
         // Defaults to false - user decides based on risk assessment
         $dataBreach->setRequiresAuthorityNotification(false);
         $dataBreach->setRequiresSubjectNotification(false);
@@ -69,7 +73,7 @@ class DataBreachService
     ): DataBreach {
         $tenant = $this->tenantContext->getCurrentTenant();
         if (!$tenant instanceof Tenant) {
-            throw new RuntimeException('No tenant context available');
+            throw new TenantOrphanException(null, 'No tenant context available');
         }
 
         // Generate reference number
@@ -93,7 +97,7 @@ class DataBreachService
         // Set defaults per Art. 33(1) - notification required unless unlikely to result in risk
         $dataBreach->setRequiresAuthorityNotification(true);
         $dataBreach->setRequiresSubjectNotification(false);
-        $dataBreach->setStatus('draft');
+        $dataBreach->setStatus('draft'); // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist entity; 'draft' is the data_breach_lifecycle initial_marking)
 
         $this->entityManager->persist($dataBreach);
         $this->entityManager->flush();
@@ -131,7 +135,7 @@ class DataBreachService
     ): DataBreach {
         $tenant = $this->tenantContext->getCurrentTenant();
         if (!$tenant instanceof Tenant) {
-            throw new RuntimeException('No tenant context available');
+            throw new TenantOrphanException(null, 'No tenant context available');
         }
 
         // Generate reference number
@@ -151,7 +155,7 @@ class DataBreachService
         // Set defaults per Art. 33(1)
         $dataBreach->setRequiresAuthorityNotification(true);
         $dataBreach->setRequiresSubjectNotification(false);
-        $dataBreach->setStatus('draft');
+        $dataBreach->setStatus('draft'); // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist clone; 'draft' is the data_breach_lifecycle initial_marking)
 
         return $dataBreach;
     }
@@ -236,20 +240,28 @@ class DataBreachService
     public function submitForAssessment(DataBreach $dataBreach, User $user): DataBreach
     {
         if ($dataBreach->getStatus() !== 'draft') {
-            throw new RuntimeException('Only draft data breaches can be submitted for assessment');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Only draft data breaches can be submitted for assessment', 'draft_required');
         }
 
         if (!$dataBreach->isComplete()) {
-            throw new RuntimeException(sprintf(
+            throw new \App\Exception\BusinessRule\BusinessRuleException(sprintf(
                 'Data breach must be complete before assessment (currently %d%% complete)',
                 $dataBreach->getCompletenessPercentage()
-            ));
+            ), 'incomplete');
         }
 
-        $dataBreach->setStatus('under_assessment');
         $dataBreach->setAssessor($user);
-
         $this->entityManager->flush();
+
+        // X.6: assess transition (draft → under_assessment) via data_breach_lifecycle.
+        // data_breach_lifecycle already had this transition; migrated from direct setStatus().
+        $this->lifecycleService->transition(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'assess',
+            $user,
+            'Submitted for assessment per GDPR Art. 33',
+        );
 
         $this->auditLogger->logCustom(
             'data_breach.submitted_for_assessment',
@@ -283,14 +295,14 @@ class DataBreachService
         array $documents = []
     ): DataBreach {
         if (!$dataBreach->getRequiresAuthorityNotification()) {
-            throw new RuntimeException('This data breach does not require supervisory authority notification');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('This data breach does not require supervisory authority notification', 'notification_not_required');
         }
 
         if ($dataBreach->getSupervisoryAuthorityNotifiedAt() instanceof DateTimeInterface) {
-            throw new RuntimeException('Supervisory authority has already been notified');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Supervisory authority has already been notified', 'already_notified');
         }
 
-        $notifiedAt = new DateTime();
+        $notifiedAt = new DateTimeImmutable();
 
         // Capture overdue state BEFORE setting the notification timestamp, because
         // isAuthorityNotificationOverdue() / getHoursUntilAuthorityDeadline() short-circuit
@@ -323,9 +335,15 @@ class DataBreachService
             $this->logger->warning('Supervisory authority notification is OVERDUE', $logContext);
         }
 
-        $dataBreach->setStatus('authority_notified');
-
-        $this->entityManager->flush();
+        // X.6: notify_authority transition (under_assessment → authority_notified) via data_breach_lifecycle.
+        // reason_required=true on this transition; authority name is the GDPR Art.33 reason.
+        $this->lifecycleService->transition(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'notify_authority',
+            null,
+            sprintf('Supervisory authority "%s" notified per GDPR Art. 33', $authorityName),
+        );
 
         $this->auditLogger->logCustom(
             'data_breach.authority_notified',
@@ -359,7 +377,7 @@ class DataBreachService
     public function recordNotificationDelay(DataBreach $dataBreach, string $delayReason): DataBreach
     {
         if (!$dataBreach->isAuthorityNotificationOverdue()) {
-            throw new RuntimeException('Notification is not overdue - delay reason not needed');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Notification is not overdue - delay reason not needed', 'not_overdue');
         }
 
         $dataBreach->setNotificationDelayReason($delayReason);
@@ -390,21 +408,27 @@ class DataBreachService
         array $documents = []
     ): DataBreach {
         if (!$dataBreach->getRequiresSubjectNotification()) {
-            throw new RuntimeException('This data breach does not require data subject notification');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('This data breach does not require data subject notification', 'notification_not_required');
         }
 
         if ($dataBreach->getDataSubjectsNotifiedAt() instanceof DateTimeInterface) {
-            throw new RuntimeException('Data subjects have already been notified');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Data subjects have already been notified', 'already_notified');
         }
 
-        $notifiedAt = new DateTime();
+        $notifiedAt = new DateTimeImmutable();
         $dataBreach->setDataSubjectsNotifiedAt($notifiedAt);
         $dataBreach->setSubjectNotificationMethod($notificationMethod);
         $dataBreach->setSubjectsNotified($subjectsNotified);
         $dataBreach->setSubjectNotificationDocuments($documents);
-        $dataBreach->setStatus('subjects_notified');
-
-        $this->entityManager->flush();
+        // X.6: notify_subjects transition (authority_notified → subjects_notified) via data_breach_lifecycle.
+        // lifecycleService->transition() calls flush internally; entity mutations above are included.
+        $this->lifecycleService->transition(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'notify_subjects',
+            null,
+            sprintf('%d data subjects notified per GDPR Art. 34', $subjectsNotified),
+        );
 
         $this->auditLogger->logCustom(
             'data_breach.subjects_notified',
@@ -460,22 +484,33 @@ class DataBreachService
     public function close(DataBreach $dataBreach, User $user): DataBreach
     {
         if (!in_array($dataBreach->getStatus(), ['authority_notified', 'subjects_notified'])) {
-            throw new RuntimeException('Data breach must be in authority_notified or subjects_notified status to close');
+            throw new InvalidStatusTransitionException(
+                (string) $dataBreach->getStatus(),
+                'closed',
+                DataBreach::class,
+                'Data breach must be in authority_notified or subjects_notified status to close',
+            );
         }
 
         // Validate required notifications are complete
         if ($dataBreach->getRequiresAuthorityNotification() && !$dataBreach->getSupervisoryAuthorityNotifiedAt()) {
-            throw new RuntimeException('Supervisory authority notification required before closing');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Supervisory authority notification required before closing', 'authority_notification_required');
         }
 
         if ($dataBreach->getRequiresSubjectNotification() && !$dataBreach->getDataSubjectsNotifiedAt()) {
-            throw new RuntimeException('Data subject notification required before closing');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Data subject notification required before closing', 'subject_notification_required');
         }
 
-        $dataBreach->setStatus('closed');
         $dataBreach->setUpdatedBy($user);
 
-        $this->entityManager->flush();
+        // X.6: close transition ([authority_notified|subjects_notified] → closed) via data_breach_lifecycle.
+        $this->lifecycleService->transition(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'close',
+            $user,
+            'Data breach investigation closed',
+        );
 
         $this->auditLogger->logCustom(
             'data_breach.closed',
@@ -502,13 +537,20 @@ class DataBreachService
     public function reopen(DataBreach $dataBreach, User $user, string $reopenReason): DataBreach
     {
         if ($dataBreach->getStatus() !== 'closed') {
-            throw new RuntimeException('Only closed data breaches can be reopened');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Only closed data breaches can be reopened', 'closed_required');
         }
 
-        $dataBreach->setStatus('under_assessment');
         $dataBreach->setUpdatedBy($user);
 
-        $this->entityManager->flush();
+        // Route via LifecycleService so ROLE_DPO guard from data_breach_lifecycle metadata
+        // is enforced and the transition is audit-logged as a lifecycle event (audit H-6).
+        $this->lifecycleService->transition(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'reopen',
+            $user,
+            $reopenReason,
+        );
 
         $this->auditLogger->logCustom(
             'data_breach.reopened',

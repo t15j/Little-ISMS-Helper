@@ -309,6 +309,8 @@ training:
         title_required: 'Bitte geben Sie einen Titel ein.'
         date_required: 'Bitte wählen Sie ein Datum.'
         trainer_required: 'Trainer muss ausgewählt werden'
+    error:
+        material_upload_failed: 'Fehler beim Hochladen der Schulungsmaterialien: %reason%'
 objective:
     validation:
         title_required: 'Titel ist erforderlich'
@@ -325,6 +327,14 @@ risk:
         category_invalid: 'Ungültige Risikokategorie'
         legal_basis_invalid: 'Ungültige Rechtsgrundlage gemäß Art. 6 DSGVO'
         processing_scale_invalid: 'Ungültiger Verarbeitungsumfang'
+        likelihood_justification_required: 'Begründung für Eintrittswahrscheinlichkeit ist Pflicht (ISO 27001 6.1.2.d).'
+        impact_justification_required: 'Begründung für Auswirkung ist Pflicht (ISO 27001 6.1.2.d).'
+        risk_owner_required: 'Ein Risiko-Owner muss zugewiesen werden (ISO 27001 §7.4).'
+
+file_upload:
+    validation:
+        mime_type_invalid: 'Dateityp nicht erlaubt. Erlaubte Typen: %types%'
+        max_size_exceeded: 'Datei zu groß (max %limit%).'
         risk_owner_required: 'Ein Risikoverantwortlicher muss zugewiesen werden'
 audit:
     validation:
@@ -332,15 +342,25 @@ audit:
         date_required: 'Bitte wählen Sie ein Datum.'
 tenant:
     validation:
-        code_format: 'Der Mandanten-Code muss dem Format entsprechen'
+        code_format: 'Der Organisations-Code muss dem Format entsprechen'
         azure_tenant_id_format: 'Die Azure-Tenant-ID muss eine gültige GUID sein'
         logo_format: 'Das Logo muss im Format JPG, PNG, GIF oder WebP vorliegen'
+        nace_code_format: 'NACE-Code muss dem Format A.NN.NN entsprechen (NACE Rev.2 Klassifikation).'
     email:
         logo_url:
             https_only: 'Nur HTTPS-URLs erlaubt (Mixed Content wird durch HTML-E-Mail-Clients blockiert)'
 user:
     validation:
         avatar_format: 'Das Profilbild muss im Format JPG, PNG, GIF oder WebP vorliegen'
+        email:
+            invalid: 'Bitte geben Sie eine gültige E-Mail-Adresse ein.'
+            required: 'E-Mail-Adresse ist erforderlich.'
+        first_name:
+            max_length: 'Vorname darf höchstens {{ limit }} Zeichen lang sein.'
+            required: 'Vorname ist erforderlich.'
+        last_name:
+            max_length: 'Nachname darf höchstens {{ limit }} Zeichen lang sein.'
+            required: 'Nachname ist erforderlich.'
 context:
     validation:
         organization_name_required: 'Bitte geben Sie einen Organisationsnamen ein.'
@@ -377,10 +397,8 @@ workflow_step:
 'Requirements must be documented': 'Requirements must be documented'
 'Control ID is required': 'Control ID is required'
 'Control ID cannot exceed {{ limit }} characters': 'Control ID cannot exceed {{ limit }} characters'
-'Control ID must follow ISO 27001 format (e':
-    g:
-        ', 5':
-            '1, 8': { 3): 'Control-ID muss dem ISO 27001 Format folgen (z.B. 5.1, 8.3)' }
+"Control ID must follow ISO 27001 format (e.g., 5.1, 8.3)": 'Control-ID muss dem ISO 27001 Format folgen (z.B. 5.1, 8.3)'
+"Control ID must follow ISO 27001/27701/27017/27018 format (e.g., 5.1, A.5.1, B.8.2, 7.2.1, CLD.6.3)": 'Control-ID muss dem ISO 27001/27701/27017/27018 Format folgen (z. B. 5.1, A.5.1, B.8.2, 7.2.1, CLD.6.3)'
 'Control name is required': 'Control-Name ist erforderlich'
 'Control name cannot exceed {{ limit }} characters': 'Control name cannot exceed {{ limit }} characters'
 'Control description is required': 'Control description is required'
@@ -393,75 +411,75 @@ workflow_step:
 'Responsible person cannot exceed {{ limit }} characters': 'Responsible person cannot exceed {{ limit }} characters'
 'This setting already exists in this category': 'This setting already exists in this category'
 'There is already an account with this email': 'There is already an account with this email'
-'This role name is already in use': 'This role name is already in use'
-'This tenant code is already in use': 'This tenant code is already in use'
-'Supplier name is required': 'Supplier name is required'
-'Invalid email address': 'Invalid email address'
-'Service description is required': 'Service description is required'
-'Category name cannot exceed {{ limit }} characters': 'Category name cannot exceed {{ limit }} characters'
-'Maximum acceptable risk level is required': 'Maximum acceptable risk level is required'
-'Maximum acceptable risk must be between {{ min }} and {{ max }}': 'Maximum acceptable risk must be between {{ min }} and {{ max }}'
-'Risk appetite description is required': 'Risk appetite description is required'
-'Incident number is required': 'Incident number is required'
-'Incident number cannot exceed {{ limit }} characters': 'Incident number cannot exceed {{ limit }} characters'
-'Incident title is required': 'Incident title is required'
-'Incident description is required': 'Incident description is required'
-'Incident category is required': 'Incident category is required'
-'Severity is required': 'Severity is required'
-'Severity must be one of: {{ choices }}': 'Severity must be one of: {{ choices }}'
-'Detection date is required': 'Detection date is required'
-'Reporter name is required': 'Reporter name is required'
-'Reporter name cannot exceed {{ limit }} characters': 'Reporter name cannot exceed {{ limit }} characters'
-'Assignee name cannot exceed {{ limit }} characters': 'Assignee name cannot exceed {{ limit }} characters'
-'Data breach flag is required': 'Data breach flag is required'
-'Notification required flag is required': 'Notification required flag is required'
-'NIS2 category must be one of: {{ choices }}': 'NIS2 category must be one of: {{ choices }}'
-'Plan name is required': 'Plan name is required'
-'Business process is required': 'Business process is required'
-'Activation criteria must be defined': 'Activation criteria must be defined'
-'Recovery procedures must be documented': 'Recovery procedures must be documented'
-'Training title is required': 'Training title is required'
-'Training type is required': 'Training type is required'
-'Training type cannot exceed {{ limit }} characters': 'Training type cannot exceed {{ limit }} characters'
-'Scheduled date is required': 'Scheduled date is required'
-'Trainer name is required': 'Trainer name is required'
-'Trainer name cannot exceed {{ limit }} characters': 'Trainer name cannot exceed {{ limit }} characters'
-'Delivery method must be one of: {{ choices }}': 'Delivery method must be one of: {{ choices }}'
-'Risk is required': 'Risk is required'
-'Title is required': 'Title is required'
-'Description is required': 'Description is required'
-'Priority is required': 'Priority is required'
-'Priority must be one of: {{ choices }}': 'Priority must be one of: {{ choices }}'
-'Target completion date is required': 'Target completion date is required'
-'Completion percentage must be between {{ min }} and {{ max }}': 'Completion percentage must be between {{ min }} and {{ max }}'
-'Change title is required': 'Change title is required'
-'Justification is required': 'Justification is required'
-'Risk title is required': 'Risk title is required'
-'Risk title cannot exceed {{ limit }} characters': 'Risk title cannot exceed {{ limit }} characters'
-'Risk description is required': 'Risk description is required'
-'Probability is required': 'Probability is required'
-'Probability must be between {{ min }} and {{ max }}': 'Probability must be between {{ min }} and {{ max }}'
-'Impact is required': 'Impact is required'
-'Impact must be between {{ min }} and {{ max }}': 'Impact must be between {{ min }} and {{ max }}'
-'Residual probability must be between {{ min }} and {{ max }}': 'Residual probability must be between {{ min }} and {{ max }}'
-'Residual impact must be between {{ min }} and {{ max }}': 'Residual impact must be between {{ min }} and {{ max }}'
-'Treatment strategy is required': 'Treatment strategy is required'
-'Treatment strategy must be one of: {{ choices }}': 'Treatment strategy must be one of: {{ choices }}'
-'This permission name is already in use': 'This permission name is already in use'
-'Asset name is required': 'Asset name is required'
-'Asset name cannot exceed {{ limit }} characters': 'Asset name cannot exceed {{ limit }} characters'
-'Asset type is required': 'Asset type is required'
-'Asset type cannot exceed {{ limit }} characters': 'Asset type cannot exceed {{ limit }} characters'
-'Asset owner is required': 'Asset owner is required'
-'Owner cannot exceed {{ limit }} characters': 'Owner cannot exceed {{ limit }} characters'
-'Location cannot exceed {{ limit }} characters': 'Location cannot exceed {{ limit }} characters'
-'Confidentiality value is required': 'Confidentiality value is required'
-'Confidentiality value must be between {{ min }} and {{ max }}': 'Confidentiality value must be between {{ min }} and {{ max }}'
-'Integrity value is required': 'Integrity value is required'
-'Integrity value must be between {{ min }} and {{ max }}': 'Integrity value must be between {{ min }} and {{ max }}'
-'Availability value is required': 'Availability value is required'
-'Availability value must be between {{ min }} and {{ max }}': 'Availability value must be between {{ min }} and {{ max }}'
-'Data classification must be one of: {{ choices }}': 'Data classification must be one of: {{ choices }}'
+'This role name is already in use': 'Dieser Rollenname wird bereits verwendet'
+'This tenant code is already in use': 'Dieser Organisationscode wird bereits verwendet'
+'Supplier name is required': 'Lieferantenname ist erforderlich'
+'Invalid email address': 'Ungültige E-Mail-Adresse'
+'Service description is required': 'Leistungsbeschreibung ist erforderlich'
+'Category name cannot exceed {{ limit }} characters': 'Kategoriename darf maximal {{ limit }} Zeichen lang sein'
+'Maximum acceptable risk level is required': 'Maximaler akzeptabler Risikowert ist erforderlich'
+'Maximum acceptable risk must be between {{ min }} and {{ max }}': 'Maximales akzeptables Risiko muss zwischen {{ min }} und {{ max }} liegen'
+'Risk appetite description is required': 'Beschreibung des Risikoappetits ist erforderlich'
+'Incident number is required': 'Vorfallnummer ist erforderlich'
+'Incident number cannot exceed {{ limit }} characters': 'Vorfallnummer darf maximal {{ limit }} Zeichen lang sein'
+'Incident title is required': 'Vorfall-Titel ist erforderlich'
+'Incident description is required': 'Vorfall-Beschreibung ist erforderlich'
+'Incident category is required': 'Vorfall-Kategorie ist erforderlich'
+'Severity is required': 'Schweregrad ist erforderlich'
+'Severity must be one of: {{ choices }}': 'Schweregrad muss einer der folgenden sein: {{ choices }}'
+'Detection date is required': 'Erkennungsdatum ist erforderlich'
+'Reporter name is required': 'Name des Melders ist erforderlich'
+'Reporter name cannot exceed {{ limit }} characters': 'Name des Melders darf maximal {{ limit }} Zeichen lang sein'
+'Assignee name cannot exceed {{ limit }} characters': 'Name des Verantwortlichen darf maximal {{ limit }} Zeichen lang sein'
+'Data breach flag is required': 'Angabe zur Datenpanne ist erforderlich'
+'Notification required flag is required': 'Angabe zur Meldepflicht ist erforderlich'
+'NIS2 category must be one of: {{ choices }}': 'NIS2-Kategorie muss eine der folgenden sein: {{ choices }}'
+'Plan name is required': 'Planname ist erforderlich'
+'Business process is required': 'Geschäftsprozess ist erforderlich'
+'Activation criteria must be defined': 'Aktivierungskriterien müssen definiert werden'
+'Recovery procedures must be documented': 'Wiederherstellungsverfahren müssen dokumentiert werden'
+'Training title is required': 'Schulungstitel ist erforderlich'
+'Training type is required': 'Schulungstyp ist erforderlich'
+'Training type cannot exceed {{ limit }} characters': 'Schulungstyp darf maximal {{ limit }} Zeichen lang sein'
+'Scheduled date is required': 'Geplantes Datum ist erforderlich'
+'Trainer name is required': 'Name des Trainers ist erforderlich'
+'Trainer name cannot exceed {{ limit }} characters': 'Name des Trainers darf maximal {{ limit }} Zeichen lang sein'
+'Delivery method must be one of: {{ choices }}': 'Durchführungsart muss eine der folgenden sein: {{ choices }}'
+'Risk is required': 'Risiko ist erforderlich'
+'Title is required': 'Titel ist erforderlich'
+'Description is required': 'Beschreibung ist erforderlich'
+'Priority is required': 'Priorität ist erforderlich'
+'Priority must be one of: {{ choices }}': 'Priorität muss eine der folgenden sein: {{ choices }}'
+'Target completion date is required': 'Zieldatum ist erforderlich'
+'Completion percentage must be between {{ min }} and {{ max }}': 'Fertigstellungsgrad muss zwischen {{ min }} und {{ max }} liegen'
+'Change title is required': 'Änderungstitel ist erforderlich'
+'Justification is required': 'Begründung ist erforderlich'
+'Risk title is required': 'Risikotitel ist erforderlich'
+'Risk title cannot exceed {{ limit }} characters': 'Risikotitel darf maximal {{ limit }} Zeichen lang sein'
+'Risk description is required': 'Risikobeschreibung ist erforderlich'
+'Probability is required': 'Eintrittswahrscheinlichkeit ist erforderlich'
+'Probability must be between {{ min }} and {{ max }}': 'Eintrittswahrscheinlichkeit muss zwischen {{ min }} und {{ max }} liegen'
+'Impact is required': 'Schadensauswirkung ist erforderlich'
+'Impact must be between {{ min }} and {{ max }}': 'Schadensauswirkung muss zwischen {{ min }} und {{ max }} liegen'
+'Residual probability must be between {{ min }} and {{ max }}': 'Restwahrscheinlichkeit muss zwischen {{ min }} und {{ max }} liegen'
+'Residual impact must be between {{ min }} and {{ max }}': 'Restschadensauswirkung muss zwischen {{ min }} und {{ max }} liegen'
+'Treatment strategy is required': 'Behandlungsstrategie ist erforderlich'
+'Treatment strategy must be one of: {{ choices }}': 'Behandlungsstrategie muss eine der folgenden sein: {{ choices }}'
+'This permission name is already in use': 'Dieser Berechtigungsname wird bereits verwendet'
+'Asset name is required': 'Asset-Name ist erforderlich'
+'Asset name cannot exceed {{ limit }} characters': 'Asset-Name darf maximal {{ limit }} Zeichen lang sein'
+'Asset type is required': 'Asset-Typ ist erforderlich'
+'Asset type cannot exceed {{ limit }} characters': 'Asset-Typ darf maximal {{ limit }} Zeichen lang sein'
+'Asset owner is required': 'Asset-Verantwortlicher ist erforderlich'
+'Owner cannot exceed {{ limit }} characters': 'Verantwortlicher darf maximal {{ limit }} Zeichen lang sein'
+'Location cannot exceed {{ limit }} characters': 'Standort darf maximal {{ limit }} Zeichen lang sein'
+'Confidentiality value is required': 'Vertraulichkeitswert ist erforderlich'
+'Confidentiality value must be between {{ min }} and {{ max }}': 'Vertraulichkeitswert muss zwischen {{ min }} und {{ max }} liegen'
+'Integrity value is required': 'Integritätswert ist erforderlich'
+'Integrity value must be between {{ min }} and {{ max }}': 'Integritätswert muss zwischen {{ min }} und {{ max }} liegen'
+'Availability value is required': 'Verfügbarkeitswert ist erforderlich'
+'Availability value must be between {{ min }} and {{ max }}': 'Verfügbarkeitswert muss zwischen {{ min }} und {{ max }} liegen'
+'Data classification must be one of: {{ choices }}': 'Datenklassifikation muss eine der folgenden sein: {{ choices }}'
 # Flat keys for mapping validation
 'mapping.validation.source_requirement_required': 'Quell-Anforderung ist erforderlich.'
 'mapping.validation.target_requirement_required': 'Ziel-Anforderung ist erforderlich.'
@@ -522,25 +540,19 @@ prototype_protection.validation.level_invalid: 'Ungültiges Schutzniveau'
 'Control ID cannot exceed { limit } characters': 'Control-ID darf maximal { limit } Zeichen lang sein'
 'Control name cannot exceed { limit } characters': 'Control-Name darf maximal { limit } Zeichen lang sein'
 'Category cannot exceed { limit } characters': 'Kategorie darf maximal { limit } Zeichen lang sein'
-'Implementation status must be one of: { choices }': 'Implementierungsstatus muss einer der folgenden sein: { choices }'
 'Implementation percentage must be between { min } and { max }': 'Implementierungsgrad muss zwischen { min } und { max } liegen'
 'Responsible person cannot exceed { limit } characters': 'Verantwortliche Person darf maximal { limit } Zeichen lang sein'
 'Incident number cannot exceed { limit } characters': 'Vorfallnummer darf maximal { limit } Zeichen lang sein'
 'Title cannot exceed { limit } characters': 'Titel darf maximal { limit } Zeichen lang sein'
-'Severity must be one of: { choices }': 'Schweregrad muss einer der folgenden sein: { choices }'
-'Status must be one of: { choices }': 'Status muss einer der folgenden sein: { choices }'
 'Reporter name cannot exceed { limit } characters': 'Name des Melders darf maximal { limit } Zeichen lang sein'
 'Assignee name cannot exceed { limit } characters': 'Name des Beauftragten darf maximal { limit } Zeichen lang sein'
-'NIS2 category must be one of: { choices }': 'NIS2-Kategorie muss eine der folgenden sein: { choices }'
 'Training type cannot exceed { limit } characters': 'Schulungsart darf maximal { limit } Zeichen lang sein'
 'Trainer name cannot exceed { limit } characters': 'Trainer-Name darf maximal { limit } Zeichen lang sein'
-'Delivery method must be one of: { choices }': 'Durchführungsmethode muss eine der folgenden sein: { choices }'
 'Risk title cannot exceed { limit } characters': 'Risikotitel darf maximal { limit } Zeichen lang sein'
 'Probability must be between { min } and { max }': 'Wahrscheinlichkeit muss zwischen { min } und { max } liegen'
 'Impact must be between { min } and { max }': 'Auswirkung muss zwischen { min } und { max } liegen'
 'Residual probability must be between { min } and { max }': 'Restwahrscheinlichkeit muss zwischen { min } und { max } liegen'
 'Residual impact must be between { min } and { max }': 'Restauswirkung muss zwischen { min } und { max } liegen'
-'Treatment strategy must be one of: { choices }': 'Behandlungsstrategie muss eine der folgenden sein: { choices }'
 'Asset name cannot exceed { limit } characters': 'Asset-Name darf maximal { limit } Zeichen lang sein'
 'Asset type cannot exceed { limit } characters': 'Asset-Typ darf maximal { limit } Zeichen lang sein'
 'Owner cannot exceed { limit } characters': 'Eigentümer darf maximal { limit } Zeichen lang sein'
@@ -548,8 +560,7 @@ prototype_protection.validation.level_invalid: 'Ungültiges Schutzniveau'
 'Confidentiality value must be between { min } and { max }': 'Vertraulichkeitswert muss zwischen { min } und { max } liegen'
 'Integrity value must be between { min } and { max }': 'Integritätswert muss zwischen { min } und { max } liegen'
 'Availability value must be between { min } and { max }': 'Verfügbarkeitswert muss zwischen { min } und { max } liegen'
-'Data classification must be one of: { choices }': 'Datenklassifizierung muss eine der folgenden sein: { choices }'
-'TISAX information classification must be one of: { choices }': 'TISAX-Informationsklassifizierung muss eine der folgenden sein: { choices }'
+'TISAX information classification must be one of: {{ choices }}': 'TISAX-Informationsklassifizierung muss eine der folgenden sein: {{ choices }}'
 
 # App-specific validators (structured keys)
 supplier_criticality:
@@ -561,3 +572,258 @@ risk_approval_config:
         range: 'Der Wert muss im gültigen Bereich liegen'
 'Code must be lowercase alphanumeric/underscore only': 'Der Code darf nur Kleinbuchstaben, Zahlen und Unterstriche enthalten'
 'AI risk classification must be one of: prohibited, high_risk, limited_risk, minimal_risk': 'KI-Risikoklassifikation muss einer der folgenden Werte sein: verboten, hohes_risiko, begrenztes_risiko, minimales_risiko'
+'LkSG human rights risk score must be between {{ min }} and {{ max }}': 'LkSG-Menschenrechtsrisiko-Score muss zwischen {{ min }} und {{ max }} liegen'
+'LkSG environmental risk score must be between {{ min }} and {{ max }}': 'LkSG-Umweltrisiko-Score muss zwischen {{ min }} und {{ max }} liegen'
+'LkSG risk category must be one of: low, medium, high, critical': 'LkSG-Risikokategorie muss eine der folgenden sein: niedrig, mittel, hoch, kritisch'
+'Slug must be lowercase alphanumeric (with dashes/underscores).': 'Slug darf nur Kleinbuchstaben, Zahlen, Bindestriche und Unterstriche enthalten.'
+gstool_import:
+    upload:
+        file_type_error: 'Bitte eine XML-Datei hochladen.'
+
+# Form / Assert\Range / Assert\Regex / Datei-Upload-Validator-Meldungen
+'admin.workflows.validation.conditions_invalid_json': 'Auto-Progress-Bedingungen müssen gültiges JSON sein.'
+'import.error.must_equal_commit': 'Bitte COMMIT eingeben, um den Import zu bestätigen.'
+'import.upload.invalid_mime_type': 'Ungültiger Dateityp. Bitte XLSX-, CSV- oder JSON-Datei hochladen.'
+'import.upload.file_too_large': 'Datei zu groß. Maximale Größe ist {{ limit }} {{ suffix }}.'
+'bc_plans.error.rto_range': 'RTO (Recovery Time Objective) muss zwischen {{ min }} und {{ max }} Stunden liegen.'
+'bc_plans.error.rpo_range': 'RPO (Recovery Point Objective) muss zwischen {{ min }} und {{ max }} Stunden liegen.'
+'Must be a valid ROLE_ constant.': 'Muss eine gültige ROLE_-Konstante sein (z.B. ROLE_USER, ROLE_ADMIN).'
+
+# ─────────────────────────────────────────────────────────────────────────
+# S12 — Entity-Validator-Translation-Keys (Junior-ISB-Audit-2026-05-22)
+# Hardcoded EN messages in src/Entity/*.php converted to translation-keys.
+# Pattern: <entity_snake>.validation.<field>_<rule>
+# ─────────────────────────────────────────────────────────────────────────
+
+# Asset
+'asset.validation.name_required': 'Asset-Name ist erforderlich.'
+'asset.validation.name_max_length': 'Asset-Name darf maximal {{ limit }} Zeichen lang sein.'
+'asset.validation.asset_type_required': 'Asset-Typ ist erforderlich.'
+'asset.validation.asset_type_max_length': 'Asset-Typ darf maximal {{ limit }} Zeichen lang sein.'
+'asset.validation.ai_classification_invalid': 'KI-Risikoklassifikation muss einer der folgenden Werte sein: verboten, hohes_risiko, begrenztes_risiko, minimales_risiko.'
+'asset.validation.owner_max_length': 'Eigentümer darf maximal {{ limit }} Zeichen lang sein.'
+'asset.validation.location_max_length': 'Standort darf maximal {{ limit }} Zeichen lang sein.'
+'asset.validation.confidentiality_required': 'Vertraulichkeitswert ist erforderlich.'
+'asset.validation.confidentiality_range': 'Vertraulichkeitswert muss zwischen {{ min }} und {{ max }} liegen.'
+'asset.validation.integrity_required': 'Integritätswert ist erforderlich.'
+'asset.validation.integrity_range': 'Integritätswert muss zwischen {{ min }} und {{ max }} liegen.'
+'asset.validation.availability_required': 'Verfügbarkeitswert ist erforderlich.'
+'asset.validation.availability_range': 'Verfügbarkeitswert muss zwischen {{ min }} und {{ max }} liegen.'
+'asset.validation.monetary_value_positive': 'Monetärer Wert muss positiv oder null sein.'
+'asset.validation.data_classification_invalid': 'Datenklassifizierung muss eine der folgenden sein: {{ choices }}.'
+'asset.validation.tisax_classification_invalid': 'TISAX-Informationsklassifizierung muss eine der folgenden sein: {{ choices }}.'
+'asset.validation.status_required': 'Status ist erforderlich.'
+'asset.validation.status_invalid': 'Status muss einer der folgenden sein: {{ choices }}.'
+
+# BCExercise
+'bc_exercise.validation.name_required': 'Übungsname ist erforderlich.'
+'bc_exercise.validation.scope_required': 'Scope muss definiert sein.'
+'bc_exercise.validation.objectives_required': 'Übungsziele müssen definiert sein.'
+
+# BusinessContinuityPlan
+'bc_plan.validation.name_required': 'Planname ist erforderlich.'
+'bc_plan.validation.business_process_required': 'Geschäftsprozess ist erforderlich.'
+'bc_plan.validation.activation_criteria_required': 'Aktivierungskriterien müssen definiert sein.'
+'bc_plan.validation.recovery_procedures_required': 'Wiederherstellungsverfahren müssen dokumentiert sein.'
+
+# ChangeRequest
+'change_request.validation.title_required': 'Änderungstitel ist erforderlich.'
+'change_request.validation.description_required': 'Beschreibung ist erforderlich.'
+'change_request.validation.justification_required': 'Begründung ist erforderlich.'
+
+# Consent
+'consent.validation.data_subject_identifier_required': 'Betroffenen-Kennung ist erforderlich.'
+'consent.validation.data_subject_identifier_max_length': 'Betroffenen-Kennung darf maximal {{ limit }} Zeichen lang sein.'
+'consent.validation.identifier_type_required': 'Kennungstyp ist erforderlich.'
+'consent.validation.identifier_type_invalid': 'Ungültiger Kennungstyp.'
+'consent.validation.processing_activity_required': 'Verarbeitungstätigkeit ist erforderlich.'
+'consent.validation.granted_at_required': 'Erteilungsdatum ist erforderlich.'
+'consent.validation.consent_method_required': 'Einwilligungsmethode ist erforderlich.'
+'consent.validation.consent_method_invalid': 'Ungültige Einwilligungsmethode.'
+'consent.validation.consent_text_required': 'Einwilligungstext ist für den Nachweis erforderlich (DSGVO Art. 7 Abs. 1).'
+'consent.validation.consent_channel_invalid': 'Ungültiger Einwilligungskanal.'
+'consent.validation.status_invalid': 'Ungültiger Einwilligungsstatus.'
+'consent.validation.revocation_method_invalid': 'Ungültige Widerrufsmethode.'
+
+# Control
+'control.validation.control_id_required': 'Control-ID ist erforderlich.'
+'control.validation.control_id_max_length': 'Control-ID darf maximal {{ limit }} Zeichen lang sein.'
+'control.validation.control_id_format': 'Control-ID muss dem ISO 27001/27701/27017/27018 Format folgen (z. B. 5.1, A.5.1, B.8.2, 7.2.1, CLD.6.3).'
+'control.validation.name_required': 'Control-Name ist erforderlich.'
+'control.validation.name_max_length': 'Control-Name darf maximal {{ limit }} Zeichen lang sein.'
+'control.validation.description_required': 'Control-Beschreibung ist erforderlich.'
+'control.validation.category_required': 'Control-Kategorie ist erforderlich.'
+'control.validation.category_max_length': 'Kategorie darf maximal {{ limit }} Zeichen lang sein.'
+'control.validation.applicable_required': 'Anwendbarkeits-Flag ist erforderlich.'
+'control.validation.implementation_status_required': 'Implementierungsstatus ist erforderlich.'
+'control.validation.implementation_status_invalid': 'Implementierungsstatus muss einer der folgenden sein: {{ choices }}.'
+'control.validation.mythos_resilience_invalid': 'Mythos-Resilienz muss einer der folgenden Werte sein: standfest, degradiert, reibung, nicht_betroffen.'
+'control.validation.implementation_percentage_range': 'Implementierungsgrad muss zwischen {{ min }} und {{ max }} liegen.'
+'control.validation.responsible_person_max_length': 'Verantwortliche Person darf maximal {{ limit }} Zeichen lang sein.'
+
+# IdentityProvider
+'identity_provider.validation.slug_format': 'Slug darf nur Kleinbuchstaben, Zahlen, Bindestriche und Unterstriche enthalten.'
+
+# IdentityProviderRoleMapping
+'identity_provider_role_mapping.validation.role_format': 'Muss eine gültige ROLE_-Konstante sein (z. B. ROLE_USER, ROLE_ADMIN).'
+
+# Incident
+'incident.validation.number_required': 'Vorfallnummer ist erforderlich.'
+'incident.validation.number_max_length': 'Vorfallnummer darf maximal {{ limit }} Zeichen lang sein.'
+'incident.validation.title_required': 'Vorfall-Titel ist erforderlich.'
+'incident.validation.title_max_length': 'Titel darf maximal {{ limit }} Zeichen lang sein.'
+'incident.validation.description_required': 'Vorfall-Beschreibung ist erforderlich.'
+'incident.validation.category_required': 'Vorfall-Kategorie ist erforderlich.'
+'incident.validation.category_max_length': 'Kategorie darf maximal {{ limit }} Zeichen lang sein.'
+'incident.validation.severity_required': 'Schweregrad ist erforderlich.'
+'incident.validation.status_required': 'Status ist erforderlich.'
+'incident.validation.detected_at_required': 'Erkennungsdatum ist erforderlich.'
+'incident.validation.reported_by_max_length': 'Name des Melders darf maximal {{ limit }} Zeichen lang sein.'
+'incident.validation.assigned_to_max_length': 'Name des Bearbeiters darf maximal {{ limit }} Zeichen lang sein.'
+'incident.validation.data_breach_flag_required': 'Datenpanne-Flag ist erforderlich.'
+'incident.validation.notification_required_flag_required': 'Meldepflicht-Flag ist erforderlich.'
+'incident.validation.nis2_category_invalid': 'NIS2-Kategorie muss eine der folgenden sein: {{ choices }}.'
+
+# InterestedParty
+'interested_party.validation.name_required': 'Name der interessierten Partei ist erforderlich.'
+'interested_party.validation.requirements_required': 'Anforderungen müssen dokumentiert sein.'
+
+# InternalAudit
+'internal_audit.validation.number_required': 'Audit-Nummer ist erforderlich.'
+'internal_audit.validation.number_max_length': 'Audit-Nummer darf maximal {{ limit }} Zeichen lang sein.'
+'internal_audit.validation.title_required': 'Audit-Titel ist erforderlich.'
+'internal_audit.validation.title_max_length': 'Titel darf maximal {{ limit }} Zeichen lang sein.'
+'internal_audit.validation.scope_type_invalid': 'Scope-Typ muss einer der folgenden sein: {{ choices }}.'
+'internal_audit.validation.planned_date_required': 'Geplantes Datum ist erforderlich.'
+'internal_audit.validation.lead_auditor_max_length': 'Name des leitenden Auditors darf maximal {{ limit }} Zeichen lang sein.'
+'internal_audit.validation.status_required': 'Status ist erforderlich.'
+'internal_audit.validation.status_invalid': 'Status muss einer der folgenden sein: {{ choices }}.'
+
+# Permission
+'permission.validation.name_unique': 'Dieser Berechtigungsname wird bereits verwendet.'
+
+# Risk (additive — existing keys in risk.validation.* preserved above)
+'risk.validation.title_required': 'Risiko-Titel ist erforderlich.'
+'risk.validation.title_max_length': 'Risiko-Titel darf maximal {{ limit }} Zeichen lang sein.'
+'risk.validation.description_required': 'Risiko-Beschreibung ist erforderlich.'
+'risk.validation.probability_required': 'Eintrittswahrscheinlichkeit ist erforderlich.'
+'risk.validation.probability_range': 'Eintrittswahrscheinlichkeit muss zwischen {{ min }} und {{ max }} liegen.'
+'risk.validation.impact_required': 'Auswirkung ist erforderlich.'
+'risk.validation.impact_range': 'Auswirkung muss zwischen {{ min }} und {{ max }} liegen.'
+'risk.validation.residual_probability_range': 'Restwahrscheinlichkeit muss zwischen {{ min }} und {{ max }} liegen.'
+'risk.validation.residual_impact_range': 'Restauswirkung muss zwischen {{ min }} und {{ max }} liegen.'
+'risk.validation.status_required': 'Status ist erforderlich.'
+
+# RiskAppetite (additive)
+'risk_appetite.validation.category_max_length': 'Kategoriename darf maximal {{ limit }} Zeichen lang sein.'
+'risk_appetite.validation.max_acceptable_risk_required': 'Maximales akzeptables Risiko ist erforderlich.'
+'risk_appetite.validation.max_acceptable_risk_range': 'Maximales akzeptables Risiko muss zwischen {{ min }} und {{ max }} liegen.'
+'risk_appetite.validation.description_required': 'Beschreibung des Risikoappetits ist erforderlich.'
+
+# RiskTreatmentPlan (additive)
+'risk_treatment_plan.validation.risk_required': 'Risiko ist erforderlich.'
+'risk_treatment_plan.validation.title_required': 'Titel ist erforderlich.'
+'risk_treatment_plan.validation.title_max_length': 'Titel darf maximal {{ limit }} Zeichen lang sein.'
+'risk_treatment_plan.validation.description_required': 'Beschreibung ist erforderlich.'
+'risk_treatment_plan.validation.status_required': 'Status ist erforderlich.'
+'risk_treatment_plan.validation.status_invalid': 'Status muss einer der folgenden sein: {{ choices }}.'
+'risk_treatment_plan.validation.priority_required': 'Priorität ist erforderlich.'
+'risk_treatment_plan.validation.priority_invalid': 'Priorität muss eine der folgenden sein: {{ choices }}.'
+'risk_treatment_plan.validation.target_completion_date_required': 'Ziel-Fertigstellungsdatum ist erforderlich.'
+'risk_treatment_plan.validation.budget_positive': 'Budget muss positiv oder null sein.'
+'risk_treatment_plan.validation.completion_percentage_range': 'Fertigstellungsgrad muss zwischen {{ min }} und {{ max }} liegen.'
+
+# Role
+'role.validation.name_unique': 'Dieser Rollenname wird bereits verwendet.'
+
+# Supplier
+'supplier.validation.name_required': 'Lieferantenname ist erforderlich.'
+'supplier.validation.email_invalid': 'Ungültige E-Mail-Adresse.'
+'supplier.validation.service_description_required': 'Servicebeschreibung ist erforderlich.'
+'supplier.validation.lksg_human_rights_risk_score_range': 'LkSG-Menschenrechtsrisiko-Score muss zwischen {{ min }} und {{ max }} liegen.'
+'supplier.validation.lksg_environmental_risk_score_range': 'LkSG-Umweltrisiko-Score muss zwischen {{ min }} und {{ max }} liegen.'
+'supplier.validation.lksg_risk_category_invalid': 'LkSG-Risikokategorie muss eine der folgenden sein: niedrig, mittel, hoch, kritisch.'
+
+# SupplierCriticalityLevel (preserves existing supplier_criticality.validation.code_pattern in nested form)
+
+# SystemSettings
+'system_settings.validation.category_key_unique': 'Diese Einstellung existiert bereits in dieser Kategorie.'
+
+# Tenant
+'tenant.validation.code_unique': 'Dieser Organisations-Code wird bereits verwendet.'
+
+# Training (additive)
+'training.validation.title_required': 'Schulungstitel ist erforderlich.'
+'training.validation.title_max_length': 'Titel darf maximal {{ limit }} Zeichen lang sein.'
+'training.validation.training_type_required': 'Schulungsart ist erforderlich.'
+'training.validation.training_type_max_length': 'Schulungsart darf maximal {{ limit }} Zeichen lang sein.'
+'training.validation.scheduled_date_required': 'Geplantes Datum ist erforderlich.'
+'training.validation.duration_positive': 'Dauer muss eine positive Zahl sein.'
+'training.validation.trainer_max_length': 'Trainer-Name darf maximal {{ limit }} Zeichen lang sein.'
+'training.validation.attendee_count_positive': 'Teilnehmerzahl muss null oder positiv sein.'
+'training.validation.delivery_method_invalid': 'Durchführungsmethode muss eine der folgenden sein: {{ choices }}.'
+'training.validation.status_required': 'Status ist erforderlich.'
+'training.validation.status_invalid': 'Status muss einer der folgenden sein: {{ choices }}.'
+
+# User (email_unique kept as flat — nested forms above)
+'user.validation.email_unique': 'Es existiert bereits ein Konto mit dieser E-Mail-Adresse.'
+
+# Supplier (T10.10 — LEI ISO 17442 + NACE Rev.2 format)
+'supplier.validation.lei_code.format': 'LEI-Code muss 20 Zeichen lang sein: 18 alphanumerische + 2 Prüfziffern (ISO 17442).'
+'supplier.validation.nace_code.format': 'NACE-Code muss dem Format NN oder NN.NN entsprechen (EU NACE Rev.2).'
+
+# ─────────────────────────────────────────────────────────────────────────
+# S19 — Validator-Translation-Keys (missing-i18n-fix 2026-05-28)
+# Clusters: asset_sub_type, dora_exit_plan, dora_subcontractor,
+#           dora_data_flow, patch, tenant
+# ─────────────────────────────────────────────────────────────────────────
+
+# AssetSubType
+'asset_sub_type.validation.top_type_invalid': 'Ungültiger Haupttyp. Erlaubte Werte: hardware, software, database, personnel, location, service.'
+'asset_sub_type.validation.source_invalid': 'Ungültige Quelle. Erlaubte Werte: custom, seed-bsi-grundschutz, seed-tisax, seed-production-de-mittelstand.'
+
+# DoraExitPlan (DORA Art. 28 RT_06)
+'dora_exit_plan.validation.supplier_required': 'Lieferant ist erforderlich.'
+'dora_exit_plan.validation.trigger_required': 'Auslöser ist erforderlich.'
+'dora_exit_plan.validation.trigger_invalid': 'Ungültiger Auslöser. Erlaubte Werte: planned-renewal, concentration-risk, force-majeure, breach, insolvency.'
+'dora_exit_plan.validation.data_return_format_max': 'Das Format der Datenrückgabe darf maximal {{ limit }} Zeichen lang sein.'
+'dora_exit_plan.validation.migration_path_max': 'Der Migrationspfad darf maximal {{ limit }} Zeichen lang sein.'
+'dora_exit_plan.validation.duration_non_negative': 'Die geschätzte Dauer muss null oder positiv sein.'
+'dora_exit_plan.validation.cost_non_negative': 'Die geschätzten Kosten müssen null oder positiv sein.'
+
+# DoraSubcontractor (DORA Art. 28 RT_04)
+'dora_subcontractor.validation.parent_supplier_required': 'Übergeordneter Lieferant ist erforderlich.'
+'dora_subcontractor.validation.name_required': 'Name ist erforderlich.'
+'dora_subcontractor.validation.lei_length': 'Der LEI-Code muss genau 20 Zeichen lang sein (ISO 17442).'
+'dora_subcontractor.validation.lei_format': 'Ungültiges LEI-Format. Erlaubt sind 20 alphanumerische Großbuchstaben (ISO 17442).'
+'dora_subcontractor.validation.country_length': 'Der Ländercode muss genau 2 Zeichen lang sein (ISO 3166-1 alpha-2).'
+'dora_subcontractor.validation.country_format': 'Ungültiges Ländercode-Format. Erlaubt sind 2 Großbuchstaben (ISO 3166-1 alpha-2).'
+'dora_subcontractor.validation.tier_range': 'Die Ebene muss zwischen {{ min }} und {{ max }} liegen (2 = direkt, 5 = max. Tiefe).'
+'dora_subcontractor.validation.criticality_invalid': 'Ungültige Kritikalität. Erlaubte Werte: critical, important, standard.'
+'dora_subcontractor.validation.substitutability_invalid': 'Ungültige Substituierbarkeit. Erlaubte Werte: high, medium, low.'
+
+# DoraDataFlow (DORA Art. 28 RT_03)
+'dora_data_flow.validation.supplier_required': 'Lieferant ist erforderlich.'
+'dora_data_flow.validation.data_categories_required': 'Mindestens eine Datenkategorie ist erforderlich.'
+'dora_data_flow.validation.direction_required': 'Richtung ist erforderlich.'
+'dora_data_flow.validation.direction_invalid': 'Ungültige Richtung. Erlaubte Werte: inbound, outbound, bidirectional.'
+'dora_data_flow.validation.processing_purpose_too_long': 'Der Verarbeitungszweck darf maximal {{ limit }} Zeichen lang sein.'
+'dora_data_flow.validation.data_volume_too_long': 'Das Datenvolumen darf maximal {{ limit }} Zeichen lang sein.'
+'dora_data_flow.validation.receiving_country_format': 'Ungültiges Empfangsland-Format. Erlaubt sind 2 Großbuchstaben (ISO 3166-1 alpha-2).'
+
+# Patch (NIS2 Art. 21.2.d)
+'patch.validation.patch_id_required': 'Patch-ID ist erforderlich (z. B. KB5012345).'
+'patch.validation.title_required': 'Patch-Titel ist erforderlich.'
+'patch.validation.description_required': 'Patch-Beschreibung ist erforderlich.'
+'patch.validation.vendor_required': 'Hersteller ist erforderlich.'
+'patch.validation.product_required': 'Produkt ist erforderlich.'
+
+# Tenant (additive — missing format-keys)
+'tenant.validation.lei_code_format': 'LEI-Code muss 20 Zeichen lang sein: 18 alphanumerische Zeichen + 2 Prüfziffern (ISO 17442).'
+'tenant.validation.reporting_currency_format': 'Berichtswährung muss einem gültigen ISO 4217-Währungscode entsprechen (z. B. EUR, USD).'
+
+# TISAX VDA-ISA Import — Constraint-Meldungen (Validator-Domain)
+'tisax.import.upload.required': 'Bitte wählen Sie eine Workbook-Datei aus.'
+'tisax.import.upload.xlsx_only': 'Nur XLSX-Dateien werden akzeptiert.'
+'tisax.import.upload.too_large': 'Die Datei darf 10 MB nicht überschreiten.'
+'tisax.import.disclaimer.must_confirm': 'Sie müssen die Lizenz-Compliance bestätigen, bevor Sie fortfahren.'

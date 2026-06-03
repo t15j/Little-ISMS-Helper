@@ -7,6 +7,7 @@ namespace App\Service;
 use App\Entity\AuditFinding;
 use App\Entity\CorrectiveAction;
 use App\Entity\Tenant;
+use App\Enum\CorrectiveActionStatus;
 use App\Model\JourneyPhase;
 use App\Model\JourneyProgress;
 use App\Repository\AssetRepository;
@@ -27,7 +28,7 @@ use App\Repository\RiskRepository;
  * Maps the 7 core phases of an ISO 27001 implementation to measurable
  * completion criteria drawn from existing entities/repositories.
  */
-class ImplementationJourneyService
+final class ImplementationJourneyService
 {
     public function __construct(
         private readonly ISMSContextRepository $ismsContextRepository,
@@ -143,7 +144,7 @@ class ImplementationJourneyService
                 'key'             => 'context',
                 'labelKey'        => 'journey.phase.context',
                 'isoRef'          => '4.1-4.3',
-                'icon'            => 'diagram-2',
+                'icon'            => 'nav-process',
                 'route'           => 'app_context_index',
                 'prerequisiteKey' => null,
             ],
@@ -151,7 +152,7 @@ class ImplementationJourneyService
                 'key'             => 'assets',
                 'labelKey'        => 'journey.phase.assets',
                 'isoRef'          => '8.1',
-                'icon'            => 'hdd-network',
+                'icon'            => 'asset-network',
                 'route'           => 'app_asset_index',
                 'prerequisiteKey' => 'context',
             ],
@@ -159,7 +160,7 @@ class ImplementationJourneyService
                 'key'             => 'risks',
                 'labelKey'        => 'journey.phase.risks',
                 'isoRef'          => '6.1',
-                'icon'            => 'exclamation-triangle',
+                'icon'            => 'status-warning',
                 'route'           => 'app_risk_index',
                 'prerequisiteKey' => 'assets',
             ],
@@ -175,7 +176,7 @@ class ImplementationJourneyService
                 'key'             => 'emergency',
                 'labelKey'        => 'journey.phase.emergency',
                 'isoRef'          => 'A.5.29-A.5.30',
-                'icon'            => 'hospital',
+                'icon'            => 'recovery',
                 'route'           => 'app_bcm_index',
                 'prerequisiteKey' => 'risks',
             ],
@@ -183,7 +184,7 @@ class ImplementationJourneyService
                 'key'             => 'evidence',
                 'labelKey'        => 'journey.phase.evidence',
                 'isoRef'          => '9.2-9.3',
-                'icon'            => 'clipboard-check',
+                'icon'            => 'nav-clipboard-check',
                 'route'           => 'app_audit_index',
                 'prerequisiteKey' => 'controls',
             ],
@@ -191,7 +192,7 @@ class ImplementationJourneyService
                 'key'             => 'improvement',
                 'labelKey'        => 'journey.phase.improvement',
                 'isoRef'          => '10.1-10.2',
-                'icon'            => 'arrow-repeat',
+                'icon'            => 'util-refresh',
                 'route'           => 'app_corrective_action_index',
                 'prerequisiteKey' => 'evidence',
             ],
@@ -239,7 +240,7 @@ class ImplementationJourneyService
             ->where('ca.tenant = :tenant')
             ->andWhere('ca.status IN (:statuses)')
             ->setParameter('tenant', $tenant)
-            ->setParameter('statuses', [CorrectiveAction::STATUS_PLANNED, CorrectiveAction::STATUS_IN_PROGRESS])
+            ->setParameter('statuses', [CorrectiveActionStatus::Planned->value, CorrectiveActionStatus::InProgress->value])
             ->getQuery()
             ->getSingleScalarResult();
 

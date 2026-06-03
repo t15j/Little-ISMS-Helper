@@ -37,3 +37,20 @@
 
 /* FairyAurora Print-Styles — @media print Neutral-Fallback (Plan § 23) */
 @import './styles/fairy-aurora-print.css';
+
+/* Admin Panel — Hub-Card, Permission-Matrix, Audit-Row, API-Key, Service-Tile (DS § Admin Panel) */
+@import './styles/admin-panel.css';
+
+/* Policy-Wizard W7-E — Mobile responsive Bulk-Approval-Inbox enhancements */
+@import './styles/policy-wizard-mobile.css';
+
+/* Policy-Doc — 5-slot ISMS-policy-document template (cover/toc/history/body/signature) */
+@import "./styles/policy-doc.css";
+/* Report-Doc 5-slot template — sister stylesheet, used by templates/_components/_fa_report_doc.html.twig */
+@import "./styles/report-doc.css";
+
+/* GDPR Data-Breach Wizard Modal — Aurora v4 conformant (BEM .gdpr-wizard__*) */
+@import "./styles/gdpr-wizard.css";
+
+/* FairyAurora v4.0 — fa-modal canonical shell (confirm + settings modes) */
+@import "./styles/fa-modal.css";

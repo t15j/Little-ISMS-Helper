@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\Asset;
 use App\Entity\Control;
-use App\Entity\Person;
+use App\Entity\Department;
 use App\Entity\ProcessingActivity;
-use App\Entity\User;
+use App\Entity\Supplier;
+use App\Repository\DepartmentRepository;
+use App\Form\Trait\ModuleAwareFormTrait;
+use App\Form\Trait\OwnerPickerFormTrait;
+use App\Form\Type\JsonStructuredType;
+use App\Repository\SupplierRepository;
+use App\Service\ModuleConfigurationService;
+use App\Service\TenantContext;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
@@ -26,8 +34,17 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * Comprehensive form for GDPR Art. 30 VVT entry.
  * Organized in logical sections matching Art. 30(1) structure.
  */
-class ProcessingActivityType extends AbstractType
+final class ProcessingActivityType extends AbstractType implements SectionMapInterface
 {
+    use ModuleAwareFormTrait;
+    use OwnerPickerFormTrait;
+
+    public function __construct(
+        private readonly ModuleConfigurationService $moduleConfiguration,
+        private readonly TenantContext $tenantContext,
+    ) {
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
@@ -61,8 +78,12 @@ class ProcessingActivityType extends AbstractType
                     'processing_activity.purpose.other' => 'other',
                 ],
                 'multiple' => true,
-                'required' => true,
-                'attr' => ['class' => 'select2'],
+                // required=false: drops browser HTML5 `required` attr. TomSelect hides
+                // the native <select tabindex="-1"> so the browser cannot focus it for
+                // the error tooltip ("not focusable" console error). Symfony-level
+                // NotBlank constraint on the entity still enforces the requirement.
+                'required' => false,
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
 
@@ -85,7 +106,7 @@ class ProcessingActivityType extends AbstractType
                 ],
                 'multiple' => true,
                 'required' => true,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
             ->add('estimatedDataSubjectsCount', IntegerType::class, [
@@ -114,7 +135,7 @@ class ProcessingActivityType extends AbstractType
                 ],
                 'multiple' => true,
                 'required' => true,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
             ->add('processesSpecialCategories', ChoiceType::class, [
@@ -144,7 +165,7 @@ class ProcessingActivityType extends AbstractType
                 'multiple' => true,
                 'required' => false,
                 'attr' => [
-                    'class' => 'select2',
+                    'data-controller' => 'tom-select',
                     'data-depends-on' => 'processing_activity_processesSpecialCategories',
                     'data-depends-on-value' => '1',
                 ],
@@ -181,7 +202,7 @@ class ProcessingActivityType extends AbstractType
                 ],
                 'multiple' => true,
                 'required' => false,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
             ->add('recipientDetails', TextareaType::class, [
@@ -220,7 +241,7 @@ class ProcessingActivityType extends AbstractType
                 ],
                 'multiple' => true,
                 'required' => false,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
             ->add('transferSafeguards', ChoiceType::class, [
@@ -239,16 +260,19 @@ class ProcessingActivityType extends AbstractType
                     'processing_activity.transfer_safeguard.vital_interests' => 'vital_interests',
                 ],
                 'required' => false,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
 
             // ============================================================================
             // Retention Periods (Art. 30(1)(f))
+            // Junior-ISB-Audit-2026-05-22 C2-02: retentionPeriodDays is canonical
+            // (numeric, machine-readable). retentionPeriod is the qualitative
+            // justification (gesetzliche Frist, Vertrag, …).
             // ============================================================================
             ->add('retentionPeriod', TextareaType::class, [
-                'label' => 'processing_activity.form.retention_period',
-                'help' => 'processing_activity.help.retention_period',
+                'label' => 'processing_activity.form.retention_reason',
+                'help' => 'processing_activity.help.retention_reason',
                 'required' => true,
                 'attr' => ['rows' => 2],
             ])
@@ -266,11 +290,14 @@ class ProcessingActivityType extends AbstractType
 
             // ============================================================================
             // Technical and Organizational Measures (Art. 30(1)(g))
+            // Junior-ISB-Audit-2026-05-22 C2-03: TOMs textarea = qualitative description,
+            // implementedControls M:N = structured evidence (ISO 27001 controls).
+            // Cross-field validator on the entity ensures at least one form is present.
             // ============================================================================
             ->add('technicalOrganizationalMeasures', TextareaType::class, [
                 'label' => 'processing_activity.form.technical_organizational_measures',
                 'help' => 'processing_activity.help.technical_organizational_measures',
-                'required' => true,
+                'required' => false,
                 'attr' => ['rows' => 4],
             ])
             ->add('implementedControls', EntityType::class, [
@@ -280,12 +307,30 @@ class ProcessingActivityType extends AbstractType
                 'choice_label' => fn(Control $control): string => $control->getControlId() . ' - ' . $control->getName(),
                 'multiple' => true,
                 'required' => false,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
+            ])
+            // V3 W2-Bug3 — linked Assets (M:N). High-risk asset
+            // classifications (confidential / restricted) auto-trigger
+            // a DPIA suggestion via AutoReactionDpiaSuggestListener.
+            // Uses `field:` + `help:` keys (same convention as implemented_controls).
+            ->add('assets', EntityType::class, [
+                'label' => 'processing_activity.field.assets',
+                'help' => 'processing_activity.help.assets',
+                'class' => Asset::class,
+                'choice_label' => 'name',
+                'multiple' => true,
+                'required' => false,
+                'query_builder' => static function ($repo) {
+                    return $repo->createQueryBuilder('a')->orderBy('a.name', 'ASC');
+                },
+                'attr' => ['data-controller' => 'tom-select'],
             ])
 
             // ============================================================================
             // Legal Basis (Art. 6)
             // ============================================================================
+            // @no-module-gate-required: ProcessingActivity (VVT) is the canonical GDPR form —
+            //   only rendered behind privacy module. Per-field gating would be redundant.
             ->add('legalBasis', ChoiceType::class, [
                 'label' => 'processing_activity.form.legal_basis',
                 'help' => 'processing_activity.help.legal_basis',
@@ -298,15 +343,17 @@ class ProcessingActivityType extends AbstractType
                     'processing_activity.legal_basis.legitimate_interests' => 'legitimate_interests',
                 ],
                 'required' => true,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
+            // @no-module-gate-required: see legalBasis above — VVT form is privacy-scoped.
             ->add('legalBasisDetails', TextareaType::class, [
                 'label' => 'processing_activity.form.legal_basis_details',
                 'help' => 'processing_activity.help.legal_basis_details',
                 'required' => false,
                 'attr' => ['rows' => 3],
             ])
+            // @no-module-gate-required: see legalBasis above — VVT form is privacy-scoped.
             ->add('legalBasisSpecialCategories', ChoiceType::class, [
                 'label' => 'processing_activity.form.legal_basis_special_categories',
                 'help' => 'processing_activity.help.legal_basis_special_categories',
@@ -323,79 +370,46 @@ class ProcessingActivityType extends AbstractType
                     'processing_activity.legal_basis_special.research_statistics' => 'research_statistics',
                 ],
                 'required' => false,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
 
             // ============================================================================
             // Organizational Details
             // ============================================================================
+            // S18 B3: structured FK to Department master-data — preferred over legacy freetext.
+            ->add('responsibleDepartmentEntity', EntityType::class, [
+                'class' => Department::class,
+                'label' => 'processing_activity.field.responsible_department_entity',
+                'help' => 'processing_activity.help.responsible_department_entity',
+                'required' => false,
+                'placeholder' => '—',
+                'choice_label' => function (Department $d): string {
+                    return $d->getCode() !== null && $d->getCode() !== ''
+                        ? sprintf('%s (%s)', (string) $d->getName(), $d->getCode())
+                        : (string) $d->getName();
+                },
+                'query_builder' => function (DepartmentRepository $repo) {
+                    $tenant = $this->tenantContext->getCurrentTenant();
+                    $queryBuilder = $repo->createQueryBuilder('d')
+                        ->andWhere('d.isActive = :active')
+                        ->setParameter('active', true)
+                        ->orderBy('d.name', 'ASC');
+                    if ($tenant !== null) {
+                        $queryBuilder->andWhere('d.tenant = :tenant')->setParameter('tenant', $tenant);
+                    }
+                    return $queryBuilder;
+                },
+                'attr' => ['data-controller' => 'tom-select'],
+            ])
+            // @deprecated since 2026-05-25 (S18 B3) — kept for legacy data display only.
+            //   Structured FK above is preferred. Will be removed once backfill is done.
+            // @legacy-freetext: deprecation-period; canonical EntityType<Department> above
             ->add('responsibleDepartment', TextType::class, [
                 'label' => 'processing_activity.form.responsible_department',
                 'help' => 'processing_activity.help.responsible_department',
                 'required' => false,
             ])
-            ->add('contactPersonUser', EntityType::class, [
-                'label' => 'processing_activity.form.contact_person',
-                'help' => 'processing_activity.help.contact_person',
-                'class' => User::class,
-                'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
-                'required' => false,
-                'attr' => ['class' => 'select2'],
-            ])
-            ->add('contactPerson', EntityType::class, [
-                'label' => 'processing_activity.form.contact_person_person',
-                'help' => 'processing_activity.help.contact_person_person',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'placeholder' => 'processing_activity.placeholder.contact_person_person',
-                'attr' => ['class' => 'form-select'],
-            ])
-            ->add('contactDeputyPersons', EntityType::class, [
-                'label' => 'processing_activity.form.contact_deputies',
-                'help' => 'processing_activity.help.contact_deputies',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'multiple' => true,
-                'expanded' => false,
-                'attr' => [
-                    'class' => 'form-select',
-                    'data-controller' => 'tom-select',
-                ],
-            ])
-            ->add('dataProtectionOfficer', EntityType::class, [
-                'label' => 'processing_activity.form.data_protection_officer',
-                'help' => 'processing_activity.help.data_protection_officer',
-                'class' => User::class,
-                'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
-                'required' => false,
-                'attr' => ['class' => 'select2'],
-            ])
-            ->add('dataProtectionOfficerPerson', EntityType::class, [
-                'label' => 'processing_activity.form.data_protection_officer_person',
-                'help' => 'processing_activity.help.data_protection_officer_person',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'placeholder' => 'processing_activity.placeholder.data_protection_officer_person',
-                'attr' => ['class' => 'form-select'],
-            ])
-            ->add('dataProtectionOfficerDeputyPersons', EntityType::class, [
-                'label' => 'processing_activity.form.data_protection_officer_deputies',
-                'help' => 'processing_activity.help.data_protection_officer_deputies',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'multiple' => true,
-                'expanded' => false,
-                'attr' => [
-                    'class' => 'form-select',
-                    'data-controller' => 'tom-select',
-                ],
-            ])
-
             // ============================================================================
             // Processors (Art. 28)
             // ============================================================================
@@ -424,6 +438,23 @@ class ProcessingActivityType extends AbstractType
                 'expanded' => true,
                 'required' => true,
                 'choice_translation_domain' => 'privacy',
+            ])
+            // Junior-ISB-Audit-2026-05-22 M-08: DSGVO Art. 26 Joint-Controller-Doku
+            // Joint controllers are typically EXTERNAL partner organisations
+            // (other legal entities the data is jointly controlled with), so a
+            // structured JSON list is the canonical shape — not an M2M to Tenant.
+            // Art. 26(1) requires the arrangement (responsibilities split), Art. 26(2)
+            // requires the essence to be made available to data subjects.
+            ->add('jointControllerDetails', JsonStructuredType::class, [
+                'label' => 'processing_activity.form.joint_controller_details',
+                'help' => 'processing_activity.help.joint_controller_details_json',
+                'required' => false,
+                'attr' => [
+                    'rows' => 6,
+                    'data-depends-on' => 'processing_activity_isJointController',
+                    'data-depends-on-value' => '1',
+                    'placeholder' => 'processing_activity.placeholder.joint_controller_details',
+                ],
             ])
 
             // ============================================================================
@@ -467,7 +498,7 @@ class ProcessingActivityType extends AbstractType
                     'processing_activity.risk_level.critical' => 'critical',
                 ],
                 'required' => false,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
 
@@ -510,22 +541,34 @@ class ProcessingActivityType extends AbstractType
                 ],
                 'multiple' => true,
                 'required' => false,
-                'attr' => ['class' => 'select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'choice_translation_domain' => 'privacy',
             ])
 
             // ============================================================================
             // Status & Dates
             // ============================================================================
+            // S3 P-4: migrated from legacy 3-stage (draft/active/archived) to canonical
+            // 5-stage lifecycle per LifecycleRegistry::STANDARD_5_STAGE. Legacy `active`
+            // values were UPDATEd to `published` by the consolidated data-migration.
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix) ──────────────
+            // Owned by `processing_activity_lifecycle`. Transitions via
+            // LifecycleService::transition() only.
             ->add('status', ChoiceType::class, [
                 'label' => 'processing_activity.form.status',
-                'help' => 'processing_activity.help.status',
+                'help' => 'processing_activity.help.status_readonly',
                 'choices' => [
-                    'processing_activity.status.draft' => 'draft',
-                    'processing_activity.status.active' => 'active',
-                    'processing_activity.status.archived' => 'archived',
+                    'processing_activity.status.draft'     => 'draft',
+                    'processing_activity.status.in_review' => 'in_review',
+                    'processing_activity.status.approved'  => 'approved',
+                    'processing_activity.status.published' => 'published',
+                    'processing_activity.status.archived'  => 'archived',
                 ],
-                'required' => true,
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
                 'choice_translation_domain' => 'privacy',
             ])
             ->add('startDate', DateType::class, [
@@ -547,6 +590,165 @@ class ProcessingActivityType extends AbstractType
                 'required' => false,
             ])
         ;
+
+        // Junior-ISB-Audit-2026-05-22 K-02: Art. 28 DSGVO Auftragsverarbeiter-Dokumentation
+        // M2M ProcessingActivity ↔ Supplier — exposes the existing entity relationship
+        // (src/Entity/ProcessingActivity.php::$processorSuppliers) so DSGVO Art. 30(1)(d)
+        // + Art. 28 documentation is fillable from the VVT form. Module-gated to `privacy`
+        // per CLAUDE.md "Module-Awareness" convention.
+        if ($this->isModuleActive('privacy')) {
+            $builder->add('processorSuppliers', EntityType::class, [
+                'label' => 'processing_activity.field.processor_suppliers',
+                'help' => 'processing_activity.help.processor_suppliers',
+                'class' => Supplier::class,
+                'choice_label' => 'name',
+                'multiple' => true,
+                'by_reference' => false,
+                'required' => false,
+                'query_builder' => function (SupplierRepository $r) {
+                    return $r->createQueryBuilder('s')
+                        ->where('s.tenant = :tenant')
+                        ->setParameter('tenant', $this->tenantContext->getCurrentTenant())
+                        ->orderBy('s.name', 'ASC');
+                },
+                'attr' => ['data-controller' => 'tom-select'],
+            ]);
+        }
+
+        // S4 P-1 Wave-2 — OwnerPicker rollout (P-1).
+        // Contact-Person compound slot: contactPersonUser (User) +
+        // contactPerson (Person) + contactDeputyPersons (Multi-Person).
+        // No legacy free-text exists on ProcessingActivity → with_legacy=false.
+        // Slot identity matches existing entity fields so the validator
+        // (validateContactPersonSlot) continues to function unchanged.
+        $this->addOwnerPicker($builder, [
+            'field_prefix'   => 'contact',
+            'user_field'     => 'contactPersonUser',
+            'person_field'   => 'contactPerson',
+            'deputies_field' => 'contactDeputyPersons',
+            'label_user'     => 'processing_activity.form.contact_person',
+            'label_person'   => 'processing_activity.form.contact_person_person',
+            'label_deputies' => 'processing_activity.form.contact_deputies',
+            'help_user'      => 'processing_activity.help.contact_person',
+            'help_person'    => 'processing_activity.help.contact_person_person',
+            'help_deputies'  => 'processing_activity.help.contact_deputies',
+            'placeholder_person' => 'processing_activity.placeholder.contact_person_person',
+            'with_deputies'  => true,
+            'with_legacy'    => false,
+        ]);
+
+        // DPO compound slot — DPO-Modul-Gate: `dpoSlot` nur sichtbar wenn `privacy`-Modul
+        // aktiv (S2-Pattern). The validator (validateDpoSlot) keeps working because
+        // the entity fields are unchanged; the validator only fires when the form
+        // actually built the DPO fields (otherwise both getters return null and
+        // the violation would fire unintentionally — see validateDpoSlot which
+        // checks both for null before raising).
+        if ($this->isModuleActive('privacy')) {
+            $this->addOwnerPicker($builder, [
+                'field_prefix'   => 'dpo',
+                'user_field'     => 'dataProtectionOfficer',
+                'person_field'   => 'dataProtectionOfficerPerson',
+                'deputies_field' => 'dataProtectionOfficerDeputyPersons',
+                'label_user'     => 'processing_activity.form.data_protection_officer',
+                'label_person'   => 'processing_activity.form.data_protection_officer_person',
+                'label_deputies' => 'processing_activity.form.data_protection_officer_deputies',
+                'help_user'      => 'processing_activity.help.data_protection_officer',
+                'help_person'    => 'processing_activity.help.data_protection_officer_person',
+                'help_deputies'  => 'processing_activity.help.data_protection_officer_deputies',
+                'placeholder_person' => 'processing_activity.placeholder.data_protection_officer_person',
+                'with_deputies'  => true,
+                'with_legacy'    => false,
+            ]);
+        }
+    }
+
+    /**
+     * S4 Foundation P-2 SectionPolicy — covers ALL fields matching Art. 30(1) structure.
+     * DPO fields (privacy-gated) are included so the section-map is always complete.
+     * Fields not built by buildForm() are silently ignored by _auto_form.html.twig.
+     *
+     * Sections (DSGVO Art. 30 · Verarbeitungstätigkeit):
+     * - overview:        Art. 30(1)(a) — name, status, description
+     * - purposes:        Art. 30(1)(a) — purposes, data sources
+     * - legal_basis:     Art. 6 — legal basis + details for Art. 9
+     * - data_categories: Art. 30(1)(b-c) — data subjects, personal data categories
+     * - recipients:      Art. 30(1)(d-e) — recipients, third-country transfers
+     * - retention:       Art. 30(1)(f) — retention period + legal basis
+     * - measures:        Art. 30(1)(g) — technical/organizational measures + assets
+     * - audit_metadata:  Risk, DPIA, automated decisions, processors, schedule, contacts
+     *
+     * @return array<string, list<string>>
+     */
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview' => [
+                'name',
+                'status',
+                'description',
+                'responsibleDepartmentEntity',
+                'responsibleDepartment',
+            ],
+            'purposes' => [
+                'purposes',
+                'dataSources',
+                'startDate',
+                'endDate',
+                'nextReviewDate',
+            ],
+            'legal_basis' => [
+                'legalBasis',
+                'legalBasisDetails',
+                'legalBasisSpecialCategories',
+            ],
+            'data_categories' => [
+                'dataSubjectCategories',
+                'estimatedDataSubjectsCount',
+                'personalDataCategories',
+                'processesSpecialCategories',
+                'specialCategoriesDetails',
+                'processesCriminalData',
+            ],
+            'recipients' => [
+                'recipientCategories',
+                'recipientDetails',
+                'hasThirdCountryTransfer',
+                'thirdCountries',
+                'transferSafeguards',
+                'involvesProcessors',
+                // Junior-ISB-Audit-2026-05-22 K-02: Art. 28 DSGVO Auftragsverarbeiter-Dokumentation
+                'processorSuppliers',
+                'isJointController',
+                // Junior-ISB-Audit-2026-05-22 M-08: DSGVO Art. 26 Joint-Controller-Doku
+                'jointControllerDetails',
+            ],
+            'retention' => [
+                'retentionPeriod',
+                'retentionPeriodDays',
+                'retentionLegalBasis',
+            ],
+            'measures' => [
+                'technicalOrganizationalMeasures',
+                'implementedControls',
+                'assets',
+            ],
+            'audit_metadata' => [
+                'isHighRisk',
+                'dpiaCompleted',
+                'dpiaDate',
+                'riskLevel',
+                'hasAutomatedDecisionMaking',
+                'automatedDecisionMakingDetails',
+                // contact person slot (OwnerPickerFormTrait — always built)
+                'contactPersonUser',
+                'contactPerson',
+                'contactDeputyPersons',
+                // DPO slot (privacy module — conditionally built)
+                'dataProtectionOfficer',
+                'dataProtectionOfficerPerson',
+                'dataProtectionOfficerDeputyPersons',
+            ],
+        ];
     }
 
     public function configureOptions(OptionsResolver $resolver): void
@@ -579,6 +781,12 @@ class ProcessingActivityType extends AbstractType
     public function validateDpoSlot(?ProcessingActivity $entity, ExecutionContextInterface $context): void
     {
         if ($entity === null) {
+            return;
+        }
+        // Module-gating: DPO slot is only validated when the `privacy` module
+        // is active (S2-Pattern). When privacy is off, the form does not build
+        // the DPO fields at all — no point in raising the violation.
+        if (!$this->isModuleActive('privacy')) {
             return;
         }
         if ($entity->getDataProtectionOfficer() === null && $entity->getDataProtectionOfficerPerson() === null) {

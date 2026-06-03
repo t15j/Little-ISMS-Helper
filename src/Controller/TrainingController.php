@@ -5,29 +5,52 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use Exception;
+use App\Controller\Trait\BulkActionTrait;
 use App\Entity\Training;
+use App\Entity\TrainingParticipation;
+use App\Enum\TrainingStatus;
+use App\Entity\User;
 use App\Form\TrainingType;
+use App\Repository\TrainingParticipationRepository;
 use App\Repository\TrainingRepository;
+use App\Repository\UserRepository;
+use App\Service\AuditLogger;
+use App\Service\Clone\TrainingCloner;
+use App\Service\FileUploadSecurityService;
 use App\Service\TenantContext;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 class TrainingController extends AbstractController
 {
+    use BulkActionTrait;
+
     public function __construct(
         private readonly TrainingRepository $trainingRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly TranslatorInterface $translator,
         private readonly Security $security,
-        private readonly TenantContext $tenantContext
+        private readonly TenantContext $tenantContext,
+        private readonly ?TrainingParticipationRepository $participationRepository = null,
+        private readonly ?UserRepository $userRepository = null,
+        private readonly ?AuditLogger $auditLogger = null,
+        // Junior-ISB-Audit-2026-05-22 9.5: File-Upload statt Freitext-Pfade.
+        private readonly ?FileUploadSecurityService $fileUploadSecurityService = null,
+        private readonly ?string $projectDir = null,
+        private readonly ?TrainingCloner $trainingCloner = null,
     ) {}
-    #[Route('/training/', name: 'app_training_index')]
+    #[Route('/training', name: 'app_training_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
         $user = $this->security->getUser();
@@ -54,7 +77,7 @@ class TrainingController extends AbstractController
         $statistics = [
             'total' => count($trainings),
             'upcoming' => count($upcoming),
-            'completed' => count(array_filter($trainings, fn(Training $training): bool => $training->getStatus() === 'completed')),
+            'completed' => count(array_filter($trainings, fn(Training $training): bool => $training->getStatus() === TrainingStatus::Completed->value)),
             'mandatory' => count(array_filter($trainings, fn(Training $training): bool => $training->isMandatory())),
         ];
 
@@ -74,7 +97,7 @@ class TrainingController extends AbstractController
             'detailedStats' => $detailedStats,
         ]);
     }
-    #[Route('/training/new', name: 'app_training_new')]
+    #[Route('/training/new', name: 'app_training_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
@@ -85,18 +108,41 @@ class TrainingController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
+            // Junior-ISB-Audit-2026-05-22 9.5: persist uploaded material files.
+            $this->processMaterialFileUploads($training, $form->get('materialFiles')->getData());
+
             $this->entityManager->persist($training);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('training.success.created'));
+            // P-15 DataReuse: sync participantUsers → TrainingParticipation rows.
+            $this->syncParticipantUsersToParticipationRows($training);
+
+            $this->addFlash('success', $this->translator->trans('training.success.created', [], 'messages'));
             return $this->redirectToRoute('app_training_show', ['id' => $training->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('training/new.html.twig', [
             'training' => $training,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * Trainings have no blocking FK relations — returns empty dependencies.
+     */
+    #[Route('/training/bulk-delete-check', name: 'app_training_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = (array) ($data['ids'] ?? []);
+        return new JsonResponse(['dependencies' => [], 'checked_count' => count($ids)]);
+    }
+
     #[Route('/training/bulk-delete', name: 'app_training_bulk_delete', methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function bulkDelete(Request $request): Response
@@ -154,14 +200,48 @@ class TrainingController extends AbstractController
             'message' => "$deleted trainings deleted successfully"
         ]);
     }
-    #[Route('/training/{id}', name: 'app_training_show', requirements: ['id' => '\d+'])]
+    #[Route('/training/{id}', name: 'app_training_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Training $training): Response
     {
         return $this->render('training/show.html.twig', [
             'training' => $training,
         ]);
     }
-    #[Route('/training/{id}/edit', name: 'app_training_edit', requirements: ['id' => '\d+'])]
+    /**
+     * Clone a Training (C4-C1 — Klon-Funktionen). Open to ROLE_USER. Keeps
+     * content template (trainer, materials, control/requirement coverage),
+     * resets schedule + attendance data.
+     */
+    #[Route('/training/{id}/clone', name: 'app_training_clone', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function clone(Request $request, Training $training): Response
+    {
+        if (!$this->isCsrfTokenValid('clone_training_' . $training->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+        if ($this->trainingCloner === null) {
+            throw $this->createNotFoundException('Training clone service is not available.');
+        }
+
+        $clone = $this->trainingCloner->clone(
+            $training,
+            null,
+            trim((string) $request->request->get('title_override', '')) ?: null,
+        );
+        $this->entityManager->flush();
+
+        $this->auditLogger?->logCreate(
+            entityType: 'Training',
+            entityId: $clone->getId(),
+            newValues: ['cloned_from_id' => $training->getId(), 'title' => $clone->getTitle()],
+            description: 'Cloned from Training #' . $training->getId(),
+        );
+
+        $this->addFlash('success', $this->translator->trans('training.clone.success', [], 'training'));
+        return $this->redirectToRoute('app_training_edit', ['id' => $clone->getId()]);
+    }
+
+    #[Route('/training/{id}/edit', name: 'app_training_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, Training $training): Response
     {
@@ -169,16 +249,130 @@ class TrainingController extends AbstractController
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
+            // Junior-ISB-Audit-2026-05-22 9.5: persist uploaded material files.
+            $this->processMaterialFileUploads($training, $form->get('materialFiles')->getData());
+
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('training.success.updated'));
+            // P-15 DataReuse: sync participantUsers → TrainingParticipation rows.
+            $this->syncParticipantUsersToParticipationRows($training);
+
+            $this->addFlash('success', $this->translator->trans('training.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_training_show', ['id' => $training->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('training/edit.html.twig', [
             'training' => $training,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
+    }
+
+    /**
+     * Junior-ISB-Audit-2026-05-22 9.5: File-Upload statt Freitext-Pfade.
+     *
+     * Validate every uploaded file via {@see FileUploadSecurityService}
+     * (MIME / magic-byte / extension / size whitelist), move to
+     * `public/uploads/training-materials/` and append the resulting
+     * metadata entry to {@see Training::$materialFiles}. Invalid files
+     * are silently skipped with a flash-error to avoid aborting the
+     * whole save — the existing entity changes still persist.
+     *
+     * @param iterable<int, UploadedFile|null>|UploadedFile|null $uploaded
+     */
+    private function processMaterialFileUploads(Training $training, mixed $uploaded): void
+    {
+        if ($uploaded === null) {
+            return;
+        }
+        if ($this->fileUploadSecurityService === null || $this->projectDir === null) {
+            return; // Defensive: services not wired (unit-test scenario).
+        }
+        $files = is_iterable($uploaded) ? $uploaded : [$uploaded];
+        $uploadDir = rtrim($this->projectDir, '/') . '/public/uploads/training-materials';
+        foreach ($files as $uploadedFile) {
+            if (!$uploadedFile instanceof UploadedFile) {
+                continue;
+            }
+            try {
+                $this->fileUploadSecurityService->validateUploadedFile($uploadedFile);
+                $safeFilename = $this->fileUploadSecurityService->generateSafeFilename($uploadedFile);
+                $originalName = $uploadedFile->getClientOriginalName();
+                $mimeType = $uploadedFile->getMimeType() ?? 'application/octet-stream';
+                $fileSize = (int) $uploadedFile->getSize();
+                $uploadedFile->move($uploadDir, $safeFilename);
+
+                $training->addMaterialFile([
+                    'filename'     => $safeFilename,
+                    'originalName' => $originalName,
+                    'mimeType'     => $mimeType,
+                    'size'         => $fileSize,
+                    'uploadedAt'   => (new DateTimeImmutable())->format(DATE_ATOM),
+                ]);
+            } catch (FileException $e) {
+                $this->addFlash(
+                    'error',
+                    $this->translator->trans('training.error.material_upload_failed', [
+                        '%file%' => $uploadedFile->getClientOriginalName(),
+                        '%reason%' => $e->getMessage(),
+                    ])
+                );
+            }
+        }
+    }
+
+    /**
+     * P-15 DataReuse — Form-Submit-Sync for Training.participantUsers.
+     *
+     * For every User selected in the typed multi-select, create a
+     * TrainingParticipation row (idempotent on (training_id, user_id)). Cross-
+     * tenant users are skipped silently. No row is removed when the user is
+     * deselected — TrainingParticipation has audit-trail value (Art. 33 +
+     * ISO 27001 §7.3) and must be soft-cancelled via status=waived elsewhere.
+     */
+    private function syncParticipantUsersToParticipationRows(Training $training): void
+    {
+        if ($this->participationRepository === null) {
+            return;
+        }
+        $tenant = $training->getTenant();
+        if ($tenant === null) {
+            return;
+        }
+        $selected = $training->getParticipantUsers();
+        if ($selected->isEmpty()) {
+            return;
+        }
+        $created = 0;
+        foreach ($selected as $user) {
+            if (!$user instanceof User) {
+                continue;
+            }
+            if ($user->getTenant() !== $tenant) {
+                continue; // tenant isolation
+            }
+            $existing = $this->participationRepository->findOneBy([
+                'training' => $training,
+                'user' => $user,
+            ]);
+            if ($existing instanceof TrainingParticipation) {
+                continue;
+            }
+            $row = new TrainingParticipation();
+            $row->setTenant($tenant);
+            $row->setTraining($training);
+            $row->setUser($user);
+            $row->setStatus(TrainingParticipation::STATUS_PENDING);
+            $row->setAssignmentSource('manual:edit_form');
+            $this->entityManager->persist($row);
+            $created++;
+        }
+        if ($created > 0) {
+            $this->entityManager->flush();
+        }
     }
     #[Route('/training/{id}/delete', name: 'app_training_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -188,11 +382,103 @@ class TrainingController extends AbstractController
             $this->entityManager->remove($training);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('training.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('training.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_training_index');
     }
+    /**
+     * Sprint-2 P-7 Wave-2 Trigger-3: Mandatory-Training audience picker.
+     *
+     * GET shows a User-multi-select pre-filled with the current tenant's
+     * active users (optionally filtered by department / role hint); POST
+     * persists TrainingParticipation rows (status=pending) for each
+     * selected user (ISO 27001 A.6.3 Awareness).
+     * Tenant-isolated; only Users in the same tenant as the Training are
+     * offered.
+     */
+    #[Route('/training/{id}/audience-picker', name: 'app_training_audience_picker', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function audiencePicker(Request $request, Training $training): Response
+    {
+        $tenant = $training->getTenant();
+        $currentTenant = $this->tenantContext->getCurrentTenant();
+        if ($tenant === null || $tenant !== $currentTenant) {
+            throw $this->createNotFoundException();
+        }
+        if (!$training->isMandatory()) {
+            $this->addFlash('warning', $this->translator->trans('training.mandatory_audience.flash_not_mandatory', [], 'alva'));
+            return $this->redirectToRoute('app_training_show', ['id' => $training->getId()]);
+        }
+
+        if ($request->isMethod('POST') && $this->participationRepository !== null && $this->userRepository !== null) {
+            if (!$this->isCsrfTokenValid('audience_picker_' . $training->getId(), (string) $request->request->get('_token'))) {
+                $this->addFlash('error', $this->translator->trans('common.csrf_invalid', [], 'messages'));
+                return $this->redirectToRoute('app_training_audience_picker', ['id' => $training->getId()]);
+            }
+
+            $userIds = array_filter(
+                (array) $request->request->all('user_ids'),
+                static fn($id): bool => is_string($id) && ctype_digit($id),
+            );
+
+            $created = 0;
+            foreach ($userIds as $id) {
+                $u = $this->userRepository->find((int) $id);
+                if (!$u instanceof User || $u->getTenant() !== $tenant) {
+                    continue;
+                }
+                // Idempotent: skip if a participation row already exists.
+                $existing = $this->participationRepository->findOneBy([
+                    'training' => $training,
+                    'user' => $u,
+                ]);
+                if ($existing instanceof TrainingParticipation) {
+                    continue;
+                }
+                $row = new TrainingParticipation();
+                $row->setTenant($tenant);
+                $row->setTraining($training);
+                $row->setUser($u);
+                $row->setStatus(TrainingParticipation::STATUS_PENDING);
+                $row->setAssignmentSource('manual:audience_picker');
+                $this->entityManager->persist($row);
+                $created++;
+            }
+            if ($created > 0) {
+                $this->entityManager->flush();
+            }
+
+            $this->addFlash('success', $this->translator->trans(
+                'training.mandatory_audience.flash_saved',
+                ['%count%' => $created],
+                'alva',
+            ));
+
+            return $this->redirectToRoute('app_training_show', ['id' => $training->getId()]);
+        }
+
+        // Tenant-scoped active users
+        $candidates = $this->userRepository !== null
+            ? $this->userRepository->findBy(['tenant' => $tenant, 'isActive' => true], ['email' => 'ASC'])
+            : [];
+        $alreadyAssignedIds = [];
+        if ($this->participationRepository !== null) {
+            foreach ($this->participationRepository->findBy(['training' => $training]) as $p) {
+                $u = $p->getUser();
+                if ($u !== null && $u->getId() !== null) {
+                    $alreadyAssignedIds[] = $u->getId();
+                }
+            }
+        }
+
+        return $this->render('training/audience_picker.html.twig', [
+            'training' => $training,
+            'candidates' => $candidates,
+            'already_assigned_ids' => $alreadyAssignedIds,
+        ]);
+    }
+
     /**
      * Calculate detailed statistics showing breakdown by origin
      */
@@ -233,5 +519,115 @@ class TrainingController extends AbstractController
             'subsidiaries' => $subsidiariesCount,
             'total' => $ownCount + $inheritedCount + $subsidiariesCount
         ];
+    }
+
+    /**
+     * Bulk CSV export of selected trainings.
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/training/bulk-export', name: 'app_training_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->tenantContext->getCurrentTenant();
+
+        $trainings = [];
+        foreach ($ids as $rawId) {
+            $training = $this->trainingRepository->find((int) $rawId);
+            if ($training === null) {
+                continue;
+            }
+            if ($tenant !== null && $training->getTenant() !== $tenant) {
+                continue;
+            }
+            $trainings[] = $training;
+        }
+
+        if ($trainings === []) {
+            return $this->json(['error' => 'No exportable trainings'], 404);
+        }
+
+        $headers = ['ID', 'Title', 'Status', 'Trainer'];
+
+        return $this->streamCsvExport(
+            $trainings,
+            $headers,
+            static function (Training $t): array {
+                return [
+                    (string) $t->getId(),
+                    (string) $t->getTitle(),
+                    (string) $t->getStatus(),
+                    (string) $t->getTrainer(),
+                ];
+            },
+            'trainings-export',
+            'Training',
+            $this->auditLogger,
+        );
+    }
+
+    /**
+     * Bulk assign selected trainings to a trainer user (sets trainerUser).
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/training/bulk-assign', name: 'app_training_bulk_assign', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkAssign(Request $request): Response
+    {
+        $data     = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids      = $data['ids'] ?? [];
+        $assignId = (int) ($data['assignee_id'] ?? 0);
+
+        if (!is_array($ids) || $ids === [] || $assignId === 0) {
+            return $this->json(['error' => 'No items selected or no assignee'], 400);
+        }
+
+        $tenant   = $this->tenantContext->getCurrentTenant();
+        $assignee = $this->userRepository?->find($assignId);
+
+        if (!$assignee instanceof User) {
+            return $this->json(['error' => 'Assignee not found'], 404);
+        }
+        if ($tenant !== null && $assignee->getTenant() !== $tenant) {
+            return $this->json(['error' => 'Assignee tenant mismatch'], 403);
+        }
+
+        $trainings = [];
+        foreach ($ids as $rawId) {
+            $training = $this->trainingRepository->find((int) $rawId);
+            if ($training === null) {
+                continue;
+            }
+            if ($tenant !== null && $training->getTenant() !== $tenant) {
+                continue;
+            }
+            $trainings[] = $training;
+        }
+
+        $result = $this->applyBulkAssign(
+            $trainings,
+            static function (Training $t, User $u): void { $t->setTrainerUser($u); },
+            $assignee,
+            'Training',
+            $this->auditLogger,
+        );
+
+        if ($result['changed'] > 0) {
+            $this->entityManager->flush();
+        }
+
+        return $this->json($result);
     }
 }

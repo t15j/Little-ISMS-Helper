@@ -1,5 +1,8 @@
 {% extends 'admin/layout.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_kpi_card.html.twig' as _fa_kpi_card %}
+{% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
 
 {% block admin_title %}{{ 'tenant.title'|trans({}, 'tenant') }}{% endblock %}
 {% block admin_subtitle %}
@@ -10,61 +13,56 @@
     <li class="breadcrumb-item active">{{ 'tenant.title'|trans({}, 'tenant') }}</li>
 {% endblock %}
 
-{% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
-
 {% block admin_content %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-building', label: 'tenant.title'|trans({}, 'tenant') },
+        title: 'tenant.title'|trans({}, 'tenant'),
+        subtitle: 'tenant.subtitle'|trans({}, 'tenant'),
+        actions: [
+            { label: 'tenant.action.create'|trans({}, 'tenant'), variant: 'primary', icon: 'plus', href: path('tenant_management_new') }
+        ]
+    }) }}
+
     {# Statistics Cards #}
     <div class="row g-3 mb-4">
         <div class="col-md-4">
-            {% embed '_components/_card.html.twig' %}
-                {% block card_body %}
-                    <div class="d-flex align-items-center">
-                        <div class="bg-primary bg-opacity-10 p-3 rounded me-3">
-                            <i class="fa-icon fa-icon--nav-building text-primary fs-3" aria-hidden="true"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted mb-1 small fw-semibold">{{ 'tenant.stats.total'|trans({}, 'tenant') }}</div>
-                            <h2 class="mb-0 h3">{{ totalCount }}</h2>
-                        </div>
-                    </div>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_kpi_card.render({ value: totalCount, label: 'tenant.stats.total'|trans({}, 'tenant') }) }}
         </div>
         <div class="col-md-4">
-            {% embed '_components/_card.html.twig' %}
-                {% block card_body %}
-                    <div class="d-flex align-items-center">
-                        <div class="bg-success bg-opacity-10 p-3 rounded me-3">
-                            <i class="fa-icon fa-icon--status-ok text-success fs-3" aria-hidden="true"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted mb-1 small fw-semibold">{{ 'tenant.stats.active'|trans({}, 'tenant') }}</div>
-                            <h2 class="mb-0 h3">{{ activeCount }}</h2>
-                        </div>
-                    </div>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_kpi_card.render({ value: activeCount, label: 'tenant.stats.active'|trans({}, 'tenant') }) }}
         </div>
         <div class="col-md-4">
-            {% embed '_components/_card.html.twig' %}
-                {% block card_body %}
-                    <div class="d-flex align-items-center">
-                        <div class="bg-secondary bg-opacity-10 p-3 rounded me-3">
-                            <i class="fa-icon fa-icon--status-critical text-secondary fs-3" aria-hidden="true"></i>
-                        </div>
-                        <div>
-                            <div class="text-muted mb-1 small fw-semibold">{{ 'tenant.stats.inactive'|trans({}, 'tenant') }}</div>
-                            <h2 class="mb-0 h3">{{ inactiveCount }}</h2>
-                        </div>
-                    </div>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_kpi_card.render({ value: inactiveCount, label: 'tenant.stats.inactive'|trans({}, 'tenant') }) }}
         </div>
     </div>
 
+    {# Orphan-user banner — accounts with NO tenant assignment cannot see any
+       ISMS data and are invisible to per-tenant role pages. Surface them
+       front-and-centre so the admin notices. #}
+    {% if orphanUserCount|default(0) > 0 %}
+        {% embed '_components/_fa_alert.html.twig' with { props: {
+            variant: 'warning',
+            icon: 'status-warning',
+            class: 'mb-4'
+        } } %}
+            {% block alert_body %}
+                <strong>{{ 'tenant.orphan_users.title'|trans({'%count%': orphanUserCount}, 'tenant') }}</strong>
+                <div class="mt-1">{{ 'tenant.orphan_users.body'|trans({}, 'tenant') }}</div>
+                <div class="mt-2">
+                    <a href="{{ path('user_management_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm">
+                        {{ 'tenant.orphan_users.cta_user_management'|trans({}, 'tenant') }}
+                    </a>
+                    <a href="{{ path('admin_data_repair_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm ms-1">
+                        {{ 'tenant.orphan_users.cta_data_repair'|trans({}, 'tenant') }}
+                    </a>
+                </div>
+            {% endblock %}
+        {% endembed %}
+    {% endif %}
+
     {# Toolbar #}
-    {% embed '_components/_card.html.twig' with {class: 'mb-4'} %}
-        {% block card_body %}
+    <section class="fa-section mb-4">
+        <div class="fa-section__body">
             <div class="d-flex justify-content-between align-items-center">
                 {# Filters #}
                 <div class="btn-group btn-group-sm" role="group">
@@ -87,43 +85,39 @@
                     <i class="fa-icon fa-icon--ui-plus" aria-hidden="true"></i> {{ 'tenant.action.create'|trans({}, 'tenant') }}
                 </a>
             </div>
-        {% endblock %}
-    {% endembed %}
+        </div>
+    </section>
 
     {# Tenant Table #}
-    {% embed '_components/_card.html.twig' %}
-        {% block card_body %}
-            {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
+    <section class="fa-section">
+        <div class="fa-section__body">
             {% if tenants is empty %}
                 {{ _fa_empty_state.render({
                     mood: 'sleeping',
                     title: 'tenant.empty'|trans({}, 'tenant'),
                     actions: [
-                        { label: 'tenant.action.create_first'|trans({}, 'tenant'), variant: 'primary', icon: 'plus-circle', href: path('tenant_management_new') }
+                        { label: 'tenant.action.create_first'|trans({}, 'tenant'), variant: 'primary', icon: 'plus', href: path('tenant_management_new') }
                     ]
                 }) }}
             {% else %}
-                {% embed '_components/_table.html.twig' with {
-                    'class': 'align-middle',
-                    'noMargin': true
-                } %}
+                {% embed '_components/_fa_table.html.twig' %}
                     {% block table_head %}
                         <tr>
-                            <th scope="col" style="width: 60px;">{{ 'tenant.field.logo'|trans({}, 'tenant') }}</th>
-                            <th scope="col">{{ 'tenant.field.code'|trans({}, 'tenant') }}</th>
-                            <th scope="col">{{ 'tenant.field.name'|trans({}, 'tenant') }}</th>
-                            <th scope="col">{{ 'tenant.field.users'|trans({}, 'tenant') }}</th>
-                            <th scope="col">{{ 'tenant.field.azure_tenant_id'|trans({}, 'tenant') }}</th>
-                            <th scope="col">{{ 'tenant.field.status'|trans({}, 'tenant') }}</th>
-                            <th scope="col">{{ 'tenant.field.created'|trans({}, 'tenant') }}</th>
-                            <th scope="col" class="text-end">{{ 'common.actions'|trans({}, 'messages') }}</th>
+                            <th scope="col" class="fa-table__th" style="width: 60px;">{{ 'tenant.field.logo'|trans({}, 'tenant') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'tenant.field.code'|trans({}, 'tenant') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'tenant.field.name'|trans({}, 'tenant') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'tenant.field.users'|trans({}, 'tenant') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'tenant.field.azure_tenant_id'|trans({}, 'tenant') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'tenant.field.status'|trans({}, 'tenant') }}</th>
+                            <th scope="col" class="fa-table__th">{{ 'tenant.field.created'|trans({}, 'tenant') }}</th>
+                            <th scope="col" class="fa-table__th fa-table__th--actions">{{ 'common.actions'|trans({}, 'messages') }}</th>
                         </tr>
                     {% endblock %}
                     {% block table_body %}
                         {% for item in tenants %}
                             {% set tenant = item.tenant %}
-                            <tr>
-                                <td>
+                            <tr class="fa-table__row">
+                                <td class="fa-table__cell">
                                     {% if tenant.logoPath %}
                                         <img src="{{ asset(tenant.logoPath) }}"
                                              alt="{{ tenant.name }}"
@@ -136,36 +130,36 @@
                                         </div>
                                     {% endif %}
                                 </td>
-                                <td>
+                                <td class="fa-table__cell">
                                     <code class="text-primary">{{ tenant.code }}</code>
                                 </td>
-                                <td>
+                                <td class="fa-table__cell">
                                     <strong>{{ tenant.name }}</strong>
                                     {% if tenant.description %}
                                         <br><small class="text-muted">{{ tenant.description|u.truncate(50, '...') }}</small>
                                     {% endif %}
                                 </td>
-                                <td>
-                                    {% include '_components/_badge.html.twig' with { variant: 'info', icon: 'bi-people', content: item.userCount } %}
+                                <td class="fa-table__cell">
+                                    <span class="fa-status-pill fa-status-pill--primary"><i class="fa-icon fa-icon--group" aria-hidden="true"></i> {{ item.userCount }}</span>
                                 </td>
-                                <td>
+                                <td class="fa-table__cell">
                                     {% if tenant.azureTenantId %}
                                         <small class="font-monospace text-muted">{{ tenant.azureTenantId|u.truncate(20, '...') }}</small>
                                     {% else %}
                                         <span class="text-muted">—</span>
                                     {% endif %}
                                 </td>
-                                <td>
+                                <td class="fa-table__cell">
                                     {% if tenant.isActive %}
-                                        {% include '_components/_badge.html.twig' with { variant: 'success', icon: 'bi-check-circle', content: 'tenant.status.active'|trans({}, 'tenant') } %}
+                                        <span class="fa-status-pill fa-status-pill--success"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i> {{ 'tenant.status.active'|trans({}, 'tenant') }}</span>
                                     {% else %}
-                                        {% include '_components/_badge.html.twig' with { variant: 'secondary', icon: 'bi-x-circle', content: 'tenant.status.inactive'|trans({}, 'tenant') } %}
+                                        <span class="fa-status-pill fa-status-pill--neutral"><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i> {{ 'tenant.status.inactive'|trans({}, 'tenant') }}</span>
                                     {% endif %}
                                 </td>
-                                <td>
+                                <td class="fa-table__cell">
                                     <small class="text-muted">{{ tenant.createdAt|date('d.m.Y') }}</small>
                                 </td>
-                                <td>
+                                <td class="fa-table__cell fa-table__cell--actions">
                                     <div class="d-flex gap-1">
                                         <a href="{{ path('tenant_management_show', {id: tenant.id}) }}"
                                            class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm"
@@ -177,10 +171,16 @@
                                            title="{{ 'common.edit'|trans({}, 'messages') }}" aria-label="{{ 'common.edit'|trans({}, 'messages') }}">
                                             <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
                                         </a>
+                                        <a href="{{ path('admin_tenant_compliance_settings_edit', {tenantId: tenant.id}) }}"
+                                           class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm"
+                                           title="{{ 'admin.tenant_settings.title'|trans({}, 'admin') }}" aria-label="{{ 'admin.tenant_settings.title'|trans({}, 'admin') }}">
+                                            <i class="fa-icon fa-icon--nav-sliders" aria-hidden="true"></i>
+                                        </a>
                                         <form method="post" action="{{ path('tenant_management_toggle', {id: tenant.id}) }}" class="d-inline"
                                               data-controller="ui-actions"
                                               data-action="submit->ui-actions#confirm"
                                               data-ui-actions-message-param="{{ 'tenant.confirm.toggle'|trans({}, 'tenant') }}">
+                                            <input type="hidden" name="_token" value="{{ csrf_token('toggle_tenant_' ~ tenant.id) }}">
                                             <button type="submit"
                                                     class="fa-cyber-btn fa-cyber-btn--{{ tenant.isActive ? 'warning' : 'ghost' }} fa-cyber-btn--sm"
                                                     title="{{ (tenant.isActive ? 'tenant.action.deactivate' : 'tenant.action.activate')|trans({}, 'tenant') }}"
@@ -195,8 +195,8 @@
                     {% endblock %}
                 {% endembed %}
             {% endif %}
-        {% endblock %}
-    {% endembed %}
+        </div>
+    </section>
 
     {# Info Box #}
     {{ _fa_alert.render({ variant: 'info', class: 'mt-4', title: 'tenant.info.title'|trans({}, 'tenant'), body: 'tenant.info.text'|trans({}, 'tenant') }) }}

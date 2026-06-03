@@ -92,13 +92,19 @@ privacy:
             subjects: Subjects
             unknown: Unknown
         section:
-            status_workflow: 'Status & Workflow'
+            status_workflow: 'Status & Lifecycle'
             linked_incident: 'Linked Security Incident'
             detection_links: 'Detection & Links'
             authority: 'Art. 33 - Supervisory Authority'
             subjects: 'Art. 34 - Data Subjects'
             nature: 'Art. 33(3) - Nature of the Breach'
             consequences: 'Art. 33(3)(b-d) - Consequences & Measures'
+            basic_info: 'Basic Information'
+            notification_content: 'Art. 33(3) – Notification Content'
+            risk_assessment: 'Risk Assessment'
+            notification_requirements: 'Notification Requirements'
+            investigation: 'Investigation & Follow-up'
+            responsible_persons: 'Responsible Persons'
         standalone_breach: 'Standalone data breach (no security incident)'
         severity:
             low: 'Low'
@@ -217,6 +223,12 @@ privacy:
         title: 'GDPR Data Breach Assessment Wizard'
         subtitle: 'Step-by-step assessment according to GDPR Art. 33'
 
+        # Stepper labels (short form for header navigation)
+        step1_short: 'Scope'
+        step2_short: 'Data Type'
+        step3_short: 'Volume'
+        step4_short: 'Result'
+
         # Step 1
         step1_title: 'Is personal data involved?'
         personal_data_question: 'Does this incident involve personal data (data relating to identified or identifiable natural persons)?'
@@ -284,7 +296,43 @@ privacy:
         conductor_required_user_or_person: 'Conductor: User or master-data Person required (free-text alone is not sufficient).'
         approver_required_user_or_person: 'Approver: User or master-data Person required (free-text alone is not sufficient).'
         contact_person_required_user_or_person: 'Contact person: User or master-data Person required (free-text alone is not sufficient).'
+    sdm:
+        title: 'Standard Data Protection Model (SDM 3.1)'
+        description: 'Assessment of the seven protection goals defined by the German Data Protection Conference (DSK).'
+        coverage: 'Assessed goals'
+        highest_risk: 'Highest risk'
+        summary: 'Assessment summary'
+        risk_level:
+            low: 'Low'
+            medium: 'Medium'
+            high: 'High'
+        goal:
+            verfuegbarkeit: 'Availability'
+            integritaet: 'Integrity'
+            vertraulichkeit: 'Confidentiality'
+            transparenz: 'Transparency'
+            intervenierbarkeit: 'Intervenability'
+            nichtverkettung: 'Unlinkability'
+            datenminimierung: 'Data minimisation'
+        goal_help:
+            verfuegbarkeit: 'Personal data is available to authorised parties in a timely manner.'
+            integritaet: 'Data and processing operations remain intact, complete, and current.'
+            vertraulichkeit: 'Only authorised parties access personal data.'
+            transparenz: 'Processing is intelligible to data subjects, supervisors, and the controller.'
+            intervenierbarkeit: 'Data-subject rights (access, rectification, erasure) can be exercised effectively.'
+            nichtverkettung: 'Data is not linked beyond the original processing purpose.'
+            datenminimierung: 'Processing is limited to what is necessary for the stated purpose.'
 processing_activity:
+    error:
+        invalid_csrf: 'Invalid CSRF token.'
+    clone_suffix: '(Copy)'
+    kpi:
+        completeness: 'Completeness'
+        status: 'Status'
+        risk_level: 'Risk Level'
+        dpia_status: 'DPIA Status'
+        required: 'Required'
+        not_required: 'Not Required'
     title: 'VVT - Record of Processing Activities'
     subtitle: 'Art. 30 GDPR - Record of Processing Activities'
     page:
@@ -304,6 +352,16 @@ processing_activity:
         export_pdf: 'Export PDF'
         export_csv: 'Export CSV'
         new: 'New Processing Activity'
+    export:
+        badge: 'VVT export'
+        progress_title: 'Export RoPA / VVT as CSV'
+        progress_subtitle: 'The export runs in the background. This page refreshes automatically.'
+        download_button: 'Download RoPA CSV'
+        file_not_found: 'Export file not found (likely already downloaded or expired).'
+        modal:
+            title: 'Export RoPA / VVT as CSV'
+            body: 'Generates a CSV file with all processing activities (GDPR Art. 30). The export runs in the background.'
+            start: 'Start export'
     confirm:
         clone: 'Do you want to clone this processing activity?'
     stat:
@@ -371,9 +429,43 @@ processing_activity:
     dpia:
         required: 'Required'
         not_required: 'Not Required'
+    sdm:
+        title: 'Standard Data Protection Model (SDM 3.1)'
+        description: 'Assessment of the seven protection goals defined by the German Data Protection Conference (DSK).'
+        coverage: 'Assessed goals'
+        highest_risk: 'Highest risk'
+        summary: 'Assessment summary'
+        risk_level:
+            low: 'Low'
+            medium: 'Medium'
+            high: 'High'
+        goal:
+            verfuegbarkeit: 'Availability'
+            integritaet: 'Integrity'
+            vertraulichkeit: 'Confidentiality'
+            transparenz: 'Transparency'
+            intervenierbarkeit: 'Intervenability'
+            nichtverkettung: 'Unlinkability'
+            datenminimierung: 'Data minimisation'
+        goal_help:
+            verfuegbarkeit: 'Personal data is available to authorised parties in a timely manner.'
+            integritaet: 'Data and processing operations remain intact, complete, and current.'
+            vertraulichkeit: 'Only authorised parties access personal data.'
+            transparenz: 'Processing is intelligible to data subjects, supervisors, and the controller.'
+            intervenierbarkeit: 'Data-subject rights (access, rectification, erasure) can be exercised effectively.'
+            nichtverkettung: 'Data is not linked beyond the original processing purpose.'
+            datenminimierung: 'Processing is limited to what is necessary for the stated purpose.'
     compliance:
         pass: 'Pass'
         fail: 'Fail'
+    form:
+        legal_basis: 'Legal basis (Art. 6 GDPR)'
+        retention_period: 'Retention Period'
+        retention_reason: 'Retention Justification'
+        retention_period_days: 'Retention Period (days)'
+        retention_legal_basis: 'Retention Legal Basis'
+        technical_organizational_measures: 'Technical and Organizational Measures — qualitative description (TOMs, Art. 32 GDPR)'
+        implemented_controls: 'Implemented Controls'
     field:
         name: Name
         status: Status
@@ -394,11 +486,14 @@ processing_activity:
         third_countries: 'Third Countries'
         transfer_safeguards: 'Transfer Safeguards'
         retention_period: 'Retention Period'
+        retention_reason: 'Retention Justification'
         retention_period_days: 'Retention Period Days'
         retention_legal_basis: 'Retention Legal Basis'
-        technical_organizational_measures: 'Technical Organizational Measures'
+        technical_organizational_measures: 'Technical and Organizational Measures — qualitative description'
         implemented_controls: 'Implemented Controls'
+        assets: 'Linked Assets'
         responsible_department: 'Responsible Department'
+        responsible_department_entity: 'Responsible Department (structured)'
         contact_person: 'Contact Person'
         contact_person_person: 'Contact Person (Person master data)'
         contact_deputies: 'Contact Person Deputies'
@@ -406,7 +501,9 @@ processing_activity:
         data_protection_officer_person: 'DPO (Person master data)'
         data_protection_officer_deputies: 'DPO Deputies'
         involves_processors: 'Involves Processors'
+        processor_suppliers: Processors
         is_joint_controller: 'Is Joint Controller'
+        joint_controller_details: 'Joint Controllers (GDPR Art. 26)'
         is_high_risk: 'Is High Risk'
         dpia_completed: 'Dpia Completed'
         dpia_date: 'Dpia Date'
@@ -433,14 +530,19 @@ processing_activity:
         third_countries: 'Which countries receive data?'
         transfer_safeguards: 'Legal basis for third country transfer (Art. 44-49)'
         retention_period: 'Retention period/deletion deadline (Art. 30(1)(f))'
-        retention_period_days: 'Retention period in days (optional, for automated deletion)'
+        retention_reason: 'Justification for the retention duration (e.g. statutory period, contract). For the structured value see "Retention Period (days)". (Art. 30(1)(f) GDPR)'
+        retention_period_days: 'Numeric retention duration in days (canonical, for automated deletion). For the justification see "Retention Justification".'
         retention_legal_basis: 'Legal basis for retention period (e.g., HGB §257, Tax Code)'
-        technical_organizational_measures: 'Description of technical and organizational security measures (Art. 32 GDPR)'
-        implemented_controls: 'Link to ISO 27001 controls (optional)'
-        legal_basis: 'Legal basis for processing (Art. 6(1) GDPR)'
+        technical_organizational_measures: 'Technical and organizational measures — qualitative description (Art. 32 GDPR). For structured evidence see "Implemented Controls". At least ONE evidence form is required.'
+        implemented_controls: 'Select ISO 27001 controls protecting this activity (structured evidence). For the qualitative description see the TOMs field.'
+        assets: 'Assets (servers, databases, applications) used by this processing activity.
+            When a linked asset has data classification "confidential" or "restricted",
+            a DPIA suggestion is auto-generated (Art. 35 GDPR).'
+        legal_basis: 'Legal basis for processing (Art. 6(1) GDPR). Values: a) Consent — data subject actively consents. b) Contract — required for contract performance. c) Legal obligation — required by law. d) Vital interests — protect life/health. e) Public task — exercise of official authority. f) Legitimate interests — controller-vs-subject balancing test (details field below mandatory).'
         legal_basis_details: 'Detailed explanation (mandatory for legitimate interests)'
         legal_basis_special_categories: 'Legal basis for processing special categories (Art. 9(2) GDPR)'
         responsible_department: 'Department/unit responsible for this processing'
+        responsible_department_entity: 'Structured pick from the Departments master data — the freetext field below is legacy and shown only for backward compatibility.'
         contact_person: 'Contact person for this processing activity'
         contact_person_person: 'Contact person from person master data (alternative to user account)'
         contact_deputies: 'Deputy persons for the contact person slot'
@@ -448,7 +550,9 @@ processing_activity:
         data_protection_officer_person: 'DPO from person master data (alternative to user account)'
         data_protection_officer_deputies: 'Deputy persons for the DPO slot'
         involves_processors: 'Are processors (Auftragsverarbeiter) involved (Art. 28)?'
+        processor_suppliers: 'External processors acting on your behalf in this processing activity (GDPR Art. 28).'
         is_joint_controller: 'Is this a joint controller arrangement (Art. 26)?'
+        joint_controller_details_json: 'List the joint controllers as a JSON array with fields: name, contact, responsibilities (split of duties per Art. 26(1)), arrangement_reference (link to the agreement). The essence must be made available to data subjects (Art. 26(2)).'
         is_high_risk: 'Is this considered high-risk processing?'
         dpia_completed: 'Has a Data Protection Impact Assessment (DPIA) been conducted?'
         dpia_date: 'Date of DPIA completion'
@@ -463,13 +567,41 @@ processing_activity:
     placeholder:
         contact_person_person: 'Select person from master data...'
         data_protection_officer_person: 'Select person from master data...'
+        joint_controller_details: |-
+            [
+              {
+                "name": "Partner Organisation Ltd.",
+                "contact": "privacy@partner.example",
+                "responsibilities": "Handling of data-subject requests under Art. 15-22",
+                "arrangement_reference": "Agreement of 2026-01-15"
+              }
+            ]
+    # S3 P-4: canonical 5-stage lifecycle (draft → in_review → approved → published → archived).
+    # Legacy `active` key kept as fallback label for any historical row not yet migrated.
+    status:
+        draft: 'Draft'
+        in_review: 'In Review'
+        approved: 'Approved'
+        published: 'Published'
+        archived: 'Archived'
+        active: 'Active (legacy)'
     permanently_delete: 'Permanently Delete'
     view_all_activities: 'View All Processing Activities'
     confirm_delete: 'Do you really want to delete this processing activity?'
     dashboard:
         incomplete_activities: 'Incomplete Activities (%count%)'
+        overall_score: 'Overall VVT Compliance Score'
+        activities_complete: '%complete% of %total% activities complete'
+        dpias_completed: '%done%/%required% DPIAs completed'
+        kpi:
+            total_activities: 'Total Activities'
+            active: '%count% active'
+            high_risk: 'High Risk'
+            missing_dpia: '%count% missing DPIA'
+            completeness_rate: 'Completeness Rate'
     show:
         linked_controls: 'Linked ISO 27001 Controls'
+        linked_assets: 'Linked Assets'
         not_documented: 'Not documented'
         subtitle: 'Processing Activity Details (Art. 30 GDPR)'
         tab:
@@ -487,7 +619,83 @@ processing_activity:
         art_30_1e: 'Art. 30(1)(e) GDPR - Transfers to Third Countries'
         legal_basis_retention: 'Legal Basis and Retention Periods'
         art_30_1g: 'Art. 30(1)(g) GDPR - Technical and Organizational Measures (TOMs)'
+    # Junior-ISB-Audit-2026-05-22 C2-03: cross-field TOMs OR Controls evidence requirement.
+    validation:
+        tom_or_controls_required: 'At least one form of evidence is required (GDPR Art. 32): either a qualitative TOM description (≥ 50 characters) OR at least one implemented ISO 27001 control.'
+        processor_suppliers_required: 'At least one Auftragsverarbeiter must be linked as a typed entity (GDPR Art. 28(1) + Art. 30(1)(d)). When "involves processors" is checked, the concrete suppliers are mandatory for the recipients-disclosure duty.'
 data_breach:
+    dashboard:
+        title: 'Data Breach Dashboard'
+        subtitle: 'GDPR Art. 33/34 Compliance Overview'
+        overall_score: 'Overall GDPR Art. 33/34 Compliance Score'
+        breadcrumb:
+            privacy: 'Privacy'
+            data_breaches: 'Data Breaches'
+            dashboard: 'Dashboard'
+        action:
+            view_all: 'View All Breaches'
+            new: 'New Data Breach'
+        kpi:
+            notification_compliance: 'Notification Compliance'
+            notified: '%done% / %total% notified'
+            timeliness: 'Timeliness Score (72h Compliance)'
+            overdue_notifications: '%count% overdue notifications'
+            completeness: 'Completeness'
+            avg_completeness: 'Average breach completeness'
+            total_breaches: '%count% total breaches'
+            affected_subjects: '%count% affected data subjects'
+        action_items: 'Action Items'
+        under_assessment: 'Under Assessment'
+        badge:
+            overdue: 'OVERDUE'
+            urgent: 'URGENT'
+            pending: 'PENDING'
+        action_msg:
+            overdue_authority: 'Supervisory authority notification exceeded 72-hour deadline by %hours% hours.'
+            pending_authority: '%hours% hours remaining until 72-hour deadline.'
+            pending_subject: 'Data subject notification required (Art. 34).'
+            incomplete: 'Data breach documentation incomplete.'
+        empty_state: '<strong>All action items completed!</strong> No pending notifications or overdue deadlines.'
+        stats_status_title: 'Breach Statistics by Status'
+        status:
+            draft: 'Draft'
+            under_assessment: 'Under Assessment'
+            authority_notified: 'Authority Notified'
+            subjects_notified: 'Subjects Notified'
+            closed: 'Closed'
+        risk_section_title: 'By Risk Level'
+        risk_level:
+            low: 'Low'
+            medium: 'Medium'
+            high: 'High'
+            critical: 'Critical'
+        special_categories_title: 'Special Categories'
+        special_categories_label: 'Art. 9 Data (Special Categories):'
+        special_categories_help: 'Breaches involving racial/ethnic origin, political opinions, religious beliefs, health data, sexual orientation, biometric/genetic data.'
+        recent_title: 'Recent Breaches (Last 30 Days)'
+        col:
+            reference: 'Reference'
+            title: 'Title'
+            detected: 'Detected'
+            status: 'Status'
+            risk: 'Risk'
+            affected_subjects: 'Affected Subjects'
+    success:
+        updated: 'Data breach updated successfully.'
+        deleted: 'Data breach deleted successfully.'
+        submitted_for_assessment: 'Data breach submitted for assessment.'
+        authority_notification_recorded: 'Supervisory authority notification recorded.'
+        subject_notification_recorded: 'Data subject notification recorded.'
+        exemption_recorded: 'Subject notification exemption recorded.'
+        closed: 'Data breach closed successfully.'
+        reopened: 'Data breach reopened successfully.'
+    error:
+        cannot_edit_in_status: 'Cannot edit data breach in current status.'
+        invalid_csrf: 'Invalid CSRF token.'
+        authority_notification_fields_required: 'Authority name and notification method are required.'
+        subject_notification_fields_required: 'Notification method and number of subjects are required.'
+        exemption_reason_required: 'Exemption reason is required.'
+        reopen_reason_required: 'Reopen reason is required.'
     index:
         view_all_breaches: 'View All Breaches'
         no_breaches_found: 'No data breaches found'
@@ -536,6 +744,9 @@ data_breach:
         incident: 'Related Security Incident (optional)'
         processing_activity: 'Processing Activity (ROPA)'
         severity: 'Severity'
+        affected_data_subjects: 'Number of affected data subjects'
+        requires_authority_notification: 'Notification to supervisory authority required (Art. 33 GDPR)'
+        requires_subject_notification: 'Notification of data subjects required (Art. 34 GDPR)'
         data_protection_officer_person: 'DPO (Person master data)'
         data_protection_officer_deputies: 'DPO Deputies'
         assessor_person: 'Assessor (Person master data)'
@@ -634,6 +845,10 @@ data_breach:
         trigger_hint: 'Use the wizard to determine if GDPR reporting is required (Art. 33)'
         title: 'GDPR Data Breach Assessment Wizard'
         subtitle: 'Step-by-step assessment according to GDPR Art. 33'
+        step1_short: 'Scope'
+        step2_short: 'Data Type'
+        step3_short: 'Volume'
+        step4_short: 'Result'
         step1_title: 'Is personal data involved?'
         personal_data_question: 'Does this incident involve personal data (data relating to identified or identifiable natural persons)?'
         personal_data_yes: 'Personal data is involved'
@@ -668,6 +883,10 @@ data_breach:
         deadline_date: 'Reporting deadline (72h from now)'
         recommendation_label: 'Recommendation'
         legal_references: 'Legal References'
+        legal_ref:
+            gdpr_art_33: 'GDPR Art. 33 (Notification to supervisory authority)'
+            gdpr_art_34: 'GDPR Art. 34 (Communication to data subjects)'
+            iso_27001_a_16_1_6: 'ISO 27001 A.16.1.6 (Learning from information security incidents)'
         complete_and_create: 'Complete & Create Incident'
         risk_level:
             low: 'Low Risk'
@@ -684,7 +903,31 @@ data_breach:
         yes_reportable: 'YES - Reportable to Supervisory Authority'
         no_not_reportable: 'NO - Not Reportable'
         step_of: 'of'
+        new_title: 'Record data breach'
+        new_subtitle: 'GDPR Art. 33 · 72h reporting deadline'
+        title_72h_warning: '72-hour reporting deadline is running!'
+        subtitle_72h_warning: 'Notification to the supervisory authority under GDPR Art. 33 must be submitted within 72 hours of becoming aware of the breach.'
+        step:
+            detection: 'Detection'
+            detection_title: 'Step 1 · Identify Incident'
+            notification: 'Notification'
+            notification_title: 'Step 2 · Notification Decision'
+            record: 'Record'
+            record_title: 'Step 3 · Document Incident'
+            review: 'Review'
+            review_title: 'Step 4 · Final Review'
+        action:
+            submit: 'Register data breach'
 dpia:
+    error:
+        invalid_csrf: 'Invalid CSRF token.'
+        rejection_reason_required: 'Rejection reason is required.'
+        revision_reason_required: 'Revision reason is required.'
+        dpo_advice_required: 'DPO advice is required.'
+        authority_feedback_required: 'Supervisory authority feedback is required.'
+        review_reason_required: 'Review reason is required.'
+    warning:
+        cannot_edit_in_status: 'Only draft or revision-required DPIAs can be edited.'
     dashboard:
         title: 'DPIA Dashboard'
         subtitle: 'Art. 35 GDPR Compliance Overview'
@@ -730,7 +973,7 @@ dpia:
         section_measures: 'Art. 35(7)(d) - Measures to Address Risks'
         section_consultation: 'Stakeholder Consultation (Art. 35(4), 35(9))'
         section_supervisory: 'Supervisory Authority Consultation (Art. 36)'
-        section_workflow: 'Workflow & Review'
+        section_workflow: 'Lifecycle & Review'
         button_create: 'Create DPIA'
         button_cancel_bottom: 'Cancel'
     index:
@@ -893,7 +1136,7 @@ dpia:
         cancel_button: Cancel
         page_title: 'DPIA - %ref%'
         section:
-            status_workflow: 'Status & Workflow'
+            status_workflow: 'Status & Lifecycle'
             risk_assessment: 'Risk Assessment'
             consultations: 'Consultations'
         field:
@@ -1067,3 +1310,18 @@ dpia:
 'privacy.chart.by_legal_basis': 'By Legal Basis'
 
 # GDPR Breach Wizard
+
+# ─── DPIA Lifecycle/Event Messages (TODO_2026-05-22 S12) ─────
+dpia.approved: 'DPIA approved.'
+dpia.cloned: 'DPIA cloned.'
+dpia.created: 'DPIA created.'
+dpia.deleted: 'DPIA deleted.'
+dpia.dpo_consulted: 'DPO consultation recorded.'
+dpia.marked_for_review: 'Marked for review.'
+dpia.rejected: 'DPIA rejected.'
+dpia.reopened: 'DPIA reopened.'
+dpia.review_completed: 'Review completed.'
+dpia.revision_requested: 'Revision requested.'
+dpia.submitted_for_review: 'Submitted for review.'
+dpia.supervisory_consulted: 'Supervisory authority consulted.'
+dpia.updated: 'DPIA updated.'

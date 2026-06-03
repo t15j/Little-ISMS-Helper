@@ -17,7 +17,10 @@ use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
-class ConsentType extends AbstractType
+// SectionMap not applicable — template uses col-lg-8/4 layout with a
+// compliance-info sidebar. The sidebar is the dominant UX pattern here;
+// swapping to outline-rail would lose the persistent sidebar panel.
+final class ConsentType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -29,7 +32,6 @@ class ConsentType extends AbstractType
                 'label' => 'consent.form.data_subject_identifier',
                 'attr' => [
                     'placeholder' => 'consent.form.data_subject_identifier_placeholder',
-                    'class' => 'form-control',
                 ],
                 'help' => 'consent.form.data_subject_identifier_help',
             ])
@@ -42,7 +44,6 @@ class ConsentType extends AbstractType
                     'consent.form.identifier_type_options.phone' => 'phone',
                     'consent.form.identifier_type_options.other' => 'other',
                 ],
-                'attr' => ['class' => 'form-select'],
             ])
 
             // ═══════════════════════════════════════════════════════════
@@ -58,7 +59,6 @@ class ConsentType extends AbstractType
                         ->setParameter('legal_basis', 'consent')
                         ->orderBy('p.name', 'ASC');
                 },
-                'attr' => ['class' => 'form-select'],
                 'help' => 'consent.form.processing_activity_help',
             ])
             ->add('purposes', ChoiceType::class, [
@@ -72,7 +72,6 @@ class ConsentType extends AbstractType
                 ],
                 'multiple' => true,
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'consent.form.purposes_help',
             ])
 
@@ -83,7 +82,6 @@ class ConsentType extends AbstractType
                 'label' => 'consent.form.granted_at',
                 'widget' => 'single_text',
                 'input' => 'datetime_immutable',
-                'attr' => ['class' => 'form-control'],
                 'help' => 'consent.form.granted_at_help',
             ])
             ->add('consentMethod', ChoiceType::class, [
@@ -96,7 +94,6 @@ class ConsentType extends AbstractType
                     'consent.form.consent_method_options.email' => 'email',
                     'consent.form.consent_method_options.other' => 'other',
                 ],
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('consentChannel', ChoiceType::class, [
                 'label' => 'consent.form.consent_channel',
@@ -109,12 +106,10 @@ class ConsentType extends AbstractType
                     'consent.form.consent_channel_options.other' => 'other',
                 ],
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('consentText', TextareaType::class, [
                 'label' => 'consent.form.consent_text',
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 6,
                     'placeholder' => 'consent.form.consent_text_placeholder',
                 ],
@@ -127,9 +122,8 @@ class ConsentType extends AbstractType
             ->add('proofDocument', EntityType::class, [
                 'label' => 'consent.form.proof_document',
                 'class' => Document::class,
-                'choice_label' => 'title',
+                'choice_label' => 'originalFilename',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'consent.form.proof_document_help',
             ])
 
@@ -141,7 +135,6 @@ class ConsentType extends AbstractType
                 'widget' => 'single_text',
                 'input' => 'datetime_immutable',
                 'required' => false,
-                'attr' => ['class' => 'form-control'],
                 'help' => 'consent.form.expires_at_help',
             ])
 
@@ -152,10 +145,40 @@ class ConsentType extends AbstractType
                 'label' => 'consent.form.notes',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                     'placeholder' => 'consent.form.notes_placeholder',
                 ],
+            ])
+
+            // ═══════════════════════════════════════════════════════════
+            // Section 7: Withdrawal — GDPR Art. 7(3)
+            // ═══════════════════════════════════════════════════════════
+            ->add('withdrawnAt', DateTimeType::class, [
+                'widget' => 'single_text',
+                'label' => 'consent.field.withdrawn_at',
+                'required' => false,
+                'input' => 'datetime_immutable',
+                'help' => 'consent.help.withdrawn_at',
+            ])
+            ->add('withdrawalReason', TextareaType::class, [
+                'label' => 'consent.field.withdrawal_reason',
+                'required' => false,
+                'attr' => [
+                    'rows' => 2,
+                    'placeholder' => 'consent.placeholder.withdrawal_reason',
+                ],
+            ])
+            ->add('withdrawalChannel', ChoiceType::class, [
+                'label' => 'consent.field.withdrawal_channel',
+                'choices' => [
+                    'consent.withdrawal_channel.web' => 'web',
+                    'consent.withdrawal_channel.email' => 'email',
+                    'consent.withdrawal_channel.phone' => 'phone',
+                    'consent.withdrawal_channel.letter' => 'letter',
+                    'consent.withdrawal_channel.in_person' => 'in_person',
+                ],
+                'required' => false,
+                'placeholder' => 'consent.placeholder.withdrawal_channel',
             ])
         ;
     }
@@ -164,6 +187,7 @@ class ConsentType extends AbstractType
     {
         $resolver->setDefaults([
             'data_class' => Consent::class,
+            'translation_domain' => 'consent',
         ]);
     }
 }

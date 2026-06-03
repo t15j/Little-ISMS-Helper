@@ -15,7 +15,7 @@
  # DISPLAY OPTIONS:
  # - label: Label text (optional)
  # - label_icon: Bootstrap icon class without 'bi-' prefix (optional)
- # - show_value: Show value display badge (default: true)
+ # - show_value: Show value display pill (default: true)
  # - show_minmax: Show min/max labels at ends (default: false)
  # - show_input: Show direct number input field (default: false)
  # - show_progress: Show progress bar below slider (default: false)
@@ -106,7 +106,7 @@
  #     value: 2,
  #     min: 1,
  #     max: 4,
- #     label: 'control.field.review_frequency'|trans({}, 'controls'),
+ #     label: 'control.field.review_frequency'|trans({}, 'control'),
  #     value_labels: {
  #         1: 'frequency.yearly'|trans({}, 'messages'),
  #         2: 'frequency.quarterly'|trans({}, 'messages'),
@@ -122,13 +122,13 @@
  # {% include '_components/_slider.html.twig' with {
  #     name: 'implementation_status',
  #     value: 50,
- #     label: 'control.field.implementation'|trans({}, 'controls'),
+ #     label: 'control.field.implementation'|trans({}, 'control'),
  #     value_suffix: '%',
  #     show_presets: true,
  #     presets: [
- #         { value: 0, label: 'soa.status.not_implemented'|trans({}, 'soa'), variant: 'danger', icon: 'x-circle' },
- #         { value: 50, label: 'soa.status.partial'|trans({}, 'soa'), variant: 'warning', icon: 'circle-half' },
- #         { value: 100, label: 'soa.status.implemented'|trans({}, 'soa'), variant: 'success', icon: 'check-circle' }
+ #         { value: 0, label: 'soa.status.not_implemented'|trans({}, 'soa'), variant: 'danger', icon: 'status-critical' },
+ #         { value: 50, label: 'soa.status.partial'|trans({}, 'soa'), variant: 'warning', icon: 'ui-circle' },
+ #         { value: 100, label: 'soa.status.implemented'|trans({}, 'soa'), variant: 'success', icon: 'status-ok' }
  #     ],
  #     show_reset: true,
  #     default_value: 0,
@@ -171,14 +171,14 @@
  #     value: 2,
  #     min: 0,
  #     max: 5,
- #     label: 'control.field.maturity'|trans({}, 'controls'),
+ #     label: 'control.field.maturity'|trans({}, 'control'),
  #     value_labels: {
- #         0: 'maturity.0.non_existent'|trans({}, 'controls'),
- #         1: 'maturity.1.initial'|trans({}, 'controls'),
- #         2: 'maturity.2.repeatable'|trans({}, 'controls'),
- #         3: 'maturity.3.defined'|trans({}, 'controls'),
- #         4: 'maturity.4.managed'|trans({}, 'controls'),
- #         5: 'maturity.5.optimizing'|trans({}, 'controls')
+ #         0: 'maturity.0.non_existent'|trans({}, 'control'),
+ #         1: 'maturity.1.initial'|trans({}, 'control'),
+ #         2: 'maturity.2.repeatable'|trans({}, 'control'),
+ #         3: 'maturity.3.defined'|trans({}, 'control'),
+ #         4: 'maturity.4.managed'|trans({}, 'control'),
+ #         5: 'maturity.5.optimizing'|trans({}, 'control')
  #     },
  #     show_ticks: true,
  #     show_current_label: true,
@@ -280,7 +280,7 @@
     <div class="d-flex justify-content-between align-items-center mb-2">
         <label for="{{ id }}" class="form-label fw-semibold mb-0">
             {% if label_icon is defined and label_icon %}
-                <i class="bi bi-{{ label_icon }} me-1" aria-hidden="true"></i>
+                <i class="fa-icon fa-icon--{{ label_icon }} me-1" aria-hidden="true"></i>
             {% endif %}
             {{ label }}
         </label>
@@ -342,12 +342,12 @@
         </div>
         {% endif %}
 
-        {# Value badge #}
+        {# Value pill #}
         {% if show_value and not show_input %}
         <div class="slider-value text-center" style="min-width: 65px;">
-            <span class="badge bg-{{ computed_variant }} fs-6"
+            <span class="fa-status-pill fa-status-pill--{{ computed_variant }} fa-status-pill--lg"
                   data-{{ controller }}-target="value">
-                {{ value_prefix }}{{ decimals > 0 ? value|number_format(decimals) : value }}{{ value_suffix }}
+                <span class="fa-status-pill__label">{{ value_prefix }}{{ decimals > 0 ? value|number_format(decimals) : value }}{{ value_suffix }}</span>
             </span>
         </div>
         {% endif %}
@@ -360,7 +360,7 @@
                 <span class="input-group-text">{{ value_prefix }}</span>
                 {% endif %}
                 <input type="number"
-                       class="form-control form-control-sm text-center"
+                       class="form-control form-control-sm text-center fa-cyber-input__field"
                        min="{{ min }}"
                        max="{{ max }}"
                        step="{{ step }}"
@@ -391,7 +391,7 @@
     {% if show_progress %}
     <div class="progress progress-h-6 mt-2" role="progressbar"
          aria-valuenow="{{ progress_percent }}" aria-valuemin="0" aria-valuemax="100">
-        <div class="progress-bar bg-{{ computed_variant }}"
+        <div class="progress-bar bg-{{ computed_variant in ['info', 'secondary', 'light', 'dark'] ? 'primary' : computed_variant }}"
              style="width: {{ progress_percent }}%"
              data-{{ controller }}-target="progress"></div>
     </div>
@@ -417,7 +417,7 @@
                     data-{{ controller }}-value-param="{{ preset.value }}"
                     title="{{ preset.description|default('') }}">
                 {% if preset.icon is defined %}
-                <i class="bi bi-{{ preset.icon }} me-1" aria-hidden="true"></i>
+                <i class="fa-icon fa-icon--{{ preset.icon }} me-1" aria-hidden="true"></i>
                 {% endif %}
                 {{ preset.label }}
             </button>

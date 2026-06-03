@@ -28,7 +28,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * Phase 7C: Provides widget library and data generation for custom report builder.
  * Supports 25+ widget types across all ISMS domains.
  */
-class ReportBuilderService
+final class ReportBuilderService
 {
     // Widget Categories
     public const WIDGET_CATEGORY_KPI = 'kpi';
@@ -102,191 +102,191 @@ class ReportBuilderService
 
         return [
             self::WIDGET_CATEGORY_KPI => [
-                'label' => $t('widget.category.kpi'),
-                'icon' => 'bi-speedometer2',
+                'label' => $t('report_builder.widget.category.kpi'),
+                'icon' => 'nav-dashboard',
                 'widgets' => [
                     self::WIDGET_KPI_RISK_COUNT => [
-                        'label' => $t('widget.kpi_risk_count'),
-                        'description' => $t('widget.kpi_risk_count.description'),
-                        'icon' => 'bi-exclamation-triangle',
+                        'label' => $t('report_builder.widget.kpi_risk_count'),
+                        'description' => $t('report_builder.widget.kpi_risk_count.description'),
+                        'icon' => 'status-warning',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'risks',
                     ],
                     self::WIDGET_KPI_HIGH_RISKS => [
-                        'label' => $t('widget.kpi_high_risks'),
-                        'description' => $t('widget.kpi_high_risks.description'),
-                        'icon' => 'bi-exclamation-triangle-fill',
+                        'label' => $t('report_builder.widget.kpi_high_risks'),
+                        'description' => $t('report_builder.widget.kpi_high_risks.description'),
+                        'icon' => 'status-warning',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'risks',
                     ],
                     self::WIDGET_KPI_CONTROL_COUNT => [
-                        'label' => $t('widget.kpi_control_count'),
-                        'description' => $t('widget.kpi_control_count.description'),
-                        'icon' => 'bi-shield-check',
+                        'label' => $t('report_builder.widget.kpi_control_count'),
+                        'description' => $t('report_builder.widget.kpi_control_count.description'),
+                        'icon' => 'shield-check',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'controls',
                     ],
                     self::WIDGET_KPI_CONTROL_IMPLEMENTATION => [
-                        'label' => $t('widget.kpi_control_implementation'),
-                        'description' => $t('widget.kpi_control_implementation.description'),
-                        'icon' => 'bi-check-circle',
+                        'label' => $t('report_builder.widget.kpi_control_implementation'),
+                        'description' => $t('report_builder.widget.kpi_control_implementation.description'),
+                        'icon' => 'status-ok',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'controls',
                     ],
                     self::WIDGET_KPI_ASSET_COUNT => [
-                        'label' => $t('widget.kpi_asset_count'),
-                        'description' => $t('widget.kpi_asset_count.description'),
-                        'icon' => 'bi-hdd-network',
+                        'label' => $t('report_builder.widget.kpi_asset_count'),
+                        'description' => $t('report_builder.widget.kpi_asset_count.description'),
+                        'icon' => 'asset-network',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'assets',
                     ],
                     self::WIDGET_KPI_INCIDENT_COUNT => [
-                        'label' => $t('widget.kpi_incident_count'),
-                        'description' => $t('widget.kpi_incident_count.description'),
-                        'icon' => 'bi-lightning',
+                        'label' => $t('report_builder.widget.kpi_incident_count'),
+                        'description' => $t('report_builder.widget.kpi_incident_count.description'),
+                        'icon' => 'status-warning',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'incidents',
                     ],
                     self::WIDGET_KPI_OPEN_INCIDENTS => [
-                        'label' => $t('widget.kpi_open_incidents'),
-                        'description' => $t('widget.kpi_open_incidents.description'),
-                        'icon' => 'bi-lightning-fill',
+                        'label' => $t('report_builder.widget.kpi_open_incidents'),
+                        'description' => $t('report_builder.widget.kpi_open_incidents.description'),
+                        'icon' => 'status-warning',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'incidents',
                     ],
                     self::WIDGET_KPI_COMPLIANCE_SCORE => [
-                        'label' => $t('widget.kpi_compliance_score'),
-                        'description' => $t('widget.kpi_compliance_score.description'),
-                        'icon' => 'bi-patch-check',
+                        'label' => $t('report_builder.widget.kpi_compliance_score'),
+                        'description' => $t('report_builder.widget.kpi_compliance_score.description'),
+                        'icon' => 'nav-patch-check',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'compliance',
                     ],
                     self::WIDGET_KPI_OVERDUE_TREATMENTS => [
-                        'label' => $t('widget.kpi_overdue_treatments'),
-                        'description' => $t('widget.kpi_overdue_treatments.description'),
-                        'icon' => 'bi-clock-history',
+                        'label' => $t('report_builder.widget.kpi_overdue_treatments'),
+                        'description' => $t('report_builder.widget.kpi_overdue_treatments.description'),
+                        'icon' => 'nav-clock-history',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'risks',
                     ],
                     self::WIDGET_KPI_BCM_COVERAGE => [
-                        'label' => $t('widget.kpi_bcm_coverage'),
-                        'description' => $t('widget.kpi_bcm_coverage.description'),
-                        'icon' => 'bi-diagram-3',
+                        'label' => $t('report_builder.widget.kpi_bcm_coverage'),
+                        'description' => $t('report_builder.widget.kpi_bcm_coverage.description'),
+                        'icon' => 'nav-process',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => 'bcm',
                     ],
                 ],
             ],
             self::WIDGET_CATEGORY_CHART => [
-                'label' => $t('widget.category.chart'),
-                'icon' => 'bi-bar-chart',
+                'label' => $t('report_builder.widget.category.chart'),
+                'icon' => 'nav-bar-chart',
                 'widgets' => [
                     self::WIDGET_CHART_RISK_MATRIX => [
-                        'label' => $t('widget.chart_risk_matrix'),
-                        'description' => $t('widget.chart_risk_matrix.description'),
-                        'icon' => 'bi-grid-3x3',
+                        'label' => $t('report_builder.widget.chart_risk_matrix'),
+                        'description' => $t('report_builder.widget.chart_risk_matrix.description'),
+                        'icon' => 'nav-grid',
                         'size' => ['width' => 2, 'height' => 2],
                         'module' => 'risks',
                     ],
                     self::WIDGET_CHART_RISK_BY_CATEGORY => [
-                        'label' => $t('widget.chart_risk_by_category'),
-                        'description' => $t('widget.chart_risk_by_category.description'),
-                        'icon' => 'bi-pie-chart',
+                        'label' => $t('report_builder.widget.chart_risk_by_category'),
+                        'description' => $t('report_builder.widget.chart_risk_by_category.description'),
+                        'icon' => 'nav-pie-chart',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => 'risks',
                     ],
                     self::WIDGET_CHART_RISK_TREND => [
-                        'label' => $t('widget.chart_risk_trend'),
-                        'description' => $t('widget.chart_risk_trend.description'),
-                        'icon' => 'bi-graph-up',
+                        'label' => $t('report_builder.widget.chart_risk_trend'),
+                        'description' => $t('report_builder.widget.chart_risk_trend.description'),
+                        'icon' => 'nav-bar-chart',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => 'risks',
                     ],
                     self::WIDGET_CHART_CONTROL_STATUS => [
-                        'label' => $t('widget.chart_control_status'),
-                        'description' => $t('widget.chart_control_status.description'),
-                        'icon' => 'bi-pie-chart-fill',
+                        'label' => $t('report_builder.widget.chart_control_status'),
+                        'description' => $t('report_builder.widget.chart_control_status.description'),
+                        'icon' => 'nav-pie-chart',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => 'controls',
                     ],
                     self::WIDGET_CHART_COMPLIANCE_RADAR => [
-                        'label' => $t('widget.chart_compliance_radar'),
-                        'description' => $t('widget.chart_compliance_radar.description'),
-                        'icon' => 'bi-diagram-2',
+                        'label' => $t('report_builder.widget.chart_compliance_radar'),
+                        'description' => $t('report_builder.widget.chart_compliance_radar.description'),
+                        'icon' => 'nav-process',
                         'size' => ['width' => 2, 'height' => 2],
                         'module' => 'compliance',
                     ],
                     self::WIDGET_CHART_INCIDENT_TREND => [
-                        'label' => $t('widget.chart_incident_trend'),
-                        'description' => $t('widget.chart_incident_trend.description'),
-                        'icon' => 'bi-graph-down',
+                        'label' => $t('report_builder.widget.chart_incident_trend'),
+                        'description' => $t('report_builder.widget.chart_incident_trend.description'),
+                        'icon' => 'nav-bar-chart',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => 'incidents',
                     ],
                     self::WIDGET_CHART_ASSET_CRITICALITY => [
-                        'label' => $t('widget.chart_asset_criticality'),
-                        'description' => $t('widget.chart_asset_criticality.description'),
-                        'icon' => 'bi-bar-chart-fill',
+                        'label' => $t('report_builder.widget.chart_asset_criticality'),
+                        'description' => $t('report_builder.widget.chart_asset_criticality.description'),
+                        'icon' => 'nav-bar-chart',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => 'assets',
                     ],
                     self::WIDGET_CHART_FRAMEWORK_COMPARISON => [
-                        'label' => $t('widget.chart_framework_comparison'),
-                        'description' => $t('widget.chart_framework_comparison.description'),
-                        'icon' => 'bi-bar-chart-steps',
+                        'label' => $t('report_builder.widget.chart_framework_comparison'),
+                        'description' => $t('report_builder.widget.chart_framework_comparison.description'),
+                        'icon' => 'nav-bar-chart',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => 'compliance',
                     ],
                 ],
             ],
             self::WIDGET_CATEGORY_TABLE => [
-                'label' => $t('widget.category.table'),
-                'icon' => 'bi-table',
+                'label' => $t('report_builder.widget.category.table'),
+                'icon' => 'nav-grid',
                 'widgets' => [
                     self::WIDGET_TABLE_TOP_RISKS => [
-                        'label' => $t('widget.table_top_risks'),
-                        'description' => $t('widget.table_top_risks.description'),
-                        'icon' => 'bi-list-ol',
+                        'label' => $t('report_builder.widget.table_top_risks'),
+                        'description' => $t('report_builder.widget.table_top_risks.description'),
+                        'icon' => 'nav-list-ordered',
                         'size' => ['width' => 2, 'height' => 2],
                         'module' => 'risks',
                         'config' => ['limit' => 10],
                     ],
                     self::WIDGET_TABLE_RECENT_INCIDENTS => [
-                        'label' => $t('widget.table_recent_incidents'),
-                        'description' => $t('widget.table_recent_incidents.description'),
-                        'icon' => 'bi-list-task',
+                        'label' => $t('report_builder.widget.table_recent_incidents'),
+                        'description' => $t('report_builder.widget.table_recent_incidents.description'),
+                        'icon' => 'nav-list-check',
                         'size' => ['width' => 2, 'height' => 2],
                         'module' => 'incidents',
                         'config' => ['limit' => 10],
                     ],
                     self::WIDGET_TABLE_OVERDUE_CONTROLS => [
-                        'label' => $t('widget.table_overdue_controls'),
-                        'description' => $t('widget.table_overdue_controls.description'),
-                        'icon' => 'bi-clock',
+                        'label' => $t('report_builder.widget.table_overdue_controls'),
+                        'description' => $t('report_builder.widget.table_overdue_controls.description'),
+                        'icon' => 'clock',
                         'size' => ['width' => 2, 'height' => 2],
                         'module' => 'controls',
                         'config' => ['limit' => 10],
                     ],
                     self::WIDGET_TABLE_CRITICAL_ASSETS => [
-                        'label' => $t('widget.table_critical_assets'),
-                        'description' => $t('widget.table_critical_assets.description'),
-                        'icon' => 'bi-hdd-stack',
+                        'label' => $t('report_builder.widget.table_critical_assets'),
+                        'description' => $t('report_builder.widget.table_critical_assets.description'),
+                        'icon' => 'asset-database',
                         'size' => ['width' => 2, 'height' => 2],
                         'module' => 'assets',
                         'config' => ['limit' => 10],
                     ],
                     self::WIDGET_TABLE_AUDIT_FINDINGS => [
-                        'label' => $t('widget.table_audit_findings'),
-                        'description' => $t('widget.table_audit_findings.description'),
-                        'icon' => 'bi-clipboard-check',
+                        'label' => $t('report_builder.widget.table_audit_findings'),
+                        'description' => $t('report_builder.widget.table_audit_findings.description'),
+                        'icon' => 'nav-clipboard-check',
                         'size' => ['width' => 2, 'height' => 2],
                         'module' => 'audits',
                         'config' => ['limit' => 10],
                     ],
                     self::WIDGET_TABLE_BC_PLANS => [
-                        'label' => $t('widget.table_bc_plans'),
-                        'description' => $t('widget.table_bc_plans.description'),
-                        'icon' => 'bi-file-earmark-text',
+                        'label' => $t('report_builder.widget.table_bc_plans'),
+                        'description' => $t('report_builder.widget.table_bc_plans.description'),
+                        'icon' => 'nav-file-earmark-text',
                         'size' => ['width' => 2, 'height' => 2],
                         'module' => 'bcm',
                         'config' => ['limit' => 10],
@@ -294,41 +294,41 @@ class ReportBuilderService
                 ],
             ],
             self::WIDGET_CATEGORY_STATUS => [
-                'label' => $t('widget.category.status'),
-                'icon' => 'bi-circle-fill',
+                'label' => $t('report_builder.widget.category.status'),
+                'icon' => 'status-info',
                 'widgets' => [
                     self::WIDGET_STATUS_RAG => [
-                        'label' => $t('widget.status_rag'),
-                        'description' => $t('widget.status_rag.description'),
-                        'icon' => 'bi-traffic-light',
+                        'label' => $t('report_builder.widget.status_rag'),
+                        'description' => $t('report_builder.widget.status_rag.description'),
+                        'icon' => 'status-warning',
                         'size' => ['width' => 1, 'height' => 1],
                         'module' => null,
                     ],
                 ],
             ],
             self::WIDGET_CATEGORY_TEXT => [
-                'label' => $t('widget.category.text'),
-                'icon' => 'bi-fonts',
+                'label' => $t('report_builder.widget.category.text'),
+                'icon' => 'ui-document',
                 'widgets' => [
                     self::WIDGET_TEXT_HEADER => [
-                        'label' => $t('widget.text_header'),
-                        'description' => $t('widget.text_header.description'),
-                        'icon' => 'bi-type-h1',
+                        'label' => $t('report_builder.widget.text_header'),
+                        'description' => $t('report_builder.widget.text_header.description'),
+                        'icon' => 'ui-document',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => null,
                         'config' => ['text' => '', 'level' => 'h2'],
                     ],
                     self::WIDGET_TEXT_SUMMARY => [
-                        'label' => $t('widget.text_summary'),
-                        'description' => $t('widget.text_summary.description'),
-                        'icon' => 'bi-card-text',
+                        'label' => $t('report_builder.widget.text_summary'),
+                        'description' => $t('report_builder.widget.text_summary.description'),
+                        'icon' => 'nav-document',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => null,
                     ],
                     self::WIDGET_TEXT_CUSTOM => [
-                        'label' => $t('widget.text_custom'),
-                        'description' => $t('widget.text_custom.description'),
-                        'icon' => 'bi-textarea-t',
+                        'label' => $t('report_builder.widget.text_custom'),
+                        'description' => $t('report_builder.widget.text_custom.description'),
+                        'icon' => 'ui-document',
                         'size' => ['width' => 2, 'height' => 1],
                         'module' => null,
                         'config' => ['text' => ''],
@@ -350,38 +350,38 @@ class ReportBuilderService
     {
         return match ($widgetType) {
             // KPI Widgets
-            self::WIDGET_KPI_RISK_COUNT => $this->getKpiRiskCount($filters),
-            self::WIDGET_KPI_HIGH_RISKS => $this->getKpiHighRisks($filters),
-            self::WIDGET_KPI_CONTROL_COUNT => $this->getKpiControlCount($filters),
-            self::WIDGET_KPI_CONTROL_IMPLEMENTATION => $this->getKpiControlImplementation($filters),
-            self::WIDGET_KPI_ASSET_COUNT => $this->getKpiAssetCount($filters),
-            self::WIDGET_KPI_INCIDENT_COUNT => $this->getKpiIncidentCount($filters),
-            self::WIDGET_KPI_OPEN_INCIDENTS => $this->getKpiOpenIncidents($filters),
-            self::WIDGET_KPI_COMPLIANCE_SCORE => $this->getKpiComplianceScore($filters),
-            self::WIDGET_KPI_OVERDUE_TREATMENTS => $this->getKpiOverdueTreatments($filters),
-            self::WIDGET_KPI_BCM_COVERAGE => $this->getKpiBcmCoverage($filters),
+            self::WIDGET_KPI_RISK_COUNT => $this->getKpiRiskCount(),
+            self::WIDGET_KPI_HIGH_RISKS => $this->getKpiHighRisks(),
+            self::WIDGET_KPI_CONTROL_COUNT => $this->getKpiControlCount(),
+            self::WIDGET_KPI_CONTROL_IMPLEMENTATION => $this->getKpiControlImplementation(),
+            self::WIDGET_KPI_ASSET_COUNT => $this->getKpiAssetCount(),
+            self::WIDGET_KPI_INCIDENT_COUNT => $this->getKpiIncidentCount(),
+            self::WIDGET_KPI_OPEN_INCIDENTS => $this->getKpiOpenIncidents(),
+            self::WIDGET_KPI_COMPLIANCE_SCORE => $this->getKpiComplianceScore(),
+            self::WIDGET_KPI_OVERDUE_TREATMENTS => $this->getKpiOverdueTreatments(),
+            self::WIDGET_KPI_BCM_COVERAGE => $this->getKpiBcmCoverage(),
 
             // Chart Widgets
-            self::WIDGET_CHART_RISK_MATRIX => $this->getChartRiskMatrix($filters),
-            self::WIDGET_CHART_RISK_BY_CATEGORY => $this->getChartRiskByCategory($filters),
-            self::WIDGET_CHART_RISK_TREND => $this->getChartRiskTrend($filters),
-            self::WIDGET_CHART_CONTROL_STATUS => $this->getChartControlStatus($filters),
-            self::WIDGET_CHART_COMPLIANCE_RADAR => $this->getChartComplianceRadar($filters),
-            self::WIDGET_CHART_INCIDENT_TREND => $this->getChartIncidentTrend($filters),
-            self::WIDGET_CHART_ASSET_CRITICALITY => $this->getChartAssetCriticality($filters),
-            self::WIDGET_CHART_FRAMEWORK_COMPARISON => $this->getChartFrameworkComparison($filters),
+            self::WIDGET_CHART_RISK_MATRIX => $this->getChartRiskMatrix(),
+            self::WIDGET_CHART_RISK_BY_CATEGORY => $this->getChartRiskByCategory(),
+            self::WIDGET_CHART_RISK_TREND => $this->getChartRiskTrend(),
+            self::WIDGET_CHART_CONTROL_STATUS => $this->getChartControlStatus(),
+            self::WIDGET_CHART_COMPLIANCE_RADAR => $this->getChartComplianceRadar(),
+            self::WIDGET_CHART_INCIDENT_TREND => $this->getChartIncidentTrend(),
+            self::WIDGET_CHART_ASSET_CRITICALITY => $this->getChartAssetCriticality(),
+            self::WIDGET_CHART_FRAMEWORK_COMPARISON => $this->getChartFrameworkComparison(),
 
             // Table Widgets
-            self::WIDGET_TABLE_TOP_RISKS => $this->getTableTopRisks($config, $filters),
-            self::WIDGET_TABLE_RECENT_INCIDENTS => $this->getTableRecentIncidents($config, $filters),
-            self::WIDGET_TABLE_OVERDUE_CONTROLS => $this->getTableOverdueControls($config, $filters),
-            self::WIDGET_TABLE_CRITICAL_ASSETS => $this->getTableCriticalAssets($config, $filters),
-            self::WIDGET_TABLE_AUDIT_FINDINGS => $this->getTableAuditFindings($config, $filters),
-            self::WIDGET_TABLE_BC_PLANS => $this->getTableBcPlans($config, $filters),
+            self::WIDGET_TABLE_TOP_RISKS => $this->getTableTopRisks($config),
+            self::WIDGET_TABLE_RECENT_INCIDENTS => $this->getTableRecentIncidents($config),
+            self::WIDGET_TABLE_OVERDUE_CONTROLS => $this->getTableOverdueControls($config),
+            self::WIDGET_TABLE_CRITICAL_ASSETS => $this->getTableCriticalAssets($config),
+            self::WIDGET_TABLE_AUDIT_FINDINGS => $this->getTableAuditFindings($config),
+            self::WIDGET_TABLE_BC_PLANS => $this->getTableBcPlans($config),
 
             // Status/Text Widgets
-            self::WIDGET_STATUS_RAG => $this->getStatusRag($config, $filters),
-            self::WIDGET_TEXT_SUMMARY => $this->getTextSummary($filters),
+            self::WIDGET_STATUS_RAG => $this->getStatusRag(),
+            self::WIDGET_TEXT_SUMMARY => $this->getTextSummary(),
             self::WIDGET_TEXT_HEADER => ['text' => $config['text'] ?? ''],
             self::WIDGET_TEXT_CUSTOM => ['text' => $config['text'] ?? ''],
 
@@ -433,8 +433,8 @@ class ReportBuilderService
 
         return [
             'executive_summary' => [
-                'name' => $t('template.executive_summary'),
-                'description' => $t('template.executive_summary.description'),
+                'name' => $t('report_builder.template.executive_summary'),
+                'description' => $t('report_builder.template.executive_summary.description'),
                 'category' => CustomReport::CATEGORY_EXECUTIVE,
                 'layout' => CustomReport::LAYOUT_DASHBOARD,
                 'widgets' => [
@@ -448,8 +448,8 @@ class ReportBuilderService
                 ],
             ],
             'risk_report' => [
-                'name' => $t('template.risk_report'),
-                'description' => $t('template.risk_report.description'),
+                'name' => $t('report_builder.template.risk_report'),
+                'description' => $t('report_builder.template.risk_report.description'),
                 'category' => CustomReport::CATEGORY_RISK,
                 'layout' => CustomReport::LAYOUT_DASHBOARD,
                 'widgets' => [
@@ -463,8 +463,8 @@ class ReportBuilderService
                 ],
             ],
             'compliance_dashboard' => [
-                'name' => $t('template.compliance_dashboard'),
-                'description' => $t('template.compliance_dashboard.description'),
+                'name' => $t('report_builder.template.compliance_dashboard'),
+                'description' => $t('report_builder.template.compliance_dashboard.description'),
                 'category' => CustomReport::CATEGORY_COMPLIANCE,
                 'layout' => CustomReport::LAYOUT_DASHBOARD,
                 'widgets' => [
@@ -477,8 +477,8 @@ class ReportBuilderService
                 ],
             ],
             'incident_report' => [
-                'name' => $t('template.incident_report'),
-                'description' => $t('template.incident_report.description'),
+                'name' => $t('report_builder.template.incident_report'),
+                'description' => $t('report_builder.template.incident_report.description'),
                 'category' => CustomReport::CATEGORY_INCIDENT,
                 'layout' => CustomReport::LAYOUT_TWO_COLUMN,
                 'widgets' => [
@@ -489,8 +489,8 @@ class ReportBuilderService
                 ],
             ],
             'bcm_status' => [
-                'name' => $t('template.bcm_status'),
-                'description' => $t('template.bcm_status.description'),
+                'name' => $t('report_builder.template.bcm_status'),
+                'description' => $t('report_builder.template.bcm_status.description'),
                 'category' => CustomReport::CATEGORY_BCM,
                 'layout' => CustomReport::LAYOUT_TWO_COLUMN,
                 'widgets' => [
@@ -500,8 +500,8 @@ class ReportBuilderService
                 ],
             ],
             'asset_overview' => [
-                'name' => $t('template.asset_overview'),
-                'description' => $t('template.asset_overview.description'),
+                'name' => $t('report_builder.template.asset_overview'),
+                'description' => $t('report_builder.template.asset_overview.description'),
                 'category' => CustomReport::CATEGORY_ASSET,
                 'layout' => CustomReport::LAYOUT_DASHBOARD,
                 'widgets' => [
@@ -546,140 +546,132 @@ class ReportBuilderService
 
     // ==================== KPI Widget Data Methods ====================
 
-    private function getKpiRiskCount(array $filters): array
+    private function getKpiRiskCount(): array
     {
         $count = $this->riskRepository->count([]);
         return [
             'value' => $count,
-            'label' => $this->translator->trans('widget.kpi_risk_count', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_risk_count', [], 'report_builder'),
             'trend' => null,
             'color' => $count > 20 ? 'warning' : 'primary',
         ];
     }
 
-    private function getKpiHighRisks(array $filters): array
+    private function getKpiHighRisks(): array
     {
         $risks = $this->riskRepository->findAll();
         $highRisks = array_filter($risks, fn($r) => $r->getRiskScore() >= 12);
         $count = count($highRisks);
-
         return [
             'value' => $count,
-            'label' => $this->translator->trans('widget.kpi_high_risks', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_high_risks', [], 'report_builder'),
             'trend' => null,
             'color' => $count > 5 ? 'danger' : ($count > 0 ? 'warning' : 'success'),
         ];
     }
 
-    private function getKpiControlCount(array $filters): array
+    private function getKpiControlCount(): array
     {
         $count = $this->controlRepository->count([]);
         return [
             'value' => $count,
-            'label' => $this->translator->trans('widget.kpi_control_count', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_control_count', [], 'report_builder'),
             'trend' => null,
             'color' => 'primary',
         ];
     }
 
-    private function getKpiControlImplementation(array $filters): array
+    private function getKpiControlImplementation(): array
     {
         $controls = $this->controlRepository->findAll();
         $total = count($controls);
         $implemented = count(array_filter($controls, fn($c) => $c->getImplementationStatus() === 'implemented'));
         $percentage = $total > 0 ? round(($implemented / $total) * 100) : 0;
-
         return [
             'value' => $percentage . '%',
-            'label' => $this->translator->trans('widget.kpi_control_implementation', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_control_implementation', [], 'report_builder'),
             'trend' => null,
             'color' => $percentage >= 80 ? 'success' : ($percentage >= 50 ? 'warning' : 'danger'),
             'details' => ['implemented' => $implemented, 'total' => $total],
         ];
     }
 
-    private function getKpiAssetCount(array $filters): array
+    private function getKpiAssetCount(): array
     {
         $count = $this->assetRepository->count([]);
         return [
             'value' => $count,
-            'label' => $this->translator->trans('widget.kpi_asset_count', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_asset_count', [], 'report_builder'),
             'trend' => null,
             'color' => 'primary',
         ];
     }
 
-    private function getKpiIncidentCount(array $filters): array
+    private function getKpiIncidentCount(): array
     {
         $count = $this->incidentRepository->count([]);
         return [
             'value' => $count,
-            'label' => $this->translator->trans('widget.kpi_incident_count', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_incident_count', [], 'report_builder'),
             'trend' => null,
             'color' => 'info',
         ];
     }
 
-    private function getKpiOpenIncidents(array $filters): array
+    private function getKpiOpenIncidents(): array
     {
         $incidents = $this->incidentRepository->findAll();
         $open = count(array_filter($incidents, fn($i) => in_array($i->getStatus(), [IncidentStatus::Reported, IncidentStatus::InInvestigation, IncidentStatus::InResolution], true)));
-
         return [
             'value' => $open,
-            'label' => $this->translator->trans('widget.kpi_open_incidents', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_open_incidents', [], 'report_builder'),
             'trend' => null,
             'color' => $open > 5 ? 'danger' : ($open > 0 ? 'warning' : 'success'),
         ];
     }
 
-    private function getKpiComplianceScore(array $filters): array
+    private function getKpiComplianceScore(): array
     {
         $controls = $this->controlRepository->findAll();
         $total = count($controls);
         $implemented = count(array_filter($controls, fn($c) => $c->getImplementationStatus() === 'implemented'));
         $score = $total > 0 ? round(($implemented / $total) * 100) : 0;
-
         return [
             'value' => $score . '%',
-            'label' => $this->translator->trans('widget.kpi_compliance_score', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_compliance_score', [], 'report_builder'),
             'trend' => null,
             'color' => $score >= 80 ? 'success' : ($score >= 50 ? 'warning' : 'danger'),
         ];
     }
 
-    private function getKpiOverdueTreatments(array $filters): array
+    private function getKpiOverdueTreatments(): array
     {
         $risks = $this->riskRepository->findAll();
         $now = new DateTimeImmutable();
         $overdue = 0;
-
         foreach ($risks as $risk) {
             if ($risk->getStatus() !== RiskStatus::Closed && $risk->getReviewDate() && $risk->getReviewDate() < $now) {
                 $overdue++;
             }
         }
-
         return [
             'value' => $overdue,
-            'label' => $this->translator->trans('widget.kpi_overdue_treatments', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_overdue_treatments', [], 'report_builder'),
             'trend' => null,
             'color' => $overdue > 0 ? 'danger' : 'success',
         ];
     }
 
-    private function getKpiBcmCoverage(array $filters): array
+    private function getKpiBcmCoverage(): array
     {
         $processes = $this->businessProcessRepository->findAll();
         $plans = $this->bcPlanRepository->findAll();
-
         $critical = count(array_filter($processes, fn($p) => $p->getCriticality() === 'critical' || $p->getCriticality() === 'high'));
         $covered = count($plans);
         $percentage = $critical > 0 ? min(100, round(($covered / $critical) * 100)) : 100;
-
         return [
             'value' => $percentage . '%',
-            'label' => $this->translator->trans('widget.kpi_bcm_coverage', [], 'report_builder'),
+            'label' => $this->translator->trans('report_builder.widget.kpi_bcm_coverage', [], 'report_builder'),
             'trend' => null,
             'color' => $percentage >= 80 ? 'success' : ($percentage >= 50 ? 'warning' : 'danger'),
             'details' => ['critical_processes' => $critical, 'bc_plans' => $covered],
@@ -688,24 +680,21 @@ class ReportBuilderService
 
     // ==================== Chart Widget Data Methods ====================
 
-    private function getChartRiskMatrix(array $filters): array
+    private function getChartRiskMatrix(): array
     {
         $risks = $this->riskRepository->findAll();
         $matrix = [];
-
         // Initialize 5x5 matrix
         for ($likelihood = 1; $likelihood <= 5; $likelihood++) {
             for ($impact = 1; $impact <= 5; $impact++) {
                 $matrix[$likelihood][$impact] = 0;
             }
         }
-
         foreach ($risks as $risk) {
-            $l = min(5, max(1, $risk->getLikelihood() ?? 1));
+            $l = min(5, max(1, $risk->getProbability() ?? 1));
             $i = min(5, max(1, $risk->getImpact() ?? 1));
             $matrix[$l][$i]++;
         }
-
         return [
             'type' => 'heatmap',
             'matrix' => $matrix,
@@ -716,16 +705,14 @@ class ReportBuilderService
         ];
     }
 
-    private function getChartRiskByCategory(array $filters): array
+    private function getChartRiskByCategory(): array
     {
         $risks = $this->riskRepository->findAll();
         $byCategory = [];
-
         foreach ($risks as $risk) {
             $category = $risk->getCategory() ?? 'Other';
             $byCategory[$category] = ($byCategory[$category] ?? 0) + 1;
         }
-
         return [
             'type' => 'pie',
             'labels' => array_keys($byCategory),
@@ -733,12 +720,11 @@ class ReportBuilderService
         ];
     }
 
-    private function getChartRiskTrend(array $filters): array
+    private function getChartRiskTrend(): array
     {
         $months = [];
         $data = [];
         $allRisks = $this->riskRepository->findAll();
-
         for ($i = 5; $i >= 0; $i--) {
             $date = new DateTimeImmutable("-{$i} months");
             $monthEnd = $date->modify('last day of this month')->setTime(23, 59, 59);
@@ -751,7 +737,6 @@ class ReportBuilderService
             }));
             $data[] = $count;
         }
-
         return [
             'type' => 'line',
             'labels' => $months,
@@ -761,11 +746,10 @@ class ReportBuilderService
         ];
     }
 
-    private function getChartControlStatus(array $filters): array
+    private function getChartControlStatus(): array
     {
         $controls = $this->controlRepository->findAll();
         $status = ['implemented' => 0, 'in_progress' => 0, 'not_started' => 0];
-
         foreach ($controls as $control) {
             $s = $control->getImplementationStatus() ?? 'not_started';
             if (isset($status[$s])) {
@@ -774,7 +758,6 @@ class ReportBuilderService
                 $status['not_started']++;
             }
         }
-
         return [
             'type' => 'doughnut',
             'labels' => ['Implemented', 'In Progress', 'Not Started'],
@@ -783,12 +766,11 @@ class ReportBuilderService
         ];
     }
 
-    private function getChartComplianceRadar(array $filters): array
+    private function getChartComplianceRadar(): array
     {
         $frameworks = $this->frameworkRepository->findAll();
         $labels = [];
         $data = [];
-
         foreach ($frameworks as $framework) {
             $labels[] = $framework->getName();
             // Calculate actual compliance from controls mapped to this framework
@@ -798,13 +780,11 @@ class ReportBuilderService
             // Use overall control implementation as proxy when per-framework data isn't available
             $data[] = $total > 0 ? round(($implemented / $total) * 100) : 0;
         }
-
         if (empty($labels)) {
             // No frameworks configured - return empty chart data
             $labels = ['No Frameworks'];
             $data = [0];
         }
-
         return [
             'type' => 'radar',
             'labels' => $labels,
@@ -814,12 +794,11 @@ class ReportBuilderService
         ];
     }
 
-    private function getChartIncidentTrend(array $filters): array
+    private function getChartIncidentTrend(): array
     {
         $months = [];
         $data = [];
         $allIncidents = $this->incidentRepository->findAll();
-
         for ($i = 5; $i >= 0; $i--) {
             $date = new DateTimeImmutable("-{$i} months");
             $monthStart = $date->modify('first day of this month')->setTime(0, 0, 0);
@@ -833,7 +812,6 @@ class ReportBuilderService
             }));
             $data[] = $count;
         }
-
         return [
             'type' => 'bar',
             'labels' => $months,
@@ -843,17 +821,16 @@ class ReportBuilderService
         ];
     }
 
-    private function getChartAssetCriticality(array $filters): array
+    private function getChartAssetCriticality(): array
     {
         $assets = $this->assetRepository->findAll();
         $criticality = ['critical' => 0, 'high' => 0, 'medium' => 0, 'low' => 0];
-
         foreach ($assets as $asset) {
             // Calculate criticality from CIA values
             $maxCia = max(
-                $asset->getConfidentiality() ?? 1,
-                $asset->getIntegrity() ?? 1,
-                $asset->getAvailability() ?? 1
+                $asset->getConfidentialityValue() ?? 1,
+                $asset->getIntegrityValue() ?? 1,
+                $asset->getAvailabilityValue() ?? 1
             );
 
             if ($maxCia >= 4) {
@@ -866,7 +843,6 @@ class ReportBuilderService
                 $criticality['low']++;
             }
         }
-
         return [
             'type' => 'bar',
             'labels' => ['Critical', 'High', 'Medium', 'Low'],
@@ -875,12 +851,11 @@ class ReportBuilderService
         ];
     }
 
-    private function getChartFrameworkComparison(array $filters): array
+    private function getChartFrameworkComparison(): array
     {
         $frameworks = $this->frameworkRepository->findAll();
         $labels = [];
         $data = [];
-
         foreach ($frameworks as $framework) {
             $labels[] = $framework->getName();
             // Calculate actual compliance from controls
@@ -889,13 +864,11 @@ class ReportBuilderService
             $implemented = count(array_filter($controls, fn($c) => $c->getImplementationStatus() === 'implemented'));
             $data[] = $total > 0 ? round(($implemented / $total) * 100) : 0;
         }
-
         if (empty($labels)) {
             // No frameworks configured - return empty chart data
             $labels = ['No Frameworks'];
             $data = [0];
         }
-
         return [
             'type' => 'horizontalBar',
             'labels' => $labels,
@@ -905,7 +878,7 @@ class ReportBuilderService
 
     // ==================== Table Widget Data Methods ====================
 
-    private function getTableTopRisks(array $config, array $filters): array
+    private function getTableTopRisks(array $config): array
     {
         $limit = $config['limit'] ?? 10;
         $risks = $this->riskRepository->findAll();
@@ -917,10 +890,10 @@ class ReportBuilderService
         foreach ($risks as $risk) {
             $rows[] = [
                 'id' => $risk->getId(),
-                'name' => $risk->getName(),
+                'name' => $risk->getTitle(),
                 'category' => $risk->getCategory(),
                 'score' => $risk->getRiskScore(),
-                'status' => $risk->getStatus(),
+                'status' => $risk->getStatus()?->value,
                 'owner' => $risk->getRiskOwner()?->getFullName(),
             ];
         }
@@ -931,7 +904,7 @@ class ReportBuilderService
         ];
     }
 
-    private function getTableRecentIncidents(array $config, array $filters): array
+    private function getTableRecentIncidents(array $config): array
     {
         $limit = $config['limit'] ?? 10;
         $incidents = $this->incidentRepository->findBy([], ['detectedAt' => 'DESC'], $limit);
@@ -953,7 +926,7 @@ class ReportBuilderService
         ];
     }
 
-    private function getTableOverdueControls(array $config, array $filters): array
+    private function getTableOverdueControls(array $config): array
     {
         $limit = $config['limit'] ?? 10;
         $controls = $this->controlRepository->findAll();
@@ -978,15 +951,15 @@ class ReportBuilderService
         ];
     }
 
-    private function getTableCriticalAssets(array $config, array $filters): array
+    private function getTableCriticalAssets(array $config): array
     {
         $limit = $config['limit'] ?? 10;
         $assets = $this->assetRepository->findAll();
 
         // Sort by max CIA value
         usort($assets, function ($a, $b) {
-            $maxA = max($a->getConfidentiality() ?? 0, $a->getIntegrity() ?? 0, $a->getAvailability() ?? 0);
-            $maxB = max($b->getConfidentiality() ?? 0, $b->getIntegrity() ?? 0, $b->getAvailability() ?? 0);
+            $maxA = max($a->getConfidentialityValue() ?? 0, $a->getIntegrityValue() ?? 0, $a->getAvailabilityValue() ?? 0);
+            $maxB = max($b->getConfidentialityValue() ?? 0, $b->getIntegrityValue() ?? 0, $b->getAvailabilityValue() ?? 0);
             return $maxB - $maxA;
         });
 
@@ -997,10 +970,10 @@ class ReportBuilderService
             $rows[] = [
                 'id' => $asset->getId(),
                 'name' => $asset->getName(),
-                'type' => $asset->getType(),
-                'c' => $asset->getConfidentiality(),
-                'i' => $asset->getIntegrity(),
-                'a' => $asset->getAvailability(),
+                'type' => $asset->getAssetType(),
+                'c' => $asset->getConfidentialityValue(),
+                'i' => $asset->getIntegrityValue(),
+                'a' => $asset->getAvailabilityValue(),
             ];
         }
 
@@ -1010,7 +983,7 @@ class ReportBuilderService
         ];
     }
 
-    private function getTableAuditFindings(array $config, array $filters): array
+    private function getTableAuditFindings(array $config): array
     {
         $limit = $config['limit'] ?? 10;
         $audits = $this->auditRepository->findBy([], ['plannedDate' => 'DESC'], $limit);
@@ -1031,7 +1004,7 @@ class ReportBuilderService
         ];
     }
 
-    private function getTableBcPlans(array $config, array $filters): array
+    private function getTableBcPlans(array $config): array
     {
         $limit = $config['limit'] ?? 10;
         $plans = $this->bcPlanRepository->findBy([], ['lastTested' => 'DESC'], $limit);
@@ -1054,30 +1027,26 @@ class ReportBuilderService
 
     // ==================== Status Widget Data Methods ====================
 
-    private function getStatusRag(array $config, array $filters): array
+    private function getStatusRag(): array
     {
         // Calculate overall RAG status based on multiple factors
         $controls = $this->controlRepository->findAll();
         $risks = $this->riskRepository->findAll();
-
         $totalControls = count($controls);
         $implemented = count(array_filter($controls, fn($c) => $c->getImplementationStatus() === 'implemented'));
         $implementationRate = $totalControls > 0 ? ($implemented / $totalControls) * 100 : 0;
-
         $highRisks = count(array_filter($risks, fn($r) => $r->getRiskScore() >= 15));
-
         // Determine RAG status
         if ($implementationRate >= 80 && $highRisks <= 3) {
             $status = 'green';
-            $label = $this->translator->trans('status.good', [], 'report_builder');
+            $label = $this->translator->trans('report_builder.status.good', [], 'report_builder');
         } elseif ($implementationRate >= 50 && $highRisks <= 10) {
             $status = 'amber';
-            $label = $this->translator->trans('status.attention', [], 'report_builder');
+            $label = $this->translator->trans('report_builder.status.attention', [], 'report_builder');
         } else {
             $status = 'red';
-            $label = $this->translator->trans('status.critical', [], 'report_builder');
+            $label = $this->translator->trans('report_builder.status.critical', [], 'report_builder');
         }
-
         return [
             'status' => $status,
             'label' => $label,
@@ -1088,13 +1057,12 @@ class ReportBuilderService
         ];
     }
 
-    private function getTextSummary(array $filters): array
+    private function getTextSummary(): array
     {
         $stats = $this->dashboardStatisticsService->getDashboardStatistics();
-
         return [
             'text' => sprintf(
-                $this->translator->trans('widget.text_summary.content', [], 'report_builder'),
+                $this->translator->trans('report_builder.widget.text_summary.content', [], 'report_builder'),
                 $stats['risks_total'] ?? 0,
                 $stats['controls_implemented'] ?? 0,
                 $stats['incidents_open'] ?? 0

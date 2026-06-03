@@ -8,6 +8,7 @@ role_management:
         overview: 'Manage user roles and their permissions for access control'
     action:
         create: 'Create New Role'
+        compare: 'Compare Roles'
     section:
         basic_info: 'Basic Information'
         permissions: Permissions
@@ -27,6 +28,7 @@ role_management:
         active: 'Active roles can be assigned to users'
         permissions: 'Select the permissions this role should have'
         system_role: 'System roles cannot be deleted and have restricted modification options'
+        compare_before_create: 'Compare existing roles before creating a new one — prevents duplicates.'
     permission:
         name: Permission
         resource: Resource
@@ -57,6 +59,54 @@ role_management:
         delete: 'Are you sure you want to delete this role? All user assignments will be removed.'
     aria:
         actions_for_role: 'Actions for role %name%'
+    permissions:
+        col:
+            name: 'Permission'
+            module: 'Module'
+            framework: 'Framework / Standard'
+            action: 'Action'
+            description: 'Description'
+        select_all: 'Select all permissions'
+        search_placeholder: 'Search permissions…'
+        selected_count_label: 'selected'
+        table_aria: 'Permissions table'
+        no_results: 'No permissions found.'
+        category:
+            user: 'User Management'
+            role: 'Role Management'
+            risk: 'Risk Management'
+            asset: 'Asset Management'
+            incident: 'Incident Management'
+            control: 'Control Management (SoA)'
+            audit: 'Audit Management'
+            compliance: 'Compliance'
+            report: 'Reports'
+            privacy: 'Data Protection (GDPR)'
+            security: 'Security & KPIs'
+            policy: 'Policies'
+        module:
+            authentication: 'User & Roles'
+            assets: 'Asset Management'
+            risks: 'Risk Management'
+            controls: 'Control Management'
+            incidents: 'Incident Management'
+            audits: 'Audit Management'
+            compliance: 'Multi-Framework Compliance'
+            report_builder: 'Report Builder'
+            privacy: 'Data Protection (GDPR)'
+            risk_treatment_plans: 'Risk Treatment Plans'
+            analytics: 'Analytics & KPI'
+            documents: 'Documents & Policies'
+            core: 'Core ISMS'
+        action:
+            view: 'View'
+            create: 'Create'
+            edit: 'Edit'
+            delete: 'Delete'
+            approve: 'Approve'
+            export: 'Export'
+            respond: 'Respond'
+            revoke: 'Revoke'
 role:
     user: User
     manager: Manager
@@ -89,4 +139,5 @@ role:
     templates:
         title: Title
         description: Description
+        intro: 'Pick a predefined role template and optionally adjust the name. The template already bundles a sensible set of permissions for the typical use case.'
         custom_name: 'Custom Name'

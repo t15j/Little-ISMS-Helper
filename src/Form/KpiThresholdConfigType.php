@@ -12,7 +12,7 @@ use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints as Assert;
 
-class KpiThresholdConfigType extends AbstractType
+final class KpiThresholdConfigType extends AbstractType
 {
     /** List of tunable KPI keys; extend as new KPIs gain tenant-configurable thresholds. */
     public const KPI_KEYS = [
@@ -35,7 +35,6 @@ class KpiThresholdConfigType extends AbstractType
                 'choices' => self::KPI_KEYS,
                 'placeholder' => 'kpi_threshold.placeholder.kpi_key',
                 'required' => true,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'kpi_threshold.help.kpi_key',
             ])
             ->add('goodThreshold', IntegerType::class, [

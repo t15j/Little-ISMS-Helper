@@ -72,6 +72,39 @@
         .flash.error { background: rgba(248,113,113,0.15); border: 1px solid var(--danger); color: var(--danger); }
         .empty { color: var(--muted); font-size: 15px; margin-top: 8px; }
         .footer { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
+        .section { margin-top: 32px; border-top: 1px solid var(--border); padding-top: 24px; }
+        .section h2 { font-size: 16px; font-weight: 600; margin: 0 0 16px; }
+        .repair-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 12px; }
+        .repair-label { font-size: 14px; color: var(--muted); flex: 1; }
+        .repair-count { font-weight: 600; color: var(--accent); min-width: 32px; text-align: right; }
+        .repair-count.ok { color: var(--success); }
+        .btn-repair {
+            background: var(--accent);
+            color: var(--bg);
+            border: 0;
+            padding: 7px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .btn-repair:hover:not(:disabled) { background: var(--accent-hover); }
+        .btn-repair:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-all {
+            background: #8b5cf6;
+            color: #fff;
+            border: 0;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 16px;
+            width: 100%;
+        }
+        .btn-all:hover:not(:disabled) { background: #7c3aed; }
+        .btn-all:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -82,7 +115,148 @@
             {% endfor %}
         {% endfor %}
 
-        {% if error_message %}
+        {# ── Universal apply-failure recovery card ─────────────────────── #}
+        {# Surfaces for ANY migration failure (data constraint, FK violation,
+           phantom-diff, etc.) — not just phantom_diff_migration category.
+           Priority: this branch before the legacy error_diagnosis branch. #}
+        {% if apply_failure is not null and apply_failure.version is defined %}
+            <div class="icon">🛠️</div>
+            <h1>{{ 'quick_fix.apply_failure.title'|trans({}, 'quick_fix') }}</h1>
+            {% if apply_failure.message %}
+                <p style="font-size: 13px;">{{ apply_failure.message }}</p>
+            {% endif %}
+            <p style="font-family: monospace; font-size: 12px; word-break: break-word; color: var(--muted);">
+                {{ apply_failure.version }}
+                <br>[{{ apply_failure.category }}]
+            </p>
+            <div class="flash error" style="margin-top: 12px; font-size: 13px;">
+                ⚠️ {{ 'quick_fix.apply_failure.warning'|trans({}, 'quick_fix') }}
+            </div>
+
+            {# Option 1: skip THIS migration (mark as executed without DDL) #}
+            <form method="POST" action="{{ path('app_quick_fix_force_mark_executed') }}" style="margin-top: 16px;">
+                <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_force_mark_executed') }}">
+                <input type="hidden" name="version" value="{{ apply_failure.version }}">
+                <label style="display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; padding: 8px 0;">
+                    <input type="checkbox" name="confirm_already_exists" value="1" required style="margin-top: 3px;">
+                    <span>{{ 'quick_fix.apply_failure.skip_single_confirm'|trans({}, 'quick_fix') }}</span>
+                </label>
+                <button type="submit" style="background: var(--danger); color: var(--bg);" onclick="this.disabled=true;this.form.submit();">
+                    {{ 'quick_fix.apply_failure.skip_single_button'|trans({}, 'quick_fix') }}
+                </button>
+            </form>
+
+            {# Option 2: skip ALL pending migrations #}
+            <details style="margin-top: 16px;">
+                <summary style="cursor: pointer; color: var(--muted); font-size: 13px;">
+                    {{ 'quick_fix.apply_failure.skip_all_show'|trans({}, 'quick_fix') }}
+                </summary>
+                <div style="margin-top: 12px;">
+                    <p style="font-size: 13px; color: var(--muted);">{{ 'quick_fix.apply_failure.skip_all_body'|trans({}, 'quick_fix') }}</p>
+                    <form method="POST" action="{{ path('app_quick_fix_mark_all_phantom_diff') }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_mark_all_phantom_diff') }}">
+                        <label style="display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; padding: 8px 0;">
+                            <input type="checkbox" name="confirm_all_already_exist" value="1" required style="margin-top: 3px;">
+                            <span>{{ 'quick_fix.apply_failure.skip_all_confirm'|trans({}, 'quick_fix') }}</span>
+                        </label>
+                        <button type="submit" style="background: var(--danger); color: var(--bg);" onclick="this.disabled=true;this.form.submit();">
+                            {{ 'quick_fix.apply_failure.skip_all_button'|trans({}, 'quick_fix') }}
+                        </button>
+                    </form>
+                </div>
+            </details>
+
+            {# Option 3: nuclear schema-update (ADD/CREATE only, saveMode=true) #}
+            <details style="margin-top: 16px;">
+                <summary style="cursor: pointer; color: var(--muted); font-size: 13px;">
+                    {{ 'quick_fix.force_update.show'|trans({}, 'quick_fix') }}
+                </summary>
+                <div style="margin-top: 12px;">
+                    <p style="font-size: 13px; color: var(--muted);">{{ 'quick_fix.force_update.body'|trans({}, 'quick_fix') }}</p>
+                    <form method="POST" action="{{ path('app_quick_fix_force_schema_update') }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_force_schema_update') }}">
+                        <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; padding: 8px 0; color: var(--muted);">
+                            <input type="checkbox" name="confirm_force_schema" value="1" required style="margin-top: 3px;">
+                            <span>{{ 'quick_fix.force_update.confirm_label'|trans({}, 'quick_fix') }}</span>
+                        </label>
+                        <button type="submit" style="background: var(--danger); color: var(--bg); margin-top: 8px;" onclick="this.disabled=true;this.form.submit();">
+                            {{ 'quick_fix.force_update.button'|trans({}, 'quick_fix') }}
+                        </button>
+                    </form>
+                </div>
+            </details>
+
+        {# ── Legacy phantom-diff-only branch (kept for backward-compat) ── #}
+        {# Only reached when error_diagnosis is set WITHOUT apply_failure.  #}
+        {% elseif error_diagnosis is not null and error_diagnosis.category == 'phantom_diff_migration' and error_diagnosis.offending_version is not null %}
+            <div class="icon">🔧</div>
+            <h1>{{ 'quick_fix.phantom_diff.title'|trans({}, 'quick_fix') }}</h1>
+            <p style="font-size: 13px;">{{ error_diagnosis.message }}</p>
+            <p style="font-family: monospace; font-size: 12px; word-break: break-word; color: var(--muted);">{{ error_diagnosis.offending_version }}</p>
+            <div class="flash error" style="margin-top: 12px; font-size: 13px;">
+                ⚠️ {{ 'quick_fix.phantom_diff.warning'|trans({}, 'quick_fix') }}
+            </div>
+            <form method="POST" action="{{ path('app_quick_fix_force_mark_executed') }}" style="margin-top: 16px;">
+                <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_force_mark_executed') }}">
+                <input type="hidden" name="version" value="{{ error_diagnosis.offending_version }}">
+                <label style="display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; padding: 8px 0;">
+                    <input type="checkbox" name="confirm_already_exists" value="1" required style="margin-top: 3px;">
+                    <span>{{ 'quick_fix.phantom_diff.confirm_label'|trans({}, 'quick_fix') }}</span>
+                </label>
+                <button type="submit" style="background: var(--danger); color: var(--bg);" onclick="this.disabled=true;this.form.submit();">
+                    {{ 'quick_fix.phantom_diff.button'|trans({}, 'quick_fix') }}
+                </button>
+            </form>
+
+            {# Bulk recovery — collapses by default so it doesn't dominate the UI #}
+            <details style="margin-top: 24px;">
+                <summary style="cursor: pointer; color: var(--muted); font-size: 13px;">
+                    {{ 'quick_fix.phantom_diff.mark_all_show'|trans({}, 'quick_fix') }}
+                </summary>
+                <div style="margin-top: 12px;">
+                    <p style="font-size: 13px; color: var(--muted);">{{ 'quick_fix.phantom_diff.mark_all_body'|trans({}, 'quick_fix') }}</p>
+                    <form method="POST" action="{{ path('app_quick_fix_mark_all_phantom_diff') }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_mark_all_phantom_diff') }}">
+                        <label style="display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; padding: 8px 0;">
+                            <input type="checkbox" name="confirm_all_already_exist" value="1" required style="margin-top: 3px;">
+                            <span>{{ 'quick_fix.phantom_diff.mark_all_confirm_label'|trans({}, 'quick_fix') }}</span>
+                        </label>
+                        <button type="submit" style="background: var(--danger); color: var(--bg);" onclick="this.disabled=true;this.form.submit();">
+                            {{ 'quick_fix.phantom_diff.mark_all_button'|trans({}, 'quick_fix') }}
+                        </button>
+                    </form>
+                </div>
+            </details>
+        {% elseif entity_drift_count > 0 and drift_count == 0 and pending_count == 0 and error_diagnosis is null %}
+            {# Entity-vs-DB drift detected independently of migration/SchemaTool counters.
+               This fires when pending=0 and drift=0 but the entity metadata expects columns
+               the live DB does not have (phantom-diff-state or new deployment). Surface the
+               force-schema-update button prominently — not collapsed — so the operator can
+               resolve with a single click. saveMode=true means only ADD/CREATE is emitted,
+               never DROP TABLE. #}
+            <div class="icon">⚠️</div>
+            <h1>{{ 'quick_fix.entity_drift.title'|trans({}, 'quick_fix') }}</h1>
+            <p>{{ 'quick_fix.entity_drift.body'|trans({}, 'quick_fix') }}</p>
+            <div class="count">{{ entity_drift_count }}</div>
+            <div class="count-label">{{ 'quick_fix.entity_drift.count_label'|trans({}, 'quick_fix') }}</div>
+            <details style="margin-top: 12px;">
+                <summary style="cursor: pointer; color: var(--muted); font-size: 13px;">
+                    {{ 'quick_fix.drift.show_sql'|trans({}, 'quick_fix') }}
+                </summary>
+                <pre style="background: var(--bg); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 11px; color: var(--muted); margin-top: 8px;">{% for s in entity_drift_statements %}{{ s }}
+{% endfor %}</pre>
+            </details>
+            <form method="POST" action="{{ path('app_quick_fix_force_schema_update') }}" style="margin-top: 16px;">
+                <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_force_schema_update') }}">
+                <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; padding: 8px 0; color: var(--muted);">
+                    <input type="checkbox" name="confirm_force_schema" value="1" required style="margin-top: 3px;">
+                    <span>{{ 'quick_fix.force_update.confirm_label'|trans({}, 'quick_fix') }}</span>
+                </label>
+                <button type="submit" style="background: var(--accent); color: var(--bg);" onclick="this.disabled=true;this.form.submit();">
+                    {{ 'quick_fix.force_update.button'|trans({}, 'quick_fix') }}
+                </button>
+            </form>
+        {% elseif error_message %}
             <div class="icon">⚠️</div>
             <h1>{{ 'quick_fix.error.title'|trans({}, 'quick_fix') }}</h1>
             <p>{{ 'quick_fix.error.body'|trans({}, 'quick_fix') }}</p>
@@ -99,12 +273,57 @@
                     {{ 'quick_fix.pending.button'|trans({}, 'quick_fix') }}
                 </button>
             </form>
+
+            {# Always-visible bulk-phantom-skip — user-requested 2026-05-27:
+               the option to skip all phantom-diff migrations should be
+               reachable BEFORE hitting a failure, not only afterwards.
+               This is the same `mark_all_phantom_diff` action surfaced from
+               the apply_failure recovery card — exposed here proactively. #}
+            <details style="margin-top: 20px;">
+                <summary style="cursor: pointer; color: var(--muted); font-size: 13px;">
+                    {{ 'quick_fix.pending.phantom_skip_show'|trans({}, 'quick_fix') }}
+                </summary>
+                <div style="margin-top: 12px; text-align: left;">
+                    <p style="font-size: 13px; color: var(--muted);">
+                        {{ 'quick_fix.pending.phantom_skip_body'|trans({}, 'quick_fix') }}
+                    </p>
+                    <form method="POST" action="{{ path('app_quick_fix_mark_all_phantom_diff') }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_mark_all_phantom_diff') }}">
+                        <label style="display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; padding: 8px 0;">
+                            <input type="checkbox" name="confirm_all_already_exist" value="1" required style="margin-top: 3px;">
+                            <span>{{ 'quick_fix.apply_failure.skip_all_confirm'|trans({}, 'quick_fix') }}</span>
+                        </label>
+                        <button type="submit" style="background: var(--danger); color: var(--bg);" onclick="this.disabled=true;this.form.submit();">
+                            {{ 'quick_fix.pending.phantom_skip_button'|trans({}, 'quick_fix') }}
+                        </button>
+                    </form>
+                </div>
+            </details>
         {% elseif drift_count > 0 %}
             <div class="icon">🛠️</div>
             <h1>{{ 'quick_fix.drift.title'|trans({}, 'quick_fix') }}</h1>
             <p>{{ 'quick_fix.drift.body'|trans({}, 'quick_fix') }}</p>
             <div class="count">{{ drift_count }}</div>
             <div class="count-label">{{ 'quick_fix.drift.count_label'|trans({}, 'quick_fix') }}</div>
+
+            {# File-system-discovered pending migrations — different source
+               than Doctrine's MigrationPlanCalculator. When this diverges
+               from `pending_count` it usually means PREPARE/EXECUTE-pattern
+               migrations recorded as executed but DDL never ran (CLAUDE.md
+               pitfall #6). Reconcile auto-recovers via apply+retry. #}
+            {% if pending_fs_count > 0 %}
+                <div style="margin-top: 12px; color: var(--muted); font-size: 13px;">
+                    <strong style="color: var(--danger);">{{ pending_fs_count }}</strong>
+                    {{ 'quick_fix.drift.pending_fs_label'|trans({}, 'quick_fix') }}
+                </div>
+                <details style="margin-top: 6px;">
+                    <summary style="cursor: pointer; color: var(--muted); font-size: 12px;">
+                        {{ 'quick_fix.drift.pending_fs_show'|trans({}, 'quick_fix') }}
+                    </summary>
+                    <pre style="background: var(--bg); padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 11px; color: var(--muted); margin-top: 6px;">{% for v in pending_fs_names %}{{ v }}
+{% endfor %}</pre>
+                </details>
+            {% endif %}
 
             <details style="margin-top: 16px;">
                 <summary style="cursor: pointer; color: var(--muted); font-size: 13px;">
@@ -115,10 +334,23 @@
             </details>
 
             {% if drift_destructive|length > 0 %}
-                <div class="flash error" style="margin-top: 16px;">
-                    {{ 'quick_fix.drift.destructive_warning'|trans({'count': drift_destructive|length}, 'quick_fix') }}
+                <div style="margin-top: 12px; color: var(--muted); font-size: 13px;">
+                    <strong style="color: var(--danger);">{{ drift_destructive|length }}</strong>
+                    {{ 'quick_fix.drift.destructive_count_label'|trans({}, 'quick_fix') }}
                 </div>
-                <p style="font-family: monospace; font-size: 12px;">php bin/console app:schema:reconcile</p>
+                <div class="flash error" style="margin-top: 16px;">
+                    {{ 'quick_fix.drift.destructive_warning'|trans({}, 'quick_fix') }}
+                </div>
+                <form method="POST" action="{{ path('app_quick_fix_reconcile') }}" style="margin-top: 12px;">
+                    <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_reconcile') }}">
+                    <label style="display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; padding: 8px 0;">
+                        <input type="checkbox" name="confirm_destructive" value="1" required style="margin-top: 3px;">
+                        <span>{{ 'quick_fix.drift.destructive_confirm_label'|trans({}, 'quick_fix') }}</span>
+                    </label>
+                    <button type="submit" style="background: var(--danger); color: var(--bg);" onclick="this.disabled=true;this.form.submit();">
+                        {{ 'quick_fix.drift.destructive_button'|trans({}, 'quick_fix') }}
+                    </button>
+                </form>
             {% else %}
                 <form method="POST" action="{{ path('app_quick_fix_reconcile') }}">
                     <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_reconcile') }}">
@@ -127,12 +359,116 @@
                     </button>
                 </form>
             {% endif %}
+
+            {# Nuclear fallback — collapsed by default; only visible in drift state #}
+            <details style="margin-top: 16px;">
+                <summary style="cursor: pointer; color: var(--muted); font-size: 13px;">
+                    {{ 'quick_fix.force_update.show'|trans({}, 'quick_fix') }}
+                </summary>
+                <div style="margin-top: 12px;">
+                    <p style="font-size: 13px; color: var(--muted);">{{ 'quick_fix.force_update.body'|trans({}, 'quick_fix') }}</p>
+                    <form method="POST" action="{{ path('app_quick_fix_force_schema_update') }}">
+                        <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_force_schema_update') }}">
+                        <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; padding: 8px 0; color: var(--muted);">
+                            <input type="checkbox" name="confirm_force_schema" value="1" required style="margin-top: 3px;">
+                            <span>{{ 'quick_fix.force_update.confirm_label'|trans({}, 'quick_fix') }}</span>
+                        </label>
+                        <button type="submit" style="background: var(--danger); color: var(--bg); margin-top: 8px;" onclick="this.disabled=true;this.form.submit();">
+                            {{ 'quick_fix.force_update.button'|trans({}, 'quick_fix') }}
+                        </button>
+                    </form>
+                </div>
+            </details>
         {% else %}
             <div class="icon">✅</div>
             <h1>{{ 'quick_fix.ok.title'|trans({}, 'quick_fix') }}</h1>
             <p class="empty">{{ 'quick_fix.ok.body'|trans({}, 'quick_fix') }}</p>
             <a href="/" style="color: var(--accent);">{{ 'quick_fix.ok.return'|trans({}, 'quick_fix') }}</a>
         {% endif %}
+
+        {# ── Data-Integrity section ─────────────────────────────────────── #}
+        {% set has_integrity_issues = (orphan_count > 0) or (mismatch_count > 0) or (duplicate_counts|length > 0) %}
+        <div class="section">
+            <h2>{{ 'quick_fix.repair.section.title'|trans({}, 'quick_fix') }}</h2>
+            {% if data_integrity_errors|length > 0 %}
+                <div class="flash" style="background: rgba(148,163,184,0.1); border: 1px solid var(--border); color: var(--muted); margin-bottom: 12px; font-size: 13px;">
+                    {{ 'quick_fix.repair.partial_error.label'|trans({'%count%': data_integrity_errors|length}, 'quick_fix') }}
+                    <details style="margin-top: 6px;">
+                        <summary style="cursor: pointer; font-size: 12px;">{{ 'quick_fix.repair.partial_error.show'|trans({}, 'quick_fix') }}</summary>
+                        <ul style="margin: 6px 0 0; padding-left: 16px; font-size: 11px; font-family: monospace;">
+                            {% for err in data_integrity_errors %}<li>{{ err }}</li>{% endfor %}
+                        </ul>
+                    </details>
+                </div>
+            {% endif %}
+
+            {# Orphans #}
+            <div class="repair-row">
+                <span class="repair-label">{{ 'quick_fix.repair.orphans.title'|trans({}, 'quick_fix') }}</span>
+                <span class="repair-count{% if orphan_count == 0 %} ok{% endif %}">{{ orphan_count }}</span>
+                {% if orphan_count > 0 %}
+                <form method="POST" action="{{ path('app_quick_fix_repair_orphans') }}" style="display:inline;">
+                    <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_repair_orphans') }}">
+                    <button type="submit" class="btn-repair" onclick="this.disabled=true;this.form.submit();">
+                        {{ 'quick_fix.repair.orphans.button'|trans({}, 'quick_fix') }}
+                    </button>
+                </form>
+                {% else %}
+                    <span style="font-size:12px;color:var(--success);">{{ 'quick_fix.repair.orphans.empty'|trans({}, 'quick_fix') }}</span>
+                {% endif %}
+            </div>
+
+            {# Tenant Mismatches #}
+            <div class="repair-row">
+                <span class="repair-label">{{ 'quick_fix.repair.tenant_mismatches.title'|trans({}, 'quick_fix') }}</span>
+                <span class="repair-count{% if mismatch_count == 0 %} ok{% endif %}">{{ mismatch_count }}</span>
+                {% if mismatch_count > 0 %}
+                <form method="POST" action="{{ path('app_quick_fix_repair_mismatches') }}" style="display:inline;">
+                    <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_repair_mismatches') }}">
+                    <button type="submit" class="btn-repair" onclick="this.disabled=true;this.form.submit();">
+                        {{ 'quick_fix.repair.tenant_mismatches.button'|trans({}, 'quick_fix') }}
+                    </button>
+                </form>
+                {% else %}
+                    <span style="font-size:12px;color:var(--success);">{{ 'quick_fix.repair.tenant_mismatches.empty'|trans({}, 'quick_fix') }}</span>
+                {% endif %}
+            </div>
+
+            {# Duplicates per entity type #}
+            {% if duplicate_counts|length > 0 %}
+            <div style="margin-top: 8px;">
+                <span class="repair-label" style="display:block;margin-bottom:8px;">{{ 'quick_fix.repair.duplicates.title'|trans({}, 'quick_fix') }}</span>
+                {% for type, cnt in duplicate_counts %}
+                <div class="repair-row" style="padding-left: 12px;">
+                    <span class="repair-label">{{ type }}</span>
+                    <span class="repair-count{% if cnt == 0 %} ok{% endif %}">{{ cnt }}</span>
+                    {% if cnt > 0 %}
+                    <form method="POST" action="{{ path('app_quick_fix_repair_duplicates', {entityType: type}) }}" style="display:inline;">
+                        <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_repair_duplicates') }}">
+                        <button type="submit" class="btn-repair" onclick="this.disabled=true;this.form.submit();">
+                            {{ 'quick_fix.repair.duplicates.button'|trans({}, 'quick_fix') }}
+                        </button>
+                    </form>
+                    {% else %}
+                        <span style="font-size:12px;color:var(--success);">✓</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {# All-in-one repair button #}
+            {% if has_integrity_issues %}
+            <form method="POST" action="{{ path('app_quick_fix_repair_all') }}">
+                <input type="hidden" name="_token" value="{{ csrf_token('quick_fix_repair_all') }}">
+                <button type="submit" class="btn-all" onclick="this.disabled=true;this.form.submit();">
+                    🛡️ {{ 'quick_fix.repair.all.button'|trans({}, 'quick_fix') }}
+                </button>
+            </form>
+            {% else %}
+                <p style="font-size:13px;color:var(--success);margin-top:8px;">{{ 'quick_fix.repair.all.empty'|trans({}, 'quick_fix') }}</p>
+            {% endif %}
+        </div>
 
         <div class="footer">Little ISMS Helper</div>
     </main>

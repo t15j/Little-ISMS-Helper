@@ -3,6 +3,46 @@
 ## Overview
 Standardized card system with 5 variants, full dark mode support, and consistent styling across the application.
 
+## Aurora-Primary Status (2026-05-09 — Tier-2 Refactor)
+
+`_card` emittiert seit Tier-2 (Audit V2 §F1+F3) AURORA-CLASSES als PRIMARY
+class plus eine BC-Tail-Klasse (`.card`, `.card-header`, `.card-body`,
+`.card-footer`) für eine Übergangs-Release. Cleanup-Trigger: nach Tier-3
+(244 Templates raw `card-header/body/footer` migriert auf
+`fa-section__header/body/footer`).
+
+### Class-Output (Tier-2)
+
+| Variant | Output-Class-Set (Aurora-primary, BC-tail) |
+|---|---|
+| `default`  | `fa-section card` |
+| `kpi`      | `fa-feature-card fa-feature-card--{tone} kpi-card kpi-card-{tone} card` |
+| `widget`   | `fa-widget-card widget-card card` |
+| `feature`  | `fa-feature-card fa-feature-card--{tone} feature-card card` |
+| `stat`     | `fa-feature-card fa-feature-card--{tone} stat-card card` (deprecated alias for `kpi`) |
+| `bordered` | `fa-section fa-section--bordered fa-section--{tone} card card-border-left-{tone}` |
+
+### Header/Body/Footer Slot-Output
+
+| Slot | Class-Set (Aurora-primary, BC-tail) |
+|---|---|
+| Header  | `fa-section__header card-header` |
+| Body    | `fa-section__body card-body` |
+| Footer  | `fa-section__footer card-footer` |
+| Title   | `fa-section__title mb-0` |
+| Actions | `fa-section__tools card-actions` |
+
+### Migration Path (Tier-3, Agent G/H scope)
+
+1. Convert 244 raw `<div class="card-header">…</div>` Templates to
+   `<div class="fa-section__header">…</div>` (Bootstrap-bridge in
+   `fairy-aurora-components.css` keeps both selectors styled identically).
+2. After Tier-3 complete + 1 release of soak-time, drop `.card`,
+   `.card-header`, `.card-body`, `.card-footer`, `.card-border-left-*` from
+   the macro's class-set (and from the bridge CSS).
+3. NEW CODE prefers direct `_fa_section.html.twig` /
+   `_fa_feature_card.html.twig` macros instead of `_card.html.twig`.
+
 ## Card Component Usage
 
 The `_card.html.twig` component provides a flexible, reusable card system based on UI/UX Audit Issue 3.1.

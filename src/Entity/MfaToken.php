@@ -10,7 +10,7 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * MFA Token Entity for NIS2 Compliance (Art. 21.2.b)
+ * MFA Token Entity for NIS2 Compliance (Art. 21.2.j — MFA + secured communications)
  * Supports TOTP, WebAuthn, SMS, and Hardware Tokens
  */
 #[ORM\Entity(repositoryClass: MfaTokenRepository::class)]
@@ -157,7 +157,7 @@ class MfaToken
         return $this->tokenType;
     }
 
-    public function setTokenType(string $tokenType): static
+    public function setTokenType(?string $tokenType): static
     {
         $this->tokenType = $tokenType;
         return $this;

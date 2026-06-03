@@ -11,6 +11,7 @@ use App\Entity\Tenant;
 use App\Entity\User;
 use App\Repository\DataProtectionImpactAssessmentRepository;
 use App\Service\AuditLogger;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Service\DataProtectionImpactAssessmentService;
 use App\Service\TenantContext;
 use DateTime;
@@ -20,7 +21,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
-use RuntimeException;
+use App\Exception\BusinessRule\BusinessRuleException;
+use App\Exception\Workflow\InvalidStatusTransitionException;
 use Symfony\Bundle\SecurityBundle\Security;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -33,6 +35,7 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
     private MockObject $security;
     private MockObject $auditLogger;
     private MockObject $workflowAutoProgressionService;
+    private MockObject $lifecycleService;
     private DataProtectionImpactAssessmentService $service;
     private MockObject $tenant;
     private MockObject $user;
@@ -45,6 +48,7 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $this->security = $this->createMock(Security::class);
         $this->auditLogger = $this->createMock(AuditLogger::class);
         $this->workflowAutoProgressionService = $this->createMock(WorkflowAutoProgressionService::class);
+        $this->lifecycleService = $this->createMock(LifecycleTransitionInterface::class);
 
         $this->tenant = $this->createMock(Tenant::class);
         $this->tenant->method('getId')->willReturn(1);
@@ -59,7 +63,8 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
             $this->tenantContext,
             $this->security,
             $this->auditLogger,
-            $this->workflowAutoProgressionService
+            $this->workflowAutoProgressionService,
+            $this->lifecycleService
         );
     }
 
@@ -261,7 +266,7 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia = $this->createMock(DataProtectionImpactAssessment::class);
         $dpia->method('getStatus')->willReturn('in_review');
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(InvalidStatusTransitionException::class);
         $this->expectExceptionMessage('Only draft DPIAs can be submitted for review');
 
         $this->service->submitForReview($dpia);
@@ -274,7 +279,7 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia->method('getStatus')->willReturn('draft');
         $dpia->method('isComplete')->willReturn(false);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('DPIA must be complete before submission');
 
         $this->service->submitForReview($dpia);
@@ -290,7 +295,8 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia->method('getReferenceNumber')->willReturn('DPIA-2025-001');
         $dpia->method('getCompletenessPercentage')->willReturn(100);
 
-        $dpia->expects($this->once())->method('setStatus')->with('in_review');
+        $this->lifecycleService->expects($this->once())->method('transition')
+            ->with($dpia, 'dpia_lifecycle', 'submit');
 
         $this->entityManager->expects($this->once())->method('flush');
 
@@ -305,7 +311,7 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia = $this->createMock(DataProtectionImpactAssessment::class);
         $dpia->method('getStatus')->willReturn('draft');
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(InvalidStatusTransitionException::class);
         $this->expectExceptionMessage('Only DPIAs in review can be approved');
 
         $this->service->approve($dpia, $this->user);
@@ -322,7 +328,8 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia->method('getResidualRiskLevel')->willReturn('medium');
         $dpia->method('getProcessingActivity')->willReturn(null);
 
-        $dpia->expects($this->once())->method('setStatus')->with('approved');
+        $this->lifecycleService->expects($this->once())->method('transition')
+            ->with($dpia, 'dpia_lifecycle', 'approve', $this->user);
         $dpia->expects($this->once())->method('setApprover')->with($this->user);
         $dpia->expects($this->once())->method('setApprovalDate');
         $dpia->expects($this->once())->method('setNextReviewDate');
@@ -360,7 +367,7 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia = $this->createMock(DataProtectionImpactAssessment::class);
         $dpia->method('getStatus')->willReturn('approved');
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(InvalidStatusTransitionException::class);
         $this->expectExceptionMessage('Only DPIAs in review can be rejected');
 
         $this->service->reject($dpia, $this->user, 'Insufficient analysis');
@@ -374,7 +381,8 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia->method('getStatus')->willReturn('in_review');
         $dpia->method('getReferenceNumber')->willReturn('DPIA-2025-001');
 
-        $dpia->expects($this->once())->method('setStatus')->with('rejected');
+        $this->lifecycleService->expects($this->once())->method('transition')
+            ->with($dpia, 'dpia_lifecycle', 'reject', $this->user, $this->anything());
         $dpia->expects($this->once())->method('setApprover')->with($this->user);
         $dpia->expects($this->once())->method('setRejectionReason')->with('Insufficient analysis');
 
@@ -391,7 +399,7 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia = $this->createMock(DataProtectionImpactAssessment::class);
         $dpia->method('getStatus')->willReturn('draft');
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(InvalidStatusTransitionException::class);
         $this->expectExceptionMessage('DPIA must be in review or approved to request revision');
 
         $this->service->requestRevision($dpia, 'Needs more detail');
@@ -405,7 +413,8 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia->method('getStatus')->willReturn('in_review');
         $dpia->method('getReferenceNumber')->willReturn('DPIA-2025-001');
 
-        $dpia->expects($this->once())->method('setStatus')->with('requires_revision');
+        $this->lifecycleService->expects($this->once())->method('transition')
+            ->with($dpia, 'dpia_lifecycle', 'request_revision', null, $this->anything());
         $dpia->expects($this->once())->method('setRejectionReason')->with('Needs more detail');
         $dpia->expects($this->once())->method('setReviewRequired')->with(true);
 
@@ -422,7 +431,7 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia = $this->createMock(DataProtectionImpactAssessment::class);
         $dpia->method('getStatus')->willReturn('approved');
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(InvalidStatusTransitionException::class);
         $this->expectExceptionMessage('Only DPIAs requiring revision can be reopened');
 
         $this->service->reopen($dpia);
@@ -436,7 +445,8 @@ class DataProtectionImpactAssessmentServiceTest extends TestCase
         $dpia->method('getStatus')->willReturn('requires_revision');
         $dpia->method('getReferenceNumber')->willReturn('DPIA-2025-001');
 
-        $dpia->expects($this->once())->method('setStatus')->with('draft');
+        $this->lifecycleService->expects($this->once())->method('transition')
+            ->with($dpia, 'dpia_lifecycle', 'resubmit');
         $dpia->expects($this->once())->method('setRejectionReason')->with(null);
 
         $this->entityManager->expects($this->once())->method('flush');

@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use Exception;
+use App\Controller\Trait\LocalizedFlashTrait;
 use App\Entity\Asset;
+use App\Enum\AssetStatus;
 use App\Form\AssetQuickType;
 use App\Form\AssetType;
+use App\Repository\AssetDependencyRepository;
 use App\Repository\AssetRepository;
 use App\Repository\AuditLogRepository;
 use App\Repository\BusinessProcessRepository;
@@ -16,22 +19,31 @@ use App\Service\AiAgentInventoryService;
 use App\Service\AssetDependencyService;
 use App\Service\AssetService;
 use App\Service\AssetQrCodeService;
+use App\Repository\CommentRepository;
+use App\Service\InverseCoverageService;
 use App\Service\ProtectionRequirementService;
 use App\Service\TagFilterService;
 use App\Service\TenantContext;
-use App\Service\WorkflowAutoProgressionService;
-use App\Entity\User;
+use App\Service\AuditLogger;
+use App\Service\Clone\AssetCloner;
+use App\Repository\UserRepository;
+use App\Controller\Trait\BulkActionTrait;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 class AssetController extends AbstractController
 {
+    use LocalizedFlashTrait;
+    use BulkActionTrait;
+
     public function __construct(
         private readonly AssetRepository $assetRepository,
         private readonly AssetService $assetService,
@@ -44,12 +56,27 @@ class AssetController extends AbstractController
         private readonly TranslatorInterface $translator,
         private readonly Security $security,
         private readonly TenantContext $tenantContext,
-        private readonly WorkflowAutoProgressionService $workflowAutoProgressionService,
         private readonly TagFilterService $tagFilterService,
         private readonly ?AssetDependencyService $assetDependencyService = null,
         private readonly ?AiAgentInventoryService $aiAgentInventoryService = null,
+        private readonly ?InverseCoverageService $inverseCoverageService = null,
+        private readonly ?CommentRepository $commentRepository = null,
+        private readonly ?AuditLogger $auditLogger = null,
+        private readonly ?UserRepository $userRepository = null,
+        private readonly ?AssetDependencyRepository $assetDependencyRepository = null,
+        private readonly ?AssetCloner $assetCloner = null,
     ) {}
-    #[Route('/asset/', name: 'app_asset_index')]
+
+    protected function getFlashDomain(): string
+    {
+        return 'asset';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
+    }
+    #[Route('/asset', name: 'app_asset_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(Request $request): Response
     {
@@ -109,7 +136,7 @@ class AssetController extends AbstractController
         if ($status === null || $status === '') {
             $assets = array_filter(
                 $assets,
-                fn(Asset $asset): bool => !in_array($asset->getStatus(), ['retired', 'disposed'], true)
+                fn(Asset $asset): bool => !in_array($asset->getStatus(), [AssetStatus::Retired->value, AssetStatus::Disposed->value], true)
             );
         }
 
@@ -152,6 +179,14 @@ class AssetController extends AbstractController
             $assets = $this->tagFilterService->filterByTagName($assets, Asset::class, $tagFilter);
         }
 
+        // DORA Phase 1: filter-chip "Nur DORA-relevant / DORA only" via ?dora_relevant=1
+        if ($request->query->get('dora_relevant') === '1') {
+            $assets = array_values(array_filter(
+                $assets,
+                fn(Asset $a): bool => $a->isDoraRelevant(),
+            ));
+        }
+
         $typeStats = $tenant
             ? $this->assetRepository->countByType($tenant)
             : [];
@@ -188,7 +223,7 @@ class AssetController extends AbstractController
             'detailedStats' => $detailedStats,
         ]);
     }
-    #[Route('/asset/new', name: 'app_asset_new')]
+    #[Route('/asset/new', name: 'app_asset_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
@@ -202,20 +237,21 @@ class AssetController extends AbstractController
             $this->entityManager->persist($asset);
             $this->entityManager->flush();
 
-            // Check and auto-progress workflow if conditions are met
-            $currentUser = $this->security->getUser();
-            if ($currentUser instanceof User) {
-                $this->workflowAutoProgressionService->checkAndProgressWorkflow($asset, $currentUser);
-            }
+            // Auto-progression fires via FieldCompletionAutoTransition Doctrine listener
+            // (postUpdate event) — no explicit service call required (canonical since Y.1).
 
-            $this->addFlash('success', $this->translator->trans('asset.success.created'));
+            $this->flashSuccess('asset.success.created');
             return $this->redirectToRoute('app_asset_show', ['id' => $asset->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('asset/new.html.twig', [
             'asset' => $asset,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/asset/new/quick', name: 'app_asset_new_quick', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
@@ -231,21 +267,53 @@ class AssetController extends AbstractController
             $this->entityManager->persist($asset);
             $this->entityManager->flush();
 
-            // Check and auto-progress workflow if conditions are met
-            $currentUser = $this->security->getUser();
-            if ($currentUser instanceof User) {
-                $this->workflowAutoProgressionService->checkAndProgressWorkflow($asset, $currentUser);
-            }
+            // Auto-progression fires via FieldCompletionAutoTransition Doctrine listener
+            // (postUpdate event) — no explicit service call required (canonical since Y.1).
 
-            $this->addFlash('success', $this->translator->trans('asset.success.created'));
+            $this->flashSuccess('asset.success.created');
             return $this->redirectToRoute('app_asset_show', ['id' => $asset->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('asset/new_quick.html.twig', [
             'asset' => $asset,
             'form' => $form,
+        ], new Response(status: $status));
+    }
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * Warns if an Asset has associated Risks or Incidents that reference it.
+     */
+    #[Route('/asset/bulk-delete-check', name: 'app_asset_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = array_filter((array) ($data['ids'] ?? []), 'is_int');
+        if ($ids === []) {
+            return new JsonResponse(['dependencies' => [], 'checked_count' => 0]);
+        }
+
+        $user = $this->security->getUser();
+        $tenant = $user?->getTenant();
+        $assets = $this->assetRepository->findBy(['id' => $ids, 'tenant' => $tenant]);
+
+        return $this->checkBulkDependencies($assets, 'getName', [
+            fn (Asset $asset): ?array => ($c = $asset->getRisks()->count()) > 0
+                ? ['message' => sprintf('%d Risk(s) verknüpft', $c), 'icon' => 'shield-exclamation']
+                : null,
+            fn (Asset $asset): ?array => ($c = $asset->getIncidents()->count()) > 0
+                ? ['message' => sprintf('%d Vorfall/Vorfälle verknüpft', $c), 'icon' => 'exclamation-triangle']
+                : null,
+            fn (Asset $asset): ?array => ($c = $asset->getProtectingControls()->count()) > 0
+                ? ['message' => sprintf('%d Maßnahme(n) verknüpft', $c), 'icon' => 'check-circle']
+                : null,
         ]);
     }
+
     #[Route('/asset/bulk-delete', name: 'app_asset_bulk_delete', methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function bulkDelete(Request $request): Response
@@ -299,8 +367,8 @@ class AssetController extends AbstractController
         }
 
         $message = $deleted > 0
-            ? $this->translator->trans('asset.bulk_delete.success', ['count' => $deleted])
-            : $this->translator->trans('asset.bulk_delete.no_items');
+            ? $this->translator->trans('asset.bulk_delete.success', ['count' => $deleted], 'assets')
+            : $this->translator->trans('asset.bulk_delete.no_items', [], 'assets');
 
         if ($errors !== []) {
             return $this->json([
@@ -317,7 +385,7 @@ class AssetController extends AbstractController
             'message' => $message
         ]);
     }
-    #[Route('/asset/{id}', name: 'app_asset_show', requirements: ['id' => '\d+'])]
+    #[Route('/asset/{id}', name: 'app_asset_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(Asset $asset): Response
     {
@@ -342,10 +410,33 @@ class AssetController extends AbstractController
 
         $inheritedProtection = $this->assetDependencyService?->calculateInheritedProtectionNeed($asset);
 
+        // Bucket-6 RT_05: enriched dependency edges (dependencyType +
+        // criticalityImpact). Keyed by upstream-asset id so the show
+        // template can decorate the legacy adjacency-list entries.
+        $assetDependencyEdges = [];
+        if ($this->assetDependencyRepository !== null) {
+            foreach ($this->assetDependencyRepository->findOutgoingFor($asset) as $edge) {
+                $targetId = $edge->getTargetAsset()?->getId();
+                if ($targetId !== null) {
+                    $assetDependencyEdges[$targetId] = $edge;
+                }
+            }
+        }
+
         // Hochrisiko-AI-Agents: verknüpfte DPIAs für Audit-Sicht (Soft-Failure: null = Modul/Schema fehlt)
         $linkedDpias = ($asset->isAiAgent() && $this->aiAgentInventoryService !== null)
             ? $this->aiAgentInventoryService->findLinkedDpias($asset)
             : null;
+
+        // V3 B6 / EF-4: Inverse-Coverage Impact-Analyse
+        $impactCoverage = $this->inverseCoverageService?->forAsset($asset) ?? ['total' => 0, 'frameworks' => []];
+
+        // V4 LB-4: Comment-Thread adoption — load thread for this Asset.
+        $comments = [];
+        $tenantCtx = $this->tenantContext->getCurrentTenant();
+        if ($this->commentRepository !== null && $tenantCtx !== null && $asset->getId() !== null) {
+            $comments = $this->commentRepository->findThread($tenantCtx, 'Asset', $asset->getId());
+        }
 
         return $this->render('asset/show.html.twig', [
             'asset' => $asset,
@@ -357,10 +448,47 @@ class AssetController extends AbstractController
             'canEdit' => $canEdit,
             'currentTenant' => $tenant,
             'inheritedProtection' => $inheritedProtection,
+            'assetDependencyEdges' => $assetDependencyEdges,
             'linkedDpias' => $linkedDpias,
+            'impact_coverage' => $impactCoverage,
+            'comments' => $comments,
         ]);
     }
-    #[Route('/asset/{id}/edit', name: 'app_asset_edit', requirements: ['id' => '\d+'])]
+    /**
+     * Clone an Asset (C4-C1 — Klon-Funktionen). Open to ROLE_USER. Keeps
+     * configuration (type/sub-type/location/CIA/AI metadata), resets
+     * lifecycle to active, omits M2M cascades (risks/incidents/controls).
+     */
+    #[Route('/asset/{id}/clone', name: 'app_asset_clone', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function clone(Request $request, Asset $asset): Response
+    {
+        if (!$this->isCsrfTokenValid('clone_asset_' . $asset->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+        if ($this->assetCloner === null) {
+            throw $this->createNotFoundException('Asset clone service is not available.');
+        }
+
+        $clone = $this->assetCloner->clone(
+            $asset,
+            null,
+            trim((string) $request->request->get('title_override', '')) ?: null,
+        );
+        $this->entityManager->flush();
+
+        $this->auditLogger?->logCreate(
+            entityType: 'Asset',
+            entityId: $clone->getId(),
+            newValues: ['cloned_from_id' => $asset->getId(), 'name' => $clone->getName()],
+            description: 'Cloned from Asset #' . $asset->getId(),
+        );
+
+        $this->addFlash('success', $this->translator->trans('asset.clone.success', [], 'asset'));
+        return $this->redirectToRoute('app_asset_edit', ['id' => $clone->getId()]);
+    }
+
+    #[Route('/asset/{id}/edit', name: 'app_asset_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, Asset $asset): Response
     {
@@ -369,7 +497,7 @@ class AssetController extends AbstractController
 
         // Check if asset can be edited (not inherited) - only if user has tenant
         if ($tenant && !$this->assetService->canEditAsset($asset, $tenant)) {
-            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_edit_inherited'));
+            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_edit_inherited', [], 'messages'));
             return $this->redirectToRoute('app_asset_show', ['id' => $asset->getId()]);
         }
 
@@ -379,20 +507,21 @@ class AssetController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             $this->entityManager->flush();
 
-            // Check and auto-progress workflow if conditions are met
-            $currentUser = $this->security->getUser();
-            if ($currentUser instanceof User) {
-                $this->workflowAutoProgressionService->checkAndProgressWorkflow($asset, $currentUser);
-            }
+            // Auto-progression fires via FieldCompletionAutoTransition Doctrine listener
+            // (postUpdate event) — no explicit service call required (canonical since Y.1).
 
-            $this->addFlash('success', $this->translator->trans('asset.success.updated'));
+            $this->flashSuccess('asset.success.updated');
             return $this->redirectToRoute('app_asset_show', ['id' => $asset->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('asset/edit.html.twig', [
             'asset' => $asset,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/asset/{id}/delete', name: 'app_asset_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -423,7 +552,7 @@ class AssetController extends AbstractController
 
         // Check if asset can be deleted (not inherited) - only if user has tenant
         if ($tenant && !$this->assetService->canEditAsset($asset, $tenant)) {
-            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_delete_inherited'));
+            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_delete_inherited', [], 'messages'));
             return $this->redirectToRoute('app_asset_index');
         }
 
@@ -431,12 +560,12 @@ class AssetController extends AbstractController
             $this->entityManager->remove($asset);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('asset.success.deleted'));
+            $this->flashSuccess('asset.success.deleted');
         }
 
         return $this->redirectToRoute('app_asset_index');
     }
-    #[Route('/asset/{id}/bcm-insights', name: 'app_asset_bcm_insights', requirements: ['id' => '\d+'])]
+    #[Route('/asset/{id}/bcm-insights', name: 'app_asset_bcm_insights', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function bcmInsights(int $id): Response
     {
@@ -515,7 +644,7 @@ class AssetController extends AbstractController
     /**
      * Print a single asset label with QR code
      */
-    #[Route('/asset/{id}/qr-label', name: 'app_asset_qr_label', requirements: ['id' => '\d+'])]
+    #[Route('/asset/{id}/qr-label', name: 'app_asset_qr_label', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function printQrLabel(Asset $asset, Request $request): Response
     {
@@ -531,7 +660,7 @@ class AssetController extends AbstractController
     /**
      * Print multiple asset labels on a sheet (A4 format)
      */
-    #[Route('/asset/qr-labels', name: 'app_asset_qr_labels_bulk')]
+    #[Route('/asset/qr-labels', name: 'app_asset_qr_labels_bulk', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function printQrLabelsBulk(Request $request): Response
     {
@@ -546,10 +675,10 @@ class AssetController extends AbstractController
             if ($tenant) {
                 $assets = $this->assetRepository->findBy([
                     'tenant' => $tenant,
-                    'status' => 'active'
+                    'status' => AssetStatus::Active->value
                 ]);
             } else {
-                $assets = $this->assetRepository->findBy(['status' => 'active']);
+                $assets = $this->assetRepository->findBy(['status' => AssetStatus::Active->value]);
             }
         } else {
             $assets = $this->assetRepository->findBy(['id' => $ids]);
@@ -562,5 +691,122 @@ class AssetController extends AbstractController
             'printDate' => new \DateTimeImmutable(),
             'assetsPerPage' => 10, // 2 columns x 5 rows
         ]);
+    }
+
+    /**
+     * Bulk CSV export of selected assets.
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/asset/bulk-export', name: 'app_asset_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        /** @var \App\Entity\User|null $user */
+        $user   = $this->security->getUser();
+        $tenant = $user instanceof \App\Entity\User ? $user->getTenant() : null;
+
+        $assets = [];
+        foreach ($ids as $rawId) {
+            $asset = $this->assetRepository->find((int) $rawId);
+            if ($asset === null) {
+                continue;
+            }
+            if ($tenant !== null && $asset->getTenant() !== $tenant) {
+                continue;
+            }
+            $assets[] = $asset;
+        }
+
+        if ($assets === []) {
+            return $this->json(['error' => 'No exportable assets'], 404);
+        }
+
+        $headers = ['ID', 'Name', 'Type', 'Status', 'Owner', 'Location', 'Data Classification'];
+
+        return $this->streamCsvExport(
+            $assets,
+            $headers,
+            static function (Asset $a): array {
+                return [
+                    (string) $a->getId(),
+                    (string) $a->getName(),
+                    (string) $a->getAssetType(),
+                    (string) $a->getStatus(),
+                    (string) ($a->getEffectiveOwner() ?? ''),
+                    (string) ($a->getEffectiveLocation() ?? $a->getLocation() ?? ''),
+                    (string) $a->getDataClassification(),
+                ];
+            },
+            'assets-export',
+            'Asset',
+            $this->auditLogger,
+        );
+    }
+
+    /**
+     * Bulk assign selected assets to a user (sets ownerUser).
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/asset/bulk-assign', name: 'app_asset_bulk_assign', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkAssign(Request $request): Response
+    {
+        $data     = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids      = $data['ids'] ?? [];
+        $assignId = (int) ($data['assignee_id'] ?? 0);
+
+        if (!is_array($ids) || $ids === [] || $assignId === 0) {
+            return $this->json(['error' => 'No items selected or no assignee'], 400);
+        }
+
+        /** @var \App\Entity\User|null $user */
+        $user   = $this->security->getUser();
+        $tenant = $user instanceof \App\Entity\User ? $user->getTenant() : null;
+
+        $assignee = $this->userRepository?->find($assignId);
+        if (!$assignee instanceof \App\Entity\User) {
+            return $this->json(['error' => 'Assignee not found'], 404);
+        }
+        if ($tenant !== null && $assignee->getTenant() !== $tenant) {
+            return $this->json(['error' => 'Assignee tenant mismatch'], 403);
+        }
+
+        $assets = [];
+        foreach ($ids as $rawId) {
+            $asset = $this->assetRepository->find((int) $rawId);
+            if ($asset === null) {
+                continue;
+            }
+            if ($tenant !== null && $asset->getTenant() !== $tenant) {
+                continue;
+            }
+            $assets[] = $asset;
+        }
+
+        $result = $this->applyBulkAssign(
+            $assets,
+            static function (Asset $a, \App\Entity\User $u): void { $a->setOwnerUser($u); },
+            $assignee,
+            'Asset',
+            $this->auditLogger,
+        );
+
+        if ($result['changed'] > 0) {
+            $this->entityManager->flush();
+        }
+
+        return $this->json($result);
     }
 }

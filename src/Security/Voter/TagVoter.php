@@ -7,7 +7,9 @@ namespace App\Security\Voter;
 use App\Entity\Tag;
 use App\Entity\User;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
+use Symfony\Component\Security\Core\Authorization\Voter\Vote;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
+use Symfony\Component\Security\Core\Role\RoleHierarchyInterface;
 
 /**
  * Authorization for the polymorphic tagging subsystem (WS-5, Anhang A).
@@ -22,6 +24,11 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  */
 final class TagVoter extends Voter
 {
+    public function __construct(
+        private readonly RoleHierarchyInterface $roleHierarchy,
+    ) {
+    }
+
     public const TAG_APPLY = 'TAG_APPLY';
     public const TAG_REMOVE = 'TAG_REMOVE';
     public const TAG_REMOVE_BULK = 'TAG_REMOVE_BULK';
@@ -42,14 +49,14 @@ final class TagVoter extends Voter
         return $subject === null || $subject instanceof Tag;
     }
 
-    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token, ?Vote $vote = null): bool
     {
         $user = $token->getUser();
         if (!$user instanceof User) {
             return false;
         }
 
-        $roles = $user->getRoles();
+        $roles = $this->roleHierarchy->getReachableRoleNames($user->getRoles());
         $isAdmin = in_array('ROLE_ADMIN', $roles, true)
             || in_array('ROLE_SUPER_ADMIN', $roles, true);
         $isManagerOrAdmin = $isAdmin || in_array('ROLE_MANAGER', $roles, true);

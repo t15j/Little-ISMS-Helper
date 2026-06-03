@@ -4,6 +4,7 @@
  # Only shows KPIs for active modules
  # Sections are collapsible - danger sections auto-expand
  #}
+{% import '_components/_fa_progress.html.twig' as _fa_progress %}
 
 {% if management_kpis is defined and management_kpis|length > 0 %}
 <div class="widget-card mb-4"
@@ -23,19 +24,18 @@
         </div>
     </div>
     <div class="widget-body p-3">
-        {# Define KPI sections with their metadata #}
-        {# TODO(aurora-migration): kpi_sections icons are Twig-embedded strings used in `bi {{ section.icon }}` loop — migrate after extracting to Aurora mask-icons #}
+        {# KPI sections with Aurora mask-icon names (see assets/icons/*.svg). #}
         {% set kpi_sections = [
-            { key: 'core', icon: 'bi-shield-check', title_key: 'dashboard.management_kpis.core.title', route: 'app_soa_index', col_class: 'col-6' },
-            { key: 'risk_management', icon: 'bi-exclamation-triangle', title_key: 'dashboard.management_kpis.risk_management.title', route: 'app_risk_index', col_class: 'col-6 col-md-4' },
-            { key: 'asset_management', icon: 'bi-server', title_key: 'dashboard.management_kpis.asset_management.title', route: 'app_asset_index', col_class: 'col-6 col-md-4' },
-            { key: 'incident_management', icon: 'bi-fire', title_key: 'dashboard.management_kpis.incident_management.title', route: 'app_incident_index', col_class: 'col-6 col-md-3' },
-            { key: 'business_continuity', icon: 'bi-diagram-3', title_key: 'dashboard.management_kpis.business_continuity.title', route: 'app_bcm_index', col_class: 'col-6 col-md-3' },
-            { key: 'training', icon: 'bi-mortarboard', title_key: 'dashboard.management_kpis.training.title', route: 'app_training_index', col_class: 'col-6' },
-            { key: 'audits', icon: 'bi-clipboard-check', title_key: 'dashboard.management_kpis.audits.title', route: 'app_audit_index', col_class: 'col-6 col-md-4' },
-            { key: 'supplier_management', icon: 'bi-building', title_key: 'dashboard.management_kpis.supplier_management.title', route: 'app_supplier_index', col_class: 'col-6 col-md-3' },
-            { key: 'documentation', icon: 'bi-file-text', title_key: 'dashboard.management_kpis.documentation.title', route: 'app_document_index', col_class: 'col-6 col-md-4' },
-            { key: 'bsi_stufen', icon: 'bi-shield-shaded', title_key: 'dashboard.management_kpis.bsi_stufen.title', route: 'app_bsi_grundschutz_check', col_class: 'col-6 col-md-4' },
+            { key: 'core', icon: 'nav-shield-check', title_key: 'dashboard.management_kpis.core.title', route: 'app_soa_index', col_class: 'col-6' },
+            { key: 'risk_management', icon: 'status-warning', title_key: 'dashboard.management_kpis.risk_management.title', route: 'app_risk_index', col_class: 'col-6 col-md-4' },
+            { key: 'asset_management', icon: 'asset-server', title_key: 'dashboard.management_kpis.asset_management.title', route: 'app_asset_index', col_class: 'col-6 col-md-4' },
+            { key: 'incident_management', icon: 'status-fire', title_key: 'dashboard.management_kpis.incident_management.title', route: 'app_incident_index', col_class: 'col-6 col-md-3' },
+            { key: 'business_continuity', icon: 'nav-workflow', title_key: 'dashboard.management_kpis.business_continuity.title', route: 'app_bcm_index', col_class: 'col-6 col-md-3' },
+            { key: 'training', icon: 'nav-mortarboard', title_key: 'dashboard.management_kpis.training.title', route: 'app_training_index', col_class: 'col-6' },
+            { key: 'audits', icon: 'nav-clipboard-check', title_key: 'dashboard.management_kpis.audits.title', route: 'app_audit_index', col_class: 'col-6 col-md-4' },
+            { key: 'supplier_management', icon: 'nav-building', title_key: 'dashboard.management_kpis.supplier_management.title', route: 'app_supplier_index', col_class: 'col-6 col-md-3' },
+            { key: 'documentation', icon: 'nav-file-earmark-text', title_key: 'dashboard.management_kpis.documentation.title', route: 'app_document_index', col_class: 'col-6 col-md-4' },
+            { key: 'bsi_stufen', icon: 'nav-shield', title_key: 'dashboard.management_kpis.bsi_stufen.title', route: 'app_bsi_grundschutz_check', col_class: 'col-6 col-md-4' },
         ] %}
 
         <div class="accordion" id="kpiAccordion">
@@ -59,10 +59,10 @@
                                     data-bs-target="#kpi-{{ section.key }}"
                                     aria-expanded="{{ hasDanger ? 'true' : 'false' }}"
                                     aria-controls="kpi-{{ section.key }}">
-                                <i class="bi {{ section.icon }} me-2" aria-hidden="true"></i>
+                                <i class="fa-icon fa-icon--{{ section.icon }} me-2" aria-hidden="true"></i>
                                 {{ section.title_key|trans({}, 'dashboard') }}
                                 {% if hasDanger %}
-                                    <span class="badge bg-danger fa-status-pill fa-status-pill--danger ms-2">!</span>
+                                    <span class="fa-status-pill fa-status-pill--danger ms-2">!</span>
                                 {% endif %}
                             </button>
                         </h2>
@@ -81,22 +81,21 @@
                                     <div class="{{ section.col_class }}">
                                         {% if section.key == 'core' %}
                                         {# Core section uses the richer card style with progress bars #}
-                                        <div class="kpi-card p-2 rounded border-start border-4 border-{{ kpi.status == 'good' ? 'success' : (kpi.status == 'warning' ? 'warning' : (kpi.status == 'danger' ? 'danger' : 'info')) }}">
+                                        <div class="p-2 rounded border-start border-4 border-{{ kpi.status == 'good' ? 'success' : (kpi.status == 'warning' ? 'warning' : (kpi.status == 'danger' ? 'danger' : 'info')) }} bg-body">
                                             <div class="d-flex justify-content-between align-items-center">
                                                 <span class="small text-muted">{{ ('dashboard.kpi.' ~ key)|trans({}, 'dashboard') }}</span>
                                                 <span>
                                                     {% set kpiVariant = kpi.status == 'good' ? 'success' : (kpi.status == 'warning' ? 'warning' : (kpi.status == 'danger' ? 'danger' : 'secondary')) %}
                                                     {% include '_components/_badge.html.twig' with {
-                                                        variant: kpiVariant ~ '-subtle',
-                                                        class: 'text-' ~ kpiVariant,
+                                                        variant: kpiVariant,
                                                         content: kpi.value ~ kpi.unit
                                                     } %}
                                                     {% if kpi.trend is defined and kpi.trend != 'stable' %}
-                                                    <span class="fs-6 ms-1 text-{{ kpi.trend_sentiment|default('neutral') == 'good' ? 'success' : (kpi.trend_sentiment|default('neutral') == 'bad' ? 'danger' : 'muted') }}">
+                                                    <span class="small ms-1 text-{{ kpi.trend_sentiment|default('neutral') == 'good' ? 'success' : (kpi.trend_sentiment|default('neutral') == 'bad' ? 'danger' : 'muted') }}">
                                                         {% if kpi.trend == 'up' %}
                                                             <i class="fa-icon fa-icon--nav-bar-chart" aria-hidden="true"></i>
                                                         {% elseif kpi.trend == 'down' %}
-                                                            <i class="bi bi-graph-down-arrow" aria-hidden="true"></i>
+                                                            <i class="fa-icon fa-icon--nav-bar-chart" aria-hidden="true"></i>
                                                         {% endif %}
                                                         {% if kpi.trend_delta is defined %}
                                                             <small>{{ kpi.trend_delta > 0 ? '+' : '' }}{{ kpi.trend_delta }}{{ kpi.unit|default('') }}</small>
@@ -106,14 +105,7 @@
                                                 </span>
                                             </div>
                                             {% if kpi.details is defined and kpi.details.total is defined %}
-                                            <div class="progress progress-h-4 mt-1">
-                                                <div class="progress-bar bg-{{ kpi.status == 'good' ? 'success' : (kpi.status == 'warning' ? 'warning' : 'danger') }}"
-                                                     role="progressbar"
-                                                     style="width: {{ kpi.value }}%"
-                                                     aria-valuenow="{{ kpi.value }}"
-                                                     aria-valuemin="0"
-                                                     aria-valuemax="100"></div>
-                                            </div>
+                                            {{ _fa_progress.render({ value: kpi.value, tone: kpi.status == 'good' ? 'success' : (kpi.status == 'warning' ? 'warning' : 'danger'), class: 'mt-1' }) }}
                                             {% endif %}
                                         </div>
                                         {% else %}
@@ -123,11 +115,11 @@
                                             <div class="fw-bold text-{{ kpi.status == 'good' ? 'success' : (kpi.status == 'warning' ? 'warning' : (kpi.status == 'danger' ? 'danger' : 'body')) }}">
                                                 {{ kpi.value }}{{ kpi.unit }}
                                                 {% if kpi.trend is defined and kpi.trend != 'stable' %}
-                                                <span class="fs-6 ms-1 text-{{ kpi.trend_sentiment|default('neutral') == 'good' ? 'success' : (kpi.trend_sentiment|default('neutral') == 'bad' ? 'danger' : 'muted') }}">
+                                                <span class="small ms-1 text-{{ kpi.trend_sentiment|default('neutral') == 'good' ? 'success' : (kpi.trend_sentiment|default('neutral') == 'bad' ? 'danger' : 'muted') }}">
                                                     {% if kpi.trend == 'up' %}
                                                         <i class="fa-icon fa-icon--nav-bar-chart" aria-hidden="true"></i>
                                                     {% elseif kpi.trend == 'down' %}
-                                                        <i class="bi bi-graph-down-arrow" aria-hidden="true"></i>
+                                                        <i class="fa-icon fa-icon--nav-bar-chart" aria-hidden="true"></i>
                                                     {% endif %}
                                                     {% if kpi.trend_delta is defined %}
                                                         <small>{{ kpi.trend_delta > 0 ? '+' : '' }}{{ kpi.trend_delta }}{{ kpi.unit|default('') }}</small>

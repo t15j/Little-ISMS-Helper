@@ -12,6 +12,7 @@ use App\Repository\ComplianceRequirementRepository;
 use App\Service\AuditLogger;
 use App\Service\PdfExportService;
 use DateTimeImmutable;
+use App\Util\CsvSanitizer;
 
 /**
  * Audit-Paket-Export — one-click ZIP containing every ComplianceRequirement
@@ -58,12 +59,12 @@ final class AuditPackageExporter
 
         $tempPath = tempnam(sys_get_temp_dir(), 'audit_pkg_');
         if ($tempPath === false) {
-            throw new \RuntimeException('Unable to create temp file for ZIP.');
+            throw new \App\Exception\Io\IoException('Unable to create temp file for ZIP.');
         }
 
         $zip = new \ZipArchive();
         if ($zip->open($tempPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-            throw new \RuntimeException('Unable to open ZIP for writing: ' . $tempPath);
+            throw new \App\Exception\Io\IoException('Unable to open ZIP for writing: ' . $tempPath);
         }
 
         $frameworkCode = $this->slug((string) $framework->getCode());
@@ -271,26 +272,11 @@ final class AuditPackageExporter
             return '';
         }
         foreach ($rows as $row) {
-            fputcsv($handle, array_map([$this, 'sanitizeCsvValue'], $row), ',', '"', '\\');
+            fputcsv($handle, array_map([CsvSanitizer::class, 'sanitize'], $row), ',', '"', '\\');
         }
         rewind($handle);
         $out = stream_get_contents($handle);
         fclose($handle);
         return "\xEF\xBB\xBF" . ($out === false ? '' : $out);
-    }
-
-    /**
-     * Sanitize a CSV cell value to prevent formula injection (OWASP - Injection).
-     * Prefixes values starting with =, +, -, @, TAB or CR with a single quote.
-     */
-    private function sanitizeCsvValue(mixed $value): mixed
-    {
-        if (!is_string($value)) {
-            return $value;
-        }
-        if ($value !== '' && in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
-            return "'" . $value;
-        }
-        return $value;
     }
 }

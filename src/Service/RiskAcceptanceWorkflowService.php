@@ -6,15 +6,14 @@ namespace App\Service;
 
 use DateMalformedStringException;
 use App\Entity\RiskAppetite;
-use DomainException;
 use DateTime;
 use App\Entity\WorkflowInstance;
-use Exception;
 use App\Entity\Risk;
 use App\Entity\User;
 use App\Entity\Tenant;
 use App\Enum\RiskStatus;
 use App\Enum\TreatmentStrategy;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Repository\UserRepository;
 use App\Service\RiskApprovalConfigResolver;
 use App\Service\RiskApprovalConfigView;
@@ -57,6 +56,7 @@ class RiskAcceptanceWorkflowService
         private readonly AuditLogger $auditLogger,
         private readonly LoggerInterface $logger,
         private readonly RiskApprovalConfigResolver $approvalConfigResolver,
+        private readonly LifecycleTransitionInterface $lifecycleService,
     ) {}
 
     /**
@@ -82,7 +82,7 @@ class RiskAcceptanceWorkflowService
         $appetiteCheck = $this->validateRiskAppetite($risk);
 
         if (!$appetiteCheck['acceptable']) {
-            throw new DomainException($appetiteCheck['reason']);
+            throw new \App\Exception\BusinessRule\BusinessRuleException($appetiteCheck['reason'], 'risk_appetite_exceeded');
         }
 
         // 3. Determine required approval level
@@ -107,24 +107,24 @@ class RiskAcceptanceWorkflowService
     {
         // Check if risk has "accept" treatment strategy
         if ($risk->getTreatmentStrategy() !== TreatmentStrategy::Accept) {
-            throw new DomainException(
+            throw new \App\Exception\BusinessRule\BusinessRuleException(
                 'Risk must have "accept" treatment strategy. Current strategy: ' . $risk->getTreatmentStrategy()?->value
             );
         }
 
         // Risk must have assessment completed
         if (!$risk->getProbability() || !$risk->getImpact()) {
-            throw new DomainException('Risk assessment must be completed before acceptance');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Risk assessment must be completed before acceptance', 'assessment_incomplete');
         }
 
         // Residual risk should be assessed
         if (!$risk->getResidualProbability() || !$risk->getResidualImpact()) {
-            throw new DomainException('Residual risk must be assessed before acceptance');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Residual risk must be assessed before acceptance', 'residual_incomplete');
         }
 
         // Check if already formally accepted
         if ($risk->isFormallyAccepted()) {
-            throw new DomainException('Risk is already formally accepted');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Risk is already formally accepted', 'already_accepted');
         }
     }
 
@@ -216,10 +216,19 @@ class RiskAcceptanceWorkflowService
         $risk->setFormallyAccepted(true);
         $risk->setAcceptanceApprovedBy($user->getFullName() . ' (automatic)');
         $risk->setAcceptanceApprovedAt($now);
-        $risk->setStatus(RiskStatus::Accepted);
 
         $this->entityManager->persist($risk);
         $this->entityManager->flush();
+
+        // X.6: accept transition (assessed → accepted) via risk_lifecycle.
+        // Risk must be in 'assessed' state; validateRiskForAcceptance() guards this path.
+        $this->lifecycleService->transition(
+            $risk,
+            'risk_lifecycle',
+            'accept',
+            $user,
+            'Automatically accepted (score ≤ threshold)',
+        );
 
         // Log acceptance
         $this->auditLogger->logRiskAcceptance(
@@ -253,8 +262,9 @@ class RiskAcceptanceWorkflowService
         $approver = $this->getRequiredApprover($tenant, $approvalLevel);
 
         if (!$approver instanceof User) {
-            throw new DomainException(
-                sprintf('No %s approver configured for tenant', $approvalLevel)
+            throw new \App\Exception\BusinessRule\BusinessRuleException(
+                sprintf('No %s approver configured for tenant', $approvalLevel),
+                'no_approver_configured'
             );
         }
 
@@ -300,9 +310,10 @@ class RiskAcceptanceWorkflowService
      */
     private function createManualApprovalRequest(Risk $risk, User $user, string $approvalLevel): array
     {
-        // Set status to indicate pending approval
-        $risk->setStatus(RiskStatus::Assessed); // Keep in assessed until approved
-
+        // X.6: Risk is already in 'assessed' state (guaranteed by validateRiskForAcceptance()).
+        // No transition needed here — keep in assessed while manual approval is pending.
+        // The explicit setStatus(Assessed) was a defensive no-op that bypassed LifecycleService;
+        // removed as part of X.6 migration.
         $this->entityManager->persist($risk);
         $this->entityManager->flush();
 
@@ -355,7 +366,7 @@ class RiskAcceptanceWorkflowService
                 approvalLevel: $approvalLevel,
                 approver: $user
             );
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $this->logger->error('Failed to send approval notification', [
                 'error' => $e->getMessage(),
                 'risk_id' => $risk->getId(),
@@ -378,10 +389,20 @@ class RiskAcceptanceWorkflowService
         $risk->setFormallyAccepted(true);
         $risk->setAcceptanceApprovedBy($user->getFullName());
         $risk->setAcceptanceApprovedAt($now);
-        $risk->setStatus(RiskStatus::Accepted);
 
         $this->entityManager->persist($risk);
         $this->entityManager->flush();
+
+        // X.6: accept transition (assessed → accepted) via risk_lifecycle.
+        // approveAcceptance() is called after manager/executive approval; risk stays
+        // in 'assessed' during pending phase (createManualApprovalRequest does not change it).
+        $this->lifecycleService->transition(
+            $risk,
+            'risk_lifecycle',
+            'accept',
+            $user,
+            'Risk acceptance approved: ' . ($comments !== '' ? $comments : 'no comments'),
+        );
 
         // Log approval
         $this->auditLogger->logRiskAcceptanceApproved(
@@ -403,7 +424,7 @@ class RiskAcceptanceWorkflowService
                     $risk->getRiskOwner(),
                     $user
                 );
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 $this->logger->error('Failed to send approval notification', [
                     'error' => $e->getMessage(),
                     'risk_id' => $risk->getId(),
@@ -428,11 +449,20 @@ class RiskAcceptanceWorkflowService
      */
     public function rejectAcceptance(Risk $risk, User $user, string $reason): array
     {
-        $risk->setStatus(RiskStatus::Assessed); // Return to assessed status
         $risk->setFormallyAccepted(false);
 
         $this->entityManager->persist($risk);
         $this->entityManager->flush();
+
+        // X.6: revert_to_assessed transition (accepted → assessed) via risk_lifecycle.
+        // Added to config/workflows/risk.yaml in X.6. Reverts acceptance decision.
+        $this->lifecycleService->transition(
+            $risk,
+            'risk_lifecycle',
+            'revert_to_assessed',
+            $user,
+            'Risk acceptance rejected: ' . $reason,
+        );
 
         // Log rejection
         $this->auditLogger->logRiskAcceptanceRejected(
@@ -456,7 +486,7 @@ class RiskAcceptanceWorkflowService
                     $reason,
                     $user
                 );
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 $this->logger->error('Failed to send rejection notification', [
                     'error' => $e->getMessage(),
                     'risk_id' => $risk->getId(),

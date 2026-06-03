@@ -8,8 +8,8 @@
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.reports'|trans({}, 'nav'), path: 'app_reports_index' },
-            { label: 'management_reports.title'|trans({}, 'management_reports'), path: 'app_management_reports' },
+            { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_index') },
+            { label: 'management_reports.title'|trans({}, 'management_reports'), url: path('app_management_reports') },
             { label: 'management_reports.gdpr.title'|trans({}, 'management_reports') }
         ]
     } %}
@@ -18,13 +18,16 @@
         <h1 class="h2 mb-0">
             <i class="fa-icon fa-icon--control" aria-hidden="true"></i> {{ 'management_reports.gdpr.title'|trans({}, 'management_reports') }}
         </h1>
-        <div class="btn-group">
-            <a href="{{ path('app_management_reports_gdpr_pdf') }}" class="fa-cyber-btn fa-cyber-btn--danger">
-                <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'management_reports.action.download_pdf'|trans({}, 'management_reports') }}
-            </a>
-            <a href="{{ path('app_management_reports_gdpr_excel') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="bi bi-file-excel" aria-hidden="true"></i> {{ 'management_reports.action.download_excel'|trans({}, 'management_reports') }}
-            </a>
+        <div>
+            <div class="btn-group">
+                <a href="{{ path('app_management_reports_gdpr_pdf') }}" class="fa-cyber-btn fa-cyber-btn--danger">
+                    <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'management_reports.action.download_pdf'|trans({}, 'management_reports') }}
+                </a>
+                <a href="{{ path('app_management_reports_gdpr_excel') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
+                    <i class="fa-icon fa-icon--nav-file-check" aria-hidden="true"></i> {{ 'management_reports.action.download_excel'|trans({}, 'management_reports') }}
+                </a>
+            </div>
+            {% include '_components/_fa_pdf_locale_switch.html.twig' with {route: 'app_management_reports_gdpr_pdf'} only %}
         </div>
     </div>
 
@@ -41,7 +44,7 @@
         </div>
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'calendar',
+                icon: 'ui-calendar',
                 label: 'management_reports.gdpr.this_year'|trans({}, 'management_reports'),
                 value: report.this_year,
                 variant: 'primary'
@@ -49,7 +52,7 @@
         </div>
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'check-circle',
+                icon: 'status-ok',
                 label: 'management_reports.gdpr.notified'|trans({}, 'management_reports'),
                 value: report.notification_status.notified,
                 variant: 'success'
@@ -57,7 +60,7 @@
         </div>
         <div class="col-md-3">
             {{ _fa_feature_card.render({
-                icon: 'hourglass-split',
+                icon: 'ui-hourglass',
                 label: 'management_reports.gdpr.pending_notification'|trans({}, 'management_reports'),
                 value: report.notification_status.pending,
                 variant: 'warning'
@@ -78,41 +81,34 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'management_reports.severity.critical'|trans({}, 'management_reports') } %}
                             <span>{{ report.by_severity.critical }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-danger" style="width: {{ report.total_breaches > 0 ? (report.by_severity.critical / report.total_breaches * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: report.total_breaches > 0 ? (report.by_severity.critical / report.total_breaches * 100) : 0, tone: 'danger' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'management_reports.severity.high'|trans({}, 'management_reports') } %}
                             <span>{{ report.by_severity.high }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-warning" style="width: {{ report.total_breaches > 0 ? (report.by_severity.high / report.total_breaches * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: report.total_breaches > 0 ? (report.by_severity.high / report.total_breaches * 100) : 0, tone: 'warning' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'info', content: 'management_reports.severity.medium'|trans({}, 'management_reports') } %}
                             <span>{{ report.by_severity.medium }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-info" style="width: {{ report.total_breaches > 0 ? (report.by_severity.medium / report.total_breaches * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: report.total_breaches > 0 ? (report.by_severity.medium / report.total_breaches * 100) : 0, tone: 'info' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'success', content: 'management_reports.severity.low'|trans({}, 'management_reports') } %}
                             <span>{{ report.by_severity.low }}</span>
                         </div>
-                        <div class="progress progress-h-20">
-                            <div class="progress-bar bg-success" style="width: {{ report.total_breaches > 0 ? (report.by_severity.low / report.total_breaches * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: report.total_breaches > 0 ? (report.by_severity.low / report.total_breaches * 100) : 0, tone: 'success' }) }}
                     </div>
                 {% endblock %}
             {% endembed %}
@@ -155,7 +151,7 @@
     {# Pending Notifications Alert #}
     {% if report.notification_status.pending > 0 %}
     <div class="fa-alert fa-alert--danger mb-4" role="alert">
-        <h5><i class="bi bi-exclamation-octagon" aria-hidden="true"></i> {{ 'management_reports.gdpr.urgent_attention'|trans({}, 'management_reports') }}</h5>
+        <h5><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i> {{ 'management_reports.gdpr.urgent_attention'|trans({}, 'management_reports') }}</h5>
         <p>{{ 'management_reports.gdpr.pending_notification_warning'|trans({'%count%': report.notification_status.pending}, 'management_reports') }}</p>
         <a href="{{ path('app_data_breach_index') }}" class="fa-cyber-btn fa-cyber-btn--danger">
             <i class="fa-icon fa-icon--util-arrow-right" aria-hidden="true"></i> {{ 'management_reports.gdpr.view_breaches'|trans({}, 'management_reports') }}
@@ -175,49 +171,45 @@
             </div>
         {% endblock %}
         {% block card_body %}
-            <div class="table-responsive">
-                <table class="table table-sm table-hover">
-                    <thead>
-                        <tr>
-                            <th scope="col">{{ 'management_reports.gdpr.header.id'|trans({}, 'management_reports') }}</th>
-                            <th scope="col">{{ 'management_reports.gdpr.header.title'|trans({}, 'management_reports') }}</th>
-                            <th scope="col">{{ 'management_reports.gdpr.header.severity'|trans({}, 'management_reports') }}</th>
-                            <th scope="col">{{ 'management_reports.gdpr.header.discovered'|trans({}, 'management_reports') }}</th>
-                            <th scope="col">{{ 'management_reports.gdpr.header.notification_required'|trans({}, 'management_reports') }}</th>
-                            <th scope="col">{{ 'management_reports.gdpr.header.notified'|trans({}, 'management_reports') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for breach in report.breaches %}
-                        <tr>
-                            <td>{{ breach.id }}</td>
-                            <td>
-                                <a href="{{ path('app_data_breach_show', {id: breach.id}) }}">
-                                    {{ breach.title }}
-                                </a>
-                            </td>
-                            <td>
-                                {% set severity = breach.severity|default('medium') %}
-                                {% include '_components/_badge.html.twig' with { variant: severity == 'critical' ? 'danger' : (severity == 'high' ? 'warning' : (severity == 'medium' ? 'info' : 'success')), content: severity } %}
-                            </td>
-                            <td>{{ breach.discoveredAt ? breach.discoveredAt|date('Y-m-d') : '-' }}</td>
-                            <td>
-                                {% include '_components/_badge.html.twig' with { variant: breach.notificationRequired ? 'danger' : 'secondary', content: breach.notificationRequired ? 'common.yes'|trans({}, 'messages') : 'common.no'|trans({}, 'messages') } %}
-                            </td>
-                            <td>
-                                {% if breach.notificationDate %}
-                                <span class="text-success">{{ breach.notificationDate|date('Y-m-d') }}</span>
-                                {% elseif breach.notificationRequired %}
-                                {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'management_reports.gdpr.pending'|trans({}, 'management_reports') } %}
-                                {% else %}
-                                <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            {% embed '_components/_fa_table.html.twig' with { compact: true } %}
+                {% block table_head %}
+                    <tr>
+                        <th scope="col" class="fa-table__th">{{ 'management_reports.gdpr.header.id'|trans({}, 'management_reports') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'management_reports.gdpr.header.title'|trans({}, 'management_reports') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'management_reports.gdpr.header.severity'|trans({}, 'management_reports') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'management_reports.gdpr.header.discovered'|trans({}, 'management_reports') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'management_reports.gdpr.header.notification_required'|trans({}, 'management_reports') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'management_reports.gdpr.header.notified'|trans({}, 'management_reports') }}</th>
+                    </tr>
+                {% endblock %}
+                {% block table_body %}
+                    {% for breach in report.breaches %}
+                    <tr class="fa-table__row">
+                        <td class="fa-table__cell">{{ breach.id }}</td>
+                        <td class="fa-table__cell">
+                            <a href="{{ path('app_data_breach_show', {id: breach.id}) }}">{{ breach.title }}</a>
+                        </td>
+                        <td class="fa-table__cell">
+                            {% set severity = breach.severity|default('medium') %}
+                            {% include '_components/_badge.html.twig' with { variant: severity == 'critical' ? 'danger' : (severity == 'high' ? 'warning' : (severity == 'medium' ? 'info' : 'success')), content: severity } %}
+                        </td>
+                        <td class="fa-table__cell">{{ breach.discoveredAt ? breach.discoveredAt|date('Y-m-d') : '-' }}</td>
+                        <td class="fa-table__cell">
+                            {% include '_components/_badge.html.twig' with { variant: breach.notificationRequired ? 'danger' : 'secondary', content: breach.notificationRequired ? 'common.yes'|trans({}, 'messages') : 'common.no'|trans({}, 'messages') } %}
+                        </td>
+                        <td class="fa-table__cell">
+                            {% if breach.notificationDate %}
+                            <span class="text-success">{{ breach.notificationDate|date('Y-m-d') }}</span>
+                            {% elseif breach.notificationRequired %}
+                            {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'management_reports.gdpr.pending'|trans({}, 'management_reports') } %}
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% endblock %}
+            {% endembed %}
         {% endblock %}
     {% endembed %}
     {% else %}

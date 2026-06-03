@@ -1,19 +1,17 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'user.profile.action.edit'|trans({}, 'user') }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>
-            <i class="fa-icon fa-icon--user" aria-hidden="true"></i>
-            {{ 'user.profile.action.edit'|trans({}, 'user') }}
-        </h1>
-        <a href="{{ path('app_profile') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-            <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i>
-            {{ 'common.back'|trans({}, 'messages') }}
-        </a>
-    </div>
+    {{ _fa_page_header.render({
+    title: ('user.profile.action.edit'|trans({}, 'user')),
+    badge: { icon: 'ui-edit', label: '' },
+    actions: [
+        { label: 'common.back'|trans({}, 'messages'), href: path('app_profile'), variant: 'ghost', icon: 'util-arrow-left' }
+    ]
+}) }}
 
     <div class="row">
         <div class="col-md-8 offset-md-2">
@@ -25,9 +23,15 @@
                 {% endblock %}
                 {% block card_body %}
                     {{ form_start(form) }}
+                        {# H-03: strict_whitelist is CRITICAL here — the profile
+                           controller passes is_profile_edit=true, but the
+                           catch-all would still render any field the FormType
+                           accidentally added (e.g. roles, tenant, isActive),
+                           letting a regular user POST role-elevation. #}
                         {% include '_components/_auto_form.html.twig' with {
-                            'form': form,
-                            'sections': {
+                            form: form,
+                            strict_whitelist: true,
+                            sections: {
                                 'basic_info': {
                                     'label': 'user.section.basic_info'|trans({}, 'user'),
                                     'fields': ['firstName', 'lastName', 'email', 'department', 'jobTitle', 'phoneNumber']
@@ -38,7 +42,11 @@
                                 },
                                 'preferences': {
                                     'label': 'user.profile.section.preferences'|trans({}, 'user'),
-                                    'fields': ['language', 'timezone']
+                                    'fields': ['language', 'timezone', 'previousQmsBackground']
+                                },
+                                'competence': {
+                                    'label': 'user.section.competence'|trans({}, 'user'),
+                                    'fields': ['competencies']
                                 },
                                 'security': {
                                     'label': 'user.profile.section.security'|trans({}, 'user'),
@@ -55,6 +63,8 @@
                                 'avatarFile': 12,
                                 'language': 6,
                                 'timezone': 6,
+                                'previousQmsBackground': 12,
+                                'competencies': 12,
                                 'plainPassword': 12
                             },
                             'translation_domain': 'user'

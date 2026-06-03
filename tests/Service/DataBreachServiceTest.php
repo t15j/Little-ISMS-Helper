@@ -9,6 +9,7 @@ use App\Entity\Incident;
 use App\Entity\ProcessingActivity;
 use App\Entity\Tenant;
 use App\Entity\User;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Repository\DataBreachRepository;
 use App\Service\AuditLogger;
 use App\Service\DataBreachService;
@@ -20,7 +21,9 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use Psr\Log\LoggerInterface;
-use RuntimeException;
+use App\Exception\BusinessRule\BusinessRuleException;
+use App\Exception\Tenant\TenantOrphanException;
+use App\Exception\Workflow\InvalidStatusTransitionException;
 use PHPUnit\Framework\Attributes\Test;
 
 #[AllowMockObjectsWithoutExpectations]
@@ -32,6 +35,7 @@ class DataBreachServiceTest extends TestCase
     private MockObject $auditLogger;
     private MockObject $logger;
     private MockObject $workflowAutoProgressionService;
+    private MockObject $lifecycleService;
     private DataBreachService $service;
     private MockObject $tenant;
 
@@ -43,6 +47,8 @@ class DataBreachServiceTest extends TestCase
         $this->auditLogger = $this->createMock(AuditLogger::class);
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->workflowAutoProgressionService = $this->createMock(WorkflowAutoProgressionService::class);
+        // X.6: LifecycleService mock — transition() is a no-op in unit tests.
+        $this->lifecycleService = $this->createMock(LifecycleTransitionInterface::class);
 
         $this->tenant = $this->createMock(Tenant::class);
         $this->tenant->method('getId')->willReturn(1);
@@ -53,8 +59,37 @@ class DataBreachServiceTest extends TestCase
             $this->tenantContext,
             $this->auditLogger,
             $this->logger,
-            $this->workflowAutoProgressionService
+            $this->workflowAutoProgressionService,
+            $this->lifecycleService,
         );
+    }
+
+    #[Test]
+    public function testSubmitForAssessmentCallsLifecycleTransitionAssess(): void
+    {
+        $dataBreach = $this->createMock(DataBreach::class);
+        $dataBreach->method('getId')->willReturn(1);
+        $dataBreach->method('getStatus')->willReturn('draft');
+        $dataBreach->method('isComplete')->willReturn(true);
+        $dataBreach->method('getReferenceNumber')->willReturn('DB-2026-001');
+
+        $user = $this->createMock(User::class);
+        $user->method('getEmail')->willReturn('assessor@example.test');
+
+        $this->entityManager->expects($this->once())->method('flush');
+
+        // X.6: verify LifecycleService::transition() is called with the 'assess' transition.
+        $this->lifecycleService->expects($this->once())->method('transition')->with(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'assess',
+            $user,
+            $this->stringContains('Art. 33'),
+        );
+
+        $result = $this->service->submitForAssessment($dataBreach, $user);
+
+        $this->assertSame($dataBreach, $result);
     }
 
     #[Test]
@@ -62,7 +97,7 @@ class DataBreachServiceTest extends TestCase
     {
         $this->tenantContext->method('getCurrentTenant')->willReturn(null);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(TenantOrphanException::class);
         $this->expectExceptionMessage('No tenant context available');
 
         $this->service->prepareNewBreach();
@@ -92,7 +127,7 @@ class DataBreachServiceTest extends TestCase
         $incident = $this->createMock(Incident::class);
         $user = $this->createMock(User::class);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(TenantOrphanException::class);
         $this->expectExceptionMessage('No tenant context available');
 
         $this->service->createFromIncident($incident, $user);
@@ -159,7 +194,7 @@ class DataBreachServiceTest extends TestCase
         $this->tenantContext->method('getCurrentTenant')->willReturn(null);
         $user = $this->createMock(User::class);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(TenantOrphanException::class);
         $this->expectExceptionMessage('No tenant context available');
 
         $this->service->createStandalone($user, new DateTime());
@@ -243,7 +278,7 @@ class DataBreachServiceTest extends TestCase
 
         $user = $this->createMock(User::class);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('Only draft data breaches can be submitted for assessment');
 
         $this->service->submitForAssessment($dataBreach, $user);
@@ -259,7 +294,7 @@ class DataBreachServiceTest extends TestCase
 
         $user = $this->createMock(User::class);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('Data breach must be complete before assessment');
 
         $this->service->submitForAssessment($dataBreach, $user);
@@ -271,7 +306,7 @@ class DataBreachServiceTest extends TestCase
         $dataBreach = $this->createMock(DataBreach::class);
         $dataBreach->method('getRequiresAuthorityNotification')->willReturn(false);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('does not require supervisory authority notification');
 
         $this->service->notifySupervisoryAuthority($dataBreach, 'Authority', 'email');
@@ -284,7 +319,7 @@ class DataBreachServiceTest extends TestCase
         $dataBreach->method('getRequiresAuthorityNotification')->willReturn(true);
         $dataBreach->method('getSupervisoryAuthorityNotifiedAt')->willReturn(new DateTime());
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('Supervisory authority has already been notified');
 
         $this->service->notifySupervisoryAuthority($dataBreach, 'Authority', 'email');
@@ -296,7 +331,7 @@ class DataBreachServiceTest extends TestCase
         $dataBreach = $this->createMock(DataBreach::class);
         $dataBreach->method('getRequiresSubjectNotification')->willReturn(false);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('does not require data subject notification');
 
         $this->service->notifyDataSubjects($dataBreach, 'email', 100);
@@ -309,7 +344,7 @@ class DataBreachServiceTest extends TestCase
         $dataBreach->method('getRequiresSubjectNotification')->willReturn(true);
         $dataBreach->method('getDataSubjectsNotifiedAt')->willReturn(new DateTime());
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('Data subjects have already been notified');
 
         $this->service->notifyDataSubjects($dataBreach, 'email', 100);
@@ -323,7 +358,7 @@ class DataBreachServiceTest extends TestCase
 
         $user = $this->createMock(User::class);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(InvalidStatusTransitionException::class);
         $this->expectExceptionMessage('must be in authority_notified or subjects_notified status');
 
         $this->service->close($dataBreach, $user);
@@ -339,7 +374,7 @@ class DataBreachServiceTest extends TestCase
 
         $user = $this->createMock(User::class);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('Supervisory authority notification required before closing');
 
         $this->service->close($dataBreach, $user);
@@ -353,7 +388,7 @@ class DataBreachServiceTest extends TestCase
 
         $user = $this->createMock(User::class);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('Only closed data breaches can be reopened');
 
         $this->service->reopen($dataBreach, $user, 'New information received');
@@ -365,10 +400,89 @@ class DataBreachServiceTest extends TestCase
         $dataBreach = $this->createMock(DataBreach::class);
         $dataBreach->method('isAuthorityNotificationOverdue')->willReturn(false);
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->expectExceptionMessage('Notification is not overdue');
 
         $this->service->recordNotificationDelay($dataBreach, 'Some reason');
+    }
+
+    // -------------------------------------------------------------------------
+    // X.6 gap tests: 3 remaining setStatus → LifecycleService migrations
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function testNotifySupervisoryAuthorityCallsLifecycleTransitionNotifyAuthority(): void
+    {
+        $dataBreach = $this->createMock(DataBreach::class);
+        $dataBreach->method('getId')->willReturn(1);
+        $dataBreach->method('getRequiresAuthorityNotification')->willReturn(true);
+        $dataBreach->method('getSupervisoryAuthorityNotifiedAt')->willReturn(null);
+        $dataBreach->method('isAuthorityNotificationOverdue')->willReturn(false);
+        $dataBreach->method('getHoursUntilAuthorityDeadline')->willReturn(24);
+        $dataBreach->method('getReferenceNumber')->willReturn('DB-2026-002');
+
+        // X.6: verify LifecycleService::transition() is called with the 'notify_authority' transition.
+        $this->lifecycleService->expects($this->once())->method('transition')->with(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'notify_authority',
+            null,
+            $this->stringContains('Art. 33'),
+        );
+
+        $result = $this->service->notifySupervisoryAuthority($dataBreach, 'BfDI', 'email');
+
+        $this->assertSame($dataBreach, $result);
+    }
+
+    #[Test]
+    public function testNotifyDataSubjectsCallsLifecycleTransitionNotifySubjects(): void
+    {
+        $dataBreach = $this->createMock(DataBreach::class);
+        $dataBreach->method('getId')->willReturn(2);
+        $dataBreach->method('getRequiresSubjectNotification')->willReturn(true);
+        $dataBreach->method('getDataSubjectsNotifiedAt')->willReturn(null);
+        $dataBreach->method('getReferenceNumber')->willReturn('DB-2026-003');
+
+        // X.6: verify LifecycleService::transition() is called with the 'notify_subjects' transition.
+        $this->lifecycleService->expects($this->once())->method('transition')->with(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'notify_subjects',
+            null,
+            $this->stringContains('Art. 34'),
+        );
+
+        $result = $this->service->notifyDataSubjects($dataBreach, 'email', 500);
+
+        $this->assertSame($dataBreach, $result);
+    }
+
+    #[Test]
+    public function testCloseCallsLifecycleTransitionClose(): void
+    {
+        $dataBreach = $this->createMock(DataBreach::class);
+        $dataBreach->method('getId')->willReturn(3);
+        $dataBreach->method('getStatus')->willReturn('subjects_notified');
+        $dataBreach->method('getRequiresAuthorityNotification')->willReturn(false);
+        $dataBreach->method('getRequiresSubjectNotification')->willReturn(false);
+        $dataBreach->method('getReferenceNumber')->willReturn('DB-2026-004');
+
+        $user = $this->createMock(User::class);
+        $user->method('getEmail')->willReturn('dpo@example.test');
+
+        // X.6: verify LifecycleService::transition() is called with the 'close' transition.
+        $this->lifecycleService->expects($this->once())->method('transition')->with(
+            $dataBreach,
+            'data_breach_lifecycle',
+            'close',
+            $user,
+            $this->stringContains('closed'),
+        );
+
+        $result = $this->service->close($dataBreach, $user);
+
+        $this->assertSame($dataBreach, $result);
     }
 
     #[Test]

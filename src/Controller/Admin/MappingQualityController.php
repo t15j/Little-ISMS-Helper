@@ -8,6 +8,7 @@ use App\Entity\ComplianceFramework;
 use App\Entity\User;
 use App\Repository\ComplianceFrameworkRepository;
 use App\Repository\ComplianceMappingRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\MappingLifecycleService;
 use App\Service\MappingQualityScoreService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -15,6 +16,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 use Symfony\Component\Security\Http\Attribute\IsCsrfTokenValid;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -23,8 +25,14 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * Mapping-Quality-Dashboard.
  * Übersicht aller Cross-Framework-Mappings mit MQS-Score, Lifecycle-State,
  * Coverage und Confidence-Verteilung. Filter nach State, Score-Range, Framework.
+ *
+ * Phase 4c role-scope migration:
+ *  - Class-level `ADMIN_OWN_TENANT` lets tenant-admins inspect mappings.
+ *  - {@see self::recompute()} bumps to `ADMIN_GLOBAL_OP` because it
+ *    iterates EVERY mapping row in the DB (cross-tenant), which only
+ *    SUPER_ADMIN is allowed to do.
  */
-#[IsGranted('ROLE_ADMIN')]
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
 class MappingQualityController extends AbstractController
 {
     public function __construct(
@@ -37,7 +45,7 @@ class MappingQualityController extends AbstractController
     ) {
     }
 
-    #[Route('/admin/mapping-quality', name: 'admin_mapping_quality_index')]
+    #[Route('/admin/mapping-quality', name: 'admin_mapping_quality_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
         $stateFilter = $request->query->get('state');
@@ -65,7 +73,7 @@ class MappingQualityController extends AbstractController
         ]);
     }
 
-    #[Route('/admin/mapping-quality/{id}', name: 'admin_mapping_quality_show', requirements: ['id' => '\d+'])]
+    #[Route('/admin/mapping-quality/{id}', name: 'admin_mapping_quality_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(int $id): Response
     {
         $mapping = $this->mappingRepository->find($id);
@@ -83,8 +91,11 @@ class MappingQualityController extends AbstractController
     }
 
     #[Route('/admin/mapping-quality/{id}/transition', name: 'admin_mapping_quality_transition', methods: ['POST'], requirements: ['id' => '\d+'])]
-    public function transition(Request $request, int $id): Response
-    {
+    public function transition(
+        Request $request,
+        int $id,
+        #[CurrentUser] User $actor,
+    ): Response {
         if (!$this->isCsrfTokenValid('mapping_lifecycle_' . $id, $request->request->get('_token'))) {
             $this->addFlash('error', 'Invalid CSRF token.');
             return $this->redirectToRoute('admin_mapping_quality_show', ['id' => $id]);
@@ -94,8 +105,6 @@ class MappingQualityController extends AbstractController
             throw $this->createNotFoundException();
         }
 
-        /** @var User $actor */
-        $actor = $this->getUser();
         $newState = (string) $request->request->get('to');
         $reason = trim((string) $request->request->get('reason', ''));
 
@@ -115,6 +124,7 @@ class MappingQualityController extends AbstractController
 
     #[Route('/admin/mapping-quality/recompute', name: 'admin_mapping_quality_recompute', methods: ['POST'])]
     #[IsCsrfTokenValid('mapping_quality_recompute', tokenKey: '_token')]
+    #[IsGranted(TenantScopedAdminVoter::ADMIN_GLOBAL_OP)]
     public function recompute(): Response
     {
         $count = 0;
@@ -167,7 +177,7 @@ class MappingQualityController extends AbstractController
      * "Wie viel von Framework Y ist durch Framework X abgedeckt — und wie
      * sicher sind wir uns dabei?"
      */
-    #[Route('/admin/mapping-quality/coverage/all', name: 'admin_mapping_quality_coverage')]
+    #[Route('/admin/mapping-quality/coverage/all', name: 'admin_mapping_quality_coverage', methods: ['GET'])]
     public function coverage(): Response
     {
         $frameworks = $this->frameworkRepository->findAll();

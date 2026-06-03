@@ -1,0 +1,97 @@
+# C4-C1 Klon-Funktionen — POST /<entity>/{id}/clone smoke tests.
+#
+# Each scenario resolves a `{id}` placeholder from the entity's index page
+# (first show-page link) so it clones an entity that exists in the *current*
+# test-user's tenant — no hard-coded fixture IDs that only live in one tenant.
+# The cloner persists a fresh editable copy and redirects to its edit form.
+# If the index has no entity, the scenario is skipped (nothing to clone).
+#
+# Module-gated scenarios skip when their module is inactive.
+
+scenarios:
+  - name: clone_risk
+    label: "Risk klonen (C4-C1, ROLE_USER)"
+    route: /de/risk/{id}
+    category: clone
+    resolve_id:
+      from: /de/risk
+      pattern: '/de/risk/(\d+)'
+    submit: 'form[action$="/risk/{id}/clone"] button[type="submit"]'
+    expect:
+      status_lt: 500
+      url_pattern: '/risk/\d+/edit'
+
+  - name: clone_asset
+    label: "Asset klonen (C4-C1, ROLE_USER)"
+    route: /de/asset/{id}
+    category: clone
+    resolve_id:
+      from: /de/asset
+      pattern: '/de/asset/(\d+)'
+    submit: 'form[action$="/asset/{id}/clone"] button[type="submit"]'
+    expect:
+      status_lt: 500
+      url_pattern: '/asset/\d+/edit'
+
+  - name: clone_document
+    label: "Dokument klonen (C4-C1, ROLE_USER)"
+    route: /de/document/{id}
+    category: clone
+    resolve_id:
+      from: /de/document
+      pattern: '/de/document/(\d+)'
+    submit: 'form[action$="/document/{id}/clone"] button[type="submit"]'
+    expect:
+      status_lt: 500
+      url_pattern: '/document/\d+/edit'
+
+  - name: clone_training
+    label: "Training klonen (C4-C1, ROLE_USER)"
+    route: /de/training/{id}
+    category: clone
+    resolve_id:
+      from: /de/training
+      pattern: '/de/training/(\d+)'
+    submit: 'form[action$="/training/{id}/clone"] button[type="submit"]'
+    expect:
+      status_lt: 500
+      url_pattern: '/training/\d+/edit'
+
+  - name: clone_supplier
+    label: "Supplier klonen (C4-C1, ROLE_USER)"
+    route: /de/supplier/{id}
+    category: clone
+    requires_module: suppliers
+    resolve_id:
+      from: /de/supplier
+      pattern: '/de/supplier/(\d+)'
+    submit: 'form[action$="/supplier/{id}/clone"] button[type="submit"]'
+    expect:
+      status_lt: 500
+      url_pattern: '/supplier/\d+/edit'
+
+  - name: clone_bc_plan
+    label: "BC-Plan klonen (C4-C1, ROLE_USER)"
+    route: /de/business-continuity-plan/{id}
+    category: clone
+    requires_module: bcm
+    resolve_id:
+      from: /de/business-continuity-plan
+      pattern: '/de/business-continuity-plan/(\d+)'
+    submit: 'form[action$="/business-continuity-plan/{id}/clone"] button[type="submit"]'
+    expect:
+      status_lt: 500
+      url_pattern: '/business-continuity-plan/\d+/edit'
+
+  - name: clone_bc_exercise
+    label: "BC-Exercise klonen (C4-C1, ROLE_USER)"
+    route: /de/bc-exercise/{id}
+    category: clone
+    requires_module: bcm
+    resolve_id:
+      from: /de/bc-exercise
+      pattern: '/de/bc-exercise/(\d+)'
+    submit: 'form[action$="/bc-exercise/{id}/clone"] button[type="submit"]'
+    expect:
+      status_lt: 500
+      url_pattern: '/bc-exercise/\d+/edit'

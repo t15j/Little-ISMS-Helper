@@ -133,10 +133,32 @@ confirm:
     typing_hint: 'Type "%keyword%" to confirm:'
 back: Back
 common:
+    module_not_active: 'Module "%module%" is not active. Please activate via Setup → Modules.'
+    tenant_not_found: 'No active tenant — please log in to a workspace before using this feature.'
     please_select: 'Please select...'
     next: Next
+    # Junior-ISB-Audit-2026-05-22 S14 #17: BP-Tooltips Drawer Pattern.
+    more_info: 'More info...'
+    more_info_aria: 'Open full help for "%field%"'
     yes: 'Yes'
     no: 'No'
+    form:
+        errors: 'Form errors'
+    greeting:
+        hello_name: 'Hello %name%,'
+    person_picker:
+        placeholder: 'Select a person…'
+        empty_state:
+            title: 'No persons in tenant'
+            body: 'Please create a Person record before assigning this role.'
+    owner_picker:
+        section_label: 'Owner'
+        or: 'or'
+        legacy:
+            title: 'Legacy data — migration recommended'
+            body: 'This value still uses the legacy free-text owner field. Please migrate it to a User or Person record at your earliest convenience.'
+    section:
+        other: 'Other Fields'
     link_matrix:
         title_vulnerability: 'Linked Entities (Vulnerability)'
         title_risk: 'Linked Entities (Risk)'
@@ -187,6 +209,9 @@ common:
     view_details: 'View Details'
     view_all: 'View All'
     edit: Edit
+    clone:
+        label: 'Duplicate'
+        help: 'Create an editable copy with status / execution fields reset. Useful for recurring cycles, templates, and multi-site rollouts.'
     show_all: 'Show All'
     active: Active
     not_active: 'Not Active'
@@ -206,13 +231,19 @@ common:
     download: Download
     error: Error
     error.invalid_csrf: 'Invalid security token. Please reload the page and try again.'
+    error.access_denied: 'Access denied.'
+    error.no_tenant: 'No tenant assigned.'
+    csrf_invalid: 'Invalid CSRF token.'
+    none: 'None'
+    type: 'Type'
+    no_data: 'No data available'
     export: Export
     export_excel: 'Export as Excel'
     filter: Filter
     filters: Filters
     clear: Clear
     from: From
-    help: Help
+    help_label: Help
     history: History
     id: ID
     inactive: Inactive
@@ -293,6 +324,8 @@ common:
         case_number_from_authority: ''
         explain_deadline_exceeded: ''
         explain_breach_reopened: ''
+        owner_user: '-- Select user --'
+        owner_person: '-- Select person --'
     reset_all_filters: ''
     time_savings: ''
     consistency: ''
@@ -304,6 +337,15 @@ common:
     roles_and_responsibilities: ''
     team_members: ''
     observers: ''
+    notes: Notes
+    field:
+        owner_user: 'Owner (System User)'
+        owner_person: 'Owner (Person)'
+        owner_deputies: Deputies
+    help:
+        owner_user: 'System user with login as the responsible owner.'
+        owner_person: 'Person without login as owner (priority: User > Person).'
+        owner_deputies: 'Additional persons sharing ownership or deputising.'
 framework: Framework
 requirement: Requirement
 bia: 'Business Impact Analysis'
@@ -443,6 +485,9 @@ role:
         incident_manager: 'Incident Manager'
         asset_manager: 'Asset Manager'
         readonly: 'Read-Only User'
+messages:
+    csrf:
+        invalid: 'Invalid CSRF token.'
 error:
     csrf_invalid: 'Invalid CSRF token.'
     generic:
@@ -476,6 +521,20 @@ error:
         help: 'Please try again later.'
         alva_line: 'Something went wrong.'
         alva_sub: "Not your fault. Try again or report it to the admin."
+    code_label_unavailable: 'Maintenance mode'
+    code_label_rate_limit: 'Rate limit'
+    503:
+        title: 'Service Unavailable'
+        alva_line: 'We will be right back.'
+        alva_sub: 'The service is temporarily unavailable — maintenance or high load.'
+        heading: 'Service Briefly Unavailable'
+        message: 'The server is currently under maintenance or overloaded. Please try again in a few minutes — your data is safe.'
+    429:
+        title: 'Too Many Requests'
+        alva_line: 'Short break.'
+        alva_sub: 'You have sent too many requests in a short time. Please try again shortly.'
+        heading: 'Too Many Requests in a Short Time'
+        message: 'For security reasons we limit the number of requests per minute. Please wait a moment and try again.'
     action:
         homepage: 'Go to Homepage'
         back: 'Go Back'
@@ -1023,6 +1082,11 @@ action:
     back_to_list: ''
     view_all: ''
 form:
+    json:
+        invalid: 'Invalid JSON. Please use valid JSON syntax (e.g. {"key":"value"} or [...]).'
+    outline:
+        aria_label: 'Sections'
+        title: 'Sections'
     automatic_value: 'This field was automatically filled by the Cyberpunk Fairy.'
     complete_asset_inventory: 'Complete asset inventory'
     conduct_risk_analysis: 'Conduct risk analysis'
@@ -1043,6 +1107,116 @@ form:
         invalid_format: 'Invalid format'
         too_short: 'Too short (min. %min% characters)'
         too_long: 'Too long (max. %max% characters)'
+    section:
+        overview: 'Overview'
+        applicability: 'Applicability'
+        effectiveness: 'Effectiveness'
+        review: 'Review'
+        references: 'Framework References'
+        relations: 'Relations'
+        cloud: 'Cloud'
+        recovery: 'Recovery'
+        team: 'Team'
+        communication: 'Communication'
+        resources: 'Resources'
+        activation: 'Activation'
+        testing: 'Testing'
+        audit_metadata: 'Audit metadata'
+        results: 'Results'
+        lessons_learned: 'Lessons learned'
+        details: 'Details'
+        contact: 'Contact'
+        risk_assessment: 'Risk assessment'
+        treatment: 'Treatment'
+        acceptance: 'Risk acceptance'
+        notification: 'Notification requirements'
+        measures: 'Measures'
+        privacy: 'Data protection (GDPR)'
+        classification: 'Classification'
+        affected_assets: 'Affected Assets'
+        mitigation: 'Mitigation'
+        lifecycle: 'Lifecycle'
+        schedule: 'Schedule'
+        audience: 'Audience'
+        verification: 'Verification'
+        address: 'Address'
+        security_zone: 'Security Zone'
+        access_control: 'Access Control'
+        environmental: 'Environmental'
+        target_metric: 'Target Metric'
+        monitoring: 'Monitoring'
+        responsibility: 'Responsibility'
+        internal_issues: 'Internal Issues'
+        external_issues: 'External Issues'
+        scope_definition: 'Scope Definition'
+        interested_parties_link: 'Interested Parties'
+        party_type: 'Party Type'
+        owner: 'Process Owner'
+        criticality: 'Criticality'
+        dependencies: 'Dependencies'
+        recovery_targets: 'Recovery Targets'
+        treatment_option: 'Treatment Option'
+        residual_risk: 'Residual Risk'
+        approval: 'Approval'
+        root_cause: 'Root Cause'
+        corrective_action: 'Corrective Action'
+        transport: 'Transport'
+        storage: 'Storage'
+        photography: 'Photography'
+        physical: 'Physical Security'
+        organisation: 'Organisation'
+        handling: 'Handling'
+        controls: 'Controls'
+        party_details: 'Party Details'
+        action_plan: 'Action Plan'
+        advanced: 'Advanced'
+        affected_systems: 'Affected Systems'
+        branding: 'Branding'
+        compliance: 'Compliance'
+        content: 'Content'
+        contract: 'Contract'
+        data_categories: 'Data Categories'
+        data_subject: 'Data Subject'
+        defaults: 'Defaults'
+        entity_classification: 'Entity Classification'
+        escalation: 'Escalation'
+        exercise_scope: 'Exercise Scope'
+        followup: 'Follow-up'
+        frameworks: 'Frameworks'
+        identity: 'Identity'
+        impact_assessment: 'Impact Assessment'
+        implementation: 'Implementation'
+        inputs: 'Inputs'
+        intelligence_source: 'Intelligence Source'
+        layout: 'Layout'
+        legal_basis: 'Legal Basis'
+        lifecycle_status: 'Lifecycle Status'
+        lineage: 'Lineage & Traceability'
+        lksg: 'LkSG'
+        marisk: 'MaRisk'
+        members: 'Members'
+        mitigations: 'Mitigations'
+        modules: 'Modules'
+        organization: 'Organization'
+        outputs: 'Outputs'
+        ownership: 'Ownership'
+        linkage: 'Linkage'
+        protection_requirements: 'Protection Requirements'
+        purposes: 'Purposes'
+        recipients: 'Recipients'
+        registration: 'Registration'
+        requirements: 'Requirements'
+        retention: 'Retention'
+        role: 'Role'
+        rollout: 'Rollout'
+        threat_classification: 'Threat Classification'
+        tier_classification: 'Tier Classification'
+        typography: 'Typography'
+        vulnerability_link: 'Linked Vulnerability'
+        withdrawal: 'Withdrawal'
+        warning:
+            unmapped_title: 'Notice (dev only):'
+            unmapped_body: 'The following fields are not covered by any section and fall through to the catch-all bucket: %fields%. Update the SectionPolicy on the FormType class.'
 corporate:
     title: 'Corporate Structure'
     subtitle: 'Management of parent companies and subsidiaries'
@@ -1051,11 +1225,11 @@ corporate:
         subsidiary: Subsidiary
     section:
         groups: 'Corporate Groups'
-        standalone: 'Standalone Tenants'
+        standalone: 'Standalone Organizations'
         structure: 'Corporate Structure'
     stats:
         standalone: Standalone
-        total: 'Total Tenants'
+        total: 'Total Organizations'
         own: Own
         inherited: Inherited
         subsidiaries: Subsidiaries
@@ -1096,7 +1270,7 @@ corporate:
     confirm:
         remove_parent: 'Do you really want to remove the connection to the parent company?'
     single_tenant:
-        title: 'Single Tenant'
+        title: 'Single Organization'
         message: 'There is only one tenant in the system'
         hint: 'Corporate structures only become relevant when you manage multiple tenants'
     flash:
@@ -1386,6 +1560,9 @@ security:
         saml_login_error: ''
         saml_logout_error: ''
     csrf_token_invalid: ''
+    url:
+        no_internal_ip: 'Internal IP addresses are not permitted for security reasons (SSRF protection). Please use a public URL.'
+        dns_resolution_failed: 'Hostname could not be resolved (potential DNS-pinning attack blocked).'
 location:
     success:
         created: ''
@@ -1643,6 +1820,8 @@ pdf:
         distribution_by_status: ''
     data_reuse:
         recommendations_title: ''
+        no_quick_wins: 'No Quick Wins with ≥80% Reuse + High Confidence found. Focus on mid-term potentials (50-80%).'
+        methodology: '<p>Data reuse analysis evaluates each framework requirement for potential overlap with existing ISMS data, controls, and documentation. Reuse percentage = reusable data points / total required data points. Confidence levels (low/medium/high) reflect mapping quality. Time savings estimated from historical compliance effort baselines.</p>'
     transitive_compliance:
         from_framework: ''
         to_framework: ''
@@ -1653,8 +1832,21 @@ bulk_actions:
     export: 'Export'
     add_tag: 'Add tag'
     assign: 'Assign'
+    assign_owner: 'Assign owner'
+    tag: 'Tag'
+    approve: 'Approve'
     delete: 'Delete'
     deselect: 'Clear selection'
+    close: 'Clear selection'
+    toolbar: 'Bulk actions'
+    applicable_change:
+        label: 'Set applicability'
+        set_applicable: 'Applicable (yes)'
+        set_not_applicable: 'N/A (not applicable)'
+        default_reason: 'Bulk action via SoA table'
+
+aria:
+    notifications: 'Notifications'
 not_assigned: ''
 page:
     title: ''
@@ -1690,6 +1882,10 @@ pwa:
 
 # Share Target API - Phase 8A
 share:
+    success:
+        note_saved: 'Note saved successfully.'
+    warning:
+        unknown_action: 'Unknown action.'
     title: 'Share Content'
     content_preview: 'Shared Content'
     select_action: 'What would you like to do?'
@@ -1732,7 +1928,7 @@ compliance_wizard:
             detail: 'Details'
             mapping: 'Mappings'
         summary:
-            tenant: 'Tenant'
+            tenant: 'Organization'
             target: 'Target Framework'
             baseline: 'Baseline Framework'
             reporting_date: 'Reporting Date'
@@ -1987,3 +2183,179 @@ reuse:
         suppliers:
             heading: 'Suppliers (%count%, max %max% requirements)'
         hint_monoculture: 'A few very-red tiles signal monoculture risk: if one artifact disappears, coverage across many frameworks collapses. Spread the load.'
+
+# data_breach index table/filter keys (used in data_breach/index.html.twig with messages domain)
+data_breach:
+    index:
+        kpi_affected_subjects: 'Total affected persons'
+        kpi_total_count: 'Total incidents'
+        filter_title: 'Filter by status'
+        filter_all: 'All'
+        filter_overdue: 'Overdue'
+        filter_pending_authority: 'Authority pending'
+        filter_pending_subjects: 'Subjects pending'
+        filter_draft: 'Draft'
+        filter_under_assessment: 'Under assessment'
+        filter_authority_notified: 'Authority notified'
+        filter_closed: 'Closed'
+        col_reference: 'Reference'
+        col_title: 'Title'
+        col_status: 'Status'
+        col_risk: 'Risk'
+        col_affected_subjects: 'Affected persons'
+        col_deadline: 'Deadline'
+        col_authority: 'Authority'
+        col_subjects: 'Subjects'
+        col_actions: 'Actions'
+        unknown: 'Unknown'
+        overdue: 'Overdue'
+        hours_left: '%hours% hrs remaining'
+        table_title: 'Data breaches'
+
+file_upload:
+    validation:
+        mime_type_invalid: 'File type not permitted. Allowed types: %types%'
+        max_size_exceeded: 'File too large (max %limit%).'
+
+pdf_switch:
+    also_available: 'Also available in'
+
+# V3 W2-H3: Comment-Thread macro (templates/_components/_isms_comment_thread.html.twig)
+comments:
+    section_title: 'Comments'
+    empty: 'No comments yet.'
+    label: 'Comment'
+    placeholder: 'Write a comment...'
+    submit: 'Send'
+
+# SSO admin / approvals UI
+sso:
+    action:
+        approve: 'Approve'
+        reject: 'Reject'
+        enable: 'Enable'
+        disable: 'Disable'
+    admin:
+        col:
+            name: 'Name'
+            slug: 'Slug'
+            type: 'Type'
+            scope: 'Scope'
+            status: 'Status'
+            domains: 'Domains'
+            actions: 'Actions'
+    approvals:
+        col:
+            email: 'Email'
+            provider: 'Provider'
+            tenant: 'Organization'
+            claims: 'Claims'
+            requested_at: 'Requested at'
+            actions: 'Actions'
+        show_claims: 'Show claims'
+    field:
+        auto_approve: 'Auto approve'
+    prompt:
+        reject_reason: 'Please provide a rejection reason'
+    scope:
+        global: 'Global'
+    status:
+        enabled: 'Enabled'
+        disabled: 'Disabled'
+
+# Owner-Picker — Tri-State Owner Slot Component (S4 P-1)
+owner_picker:
+    legacy_hint: 'Legacy free-text from historical records. Please select a user or person above; this field is read-only and serves as a migration hint.'
+
+# Flash messages cross-cutting (DeploymentWizard, DataRepair) — keys referenced with `messages` domain
+'setup.preset.applied': 'Industry preset "%preset%" applied. %modules% module(s) activated, %frameworks% framework(s) unlocked.'
+'setup.preset.error.unknown': 'Unknown industry preset.'
+'admin.data_repair.partial_assignment': 'Partial assignment — %assigned% of %total% orphaned records assigned. Review remaining items manually.'
+
+# Static-extractor fallback for JsonStructured-Builder keys
+# (bc_plans/bc_exercises/suppliers builders use dynamic translationDomain)
+# Runtime resolves via explicit-domain trans() — these mirrors prevent
+# `debug:translation --only-missing` from flagging _undefined-domain entries.
+# Junior-ISB-Audit K-03 (2026-05-23)
+'Allgemein': 'General'
+'Branding': 'Branding'
+'Sicherheit': 'Security'
+'Audit': 'Audit'
+'bc_exercises.json_builder.raw_help': 'Warning: raw editing can corrupt data. Schema must match entity definition.'
+'bc_exercises.json_builder.raw_label': 'Raw JSON (power-user)'
+'bc_exercises.json_builder.raw_toggle': 'Edit as JSON'
+'bc_exercises.success_criteria.add': 'Add criterion'
+'bc_exercises.success_criteria.apply_prefill': 'Apply suggestions'
+'bc_exercises.success_criteria.aria': 'Success criteria — structured editor'
+'bc_exercises.success_criteria.col.actions': 'Actions'
+'bc_exercises.success_criteria.col.actual': 'Actual'
+'bc_exercises.success_criteria.col.criterion': 'Criterion'
+'bc_exercises.success_criteria.col.met': 'Met'
+'bc_exercises.success_criteria.col.target': 'Target'
+'bc_exercises.success_criteria.empty': 'No success criteria defined yet. Define measurable criteria (e.g. RTO met, communication functional).'
+'bc_exercises.success_criteria.met.no': 'Not met'
+'bc_exercises.success_criteria.met.unknown': '— Open —'
+'bc_exercises.success_criteria.met.yes': 'Met'
+'bc_exercises.success_criteria.placeholder.actual': 'e.g. 3h 12min'
+'bc_exercises.success_criteria.placeholder.criterion': 'e.g. RTO met'
+'bc_exercises.success_criteria.placeholder.target': 'e.g. 4h'
+'bc_exercises.success_criteria.prefill_applied': 'RTO/RPO suggestions from tested BC plans applied. Fields can be overridden.'
+'bc_exercises.success_criteria.remove': 'Remove criterion'
+'bc_plans.escalation_chain.add': 'Add level'
+'bc_plans.escalation_chain.aria': 'Escalation levels — BSI 200-4 §6.2'
+'bc_plans.escalation_chain.col.escalate_after': 'Escalate after'
+'bc_plans.escalation_chain.col.level': 'Level'
+'bc_plans.escalation_chain.col.responder': 'Responder'
+'bc_plans.escalation_chain.col.trigger': 'Trigger'
+'bc_plans.escalation_chain.empty': 'No escalation levels defined yet.'
+'bc_plans.escalation_chain.help': 'Define escalation cascade per BSI 200-4 §6.2: per level set the trigger, responder and time threshold.'
+'bc_plans.escalation_chain.placeholder.escalate_after': 'e.g. 15min, 1h, 4h'
+'bc_plans.escalation_chain.placeholder.responder': 'e.g. CISO / crisis team'
+'bc_plans.escalation_chain.placeholder.trigger': 'e.g. service outage > 30 min'
+'bc_plans.escalation_chain.remove': 'Remove level'
+'bc_plans.json_builder.raw_help': 'Warning: raw editing can corrupt data. Schema must match entity definition.'
+'bc_plans.json_builder.raw_label': 'Raw JSON (power-user)'
+'bc_plans.json_builder.raw_toggle': 'Edit as JSON'
+'bc_plans.resource_list.add': 'Add'
+'bc_plans.resource_list.aria': 'Required resources — structured editor'
+'bc_plans.team_role.comms_lead': 'Communications Lead'
+'bc_plans.team_role.incident_commander': 'Incident Commander'
+'bc_plans.team_role.other': 'Other role'
+'bc_plans.team_role.recovery_lead': 'Recovery Lead'
+'bc_plans.team_role.technical_lead': 'Technical Lead'
+'bc_plans.team_role_builder.add': 'Add role'
+'bc_plans.team_role_builder.aria': 'Response team — structured editor'
+'bc_plans.team_role_builder.col.actions': 'Actions'
+'bc_plans.team_role_builder.col.contact': 'Contact'
+'bc_plans.team_role_builder.col.name': 'Name'
+'bc_plans.team_role_builder.col.responsibilities': 'Responsibilities'
+'bc_plans.team_role_builder.col.role': 'Role'
+'bc_plans.team_role_builder.empty': 'No team members yet. Click "Add role" to build your response team.'
+'bc_plans.team_role_builder.placeholder.contact': '+49 123 456789'
+'bc_plans.team_role_builder.placeholder.name': 'John Doe'
+'bc_plans.team_role_builder.placeholder.responsibilities': 'Overall coordination during incident'
+'bc_plans.team_role_builder.remove': 'Remove role'
+'supplier.subcontractor.add': 'Add subcontractor'
+'supplier.subcontractor.country': 'Country'
+'supplier.subcontractor.critical': 'Critical (DORA Art. 28)'
+'supplier.subcontractor.critical_help': 'Flag as DORA Art. 28 critical — subcontractor with material function.'
+'supplier.subcontractor.empty': 'No subcontractors captured yet. Click "Add" to add a new tier.'
+'supplier.subcontractor.indent': 'Increase tier (nest)'
+'supplier.subcontractor.name': 'Name'
+'supplier.subcontractor.outdent': 'Decrease tier (outdent)'
+'supplier.subcontractor.placeholder.name': 'e.g. Acme Hosting GmbH'
+'supplier.subcontractor.placeholder.service': 'e.g. Cloud Hosting, Backup service'
+'supplier.subcontractor.service': 'Service'
+'supplier.subcontractor_chain.aria': 'Subcontractor chain — structured editor (DORA Art. 28, max 4 tiers)'
+'supplier.subcontractor_chain.help': 'Capture the sub-outsourcing chain per DORA Art. 28. Maximum nesting depth: 4 tiers. Flag critical subcontractors for concentration reporting.'
+'supplier.subcontractor_chain.raw_help': 'Warning: raw editing can corrupt data. Schema must match entity definition.'
+'supplier.subcontractor_chain.raw_label': 'Raw JSON (power-user)'
+'supplier.subcontractor_chain.raw_toggle': 'Edit as JSON'
+'supplier.subcontractor_chain.remove': 'Remove subcontractor'
+
+# Junior-ISB-Audit-2026-05-22 S12 §4-6 — truly-missing flat-domain keys
+'supplier.subcontractor.country_placeholder': 'e.g. DE'
+'training.error.material_upload_failed': 'Material upload failed.'
+
+# Missing common action keys
+'common.update': 'Update'

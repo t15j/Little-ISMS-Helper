@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Entity\Person;
+use App\Enum\AuditFindingStatus;
 use App\Repository\AuditFindingRepository;
+use App\Entity\ComplianceRequirement;
 use App\Service\OwnerResolver;
 use DateTimeImmutable;
 use DateTimeInterface;
@@ -43,6 +45,13 @@ class AuditFinding
     public const SEVERITY_MEDIUM = 'medium';
     public const SEVERITY_LOW = 'low';
 
+    public const SOURCE_INTERNAL_AUDIT = 'internal_audit';
+    public const SOURCE_EXTERNAL_AUDIT = 'external_audit';
+    public const SOURCE_INCIDENT = 'incident';
+    public const SOURCE_REVIEW = 'review';
+    public const SOURCE_CUSTOMER_COMPLAINT = 'customer_complaint';
+    public const SOURCE_MANAGEMENT_REVIEW = 'management_review';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -74,6 +83,17 @@ class AuditFinding
     #[ORM\Column(length: 30)]
     private string $status = self::STATUS_OPEN;
 
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
+    /**
+     * Source of the finding — ISO 27001 §10.1: NCs can originate from any source.
+     * Values: internal_audit | external_audit | incident | review | customer_complaint | management_review
+     */
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $source = null;
+
     /** Clause/control reference (e.g. "ISO 27001 A.5.1", "Clause 9.3"). */
     #[ORM\Column(length: 100, nullable: true)]
     private ?string $clauseReference = null;
@@ -81,9 +101,30 @@ class AuditFinding
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $evidence = null;
 
+    /**
+     * @deprecated since junior-isb-audit P0-NEW (2026-05-17). Findings can
+     *             relate to multiple controls (e.g. Logging-finding hits
+     *             ISO 27001 A.8.15 + A.8.16). Use $relatedControls (plural)
+     *             instead. The singular column is preserved for read-only
+     *             access during the migration window and is auto-mirrored
+     *             into the plural collection by the migration backfill.
+     */
     #[ORM\ManyToOne(targetEntity: Control::class)]
     #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
     private ?Control $relatedControl = null;
+
+    /**
+     * Plural successor of $relatedControl. ISO 27001-Audit-Findings often
+     * cover multiple controls; the singular FK is preserved as a legacy
+     * read-side until callers migrate.
+     *
+     * @var Collection<int, Control>
+     */
+    #[ORM\ManyToMany(targetEntity: Control::class)]
+    #[ORM\JoinTable(name: 'audit_finding_controls')]
+    #[ORM\JoinColumn(name: 'audit_finding_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'control_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private Collection $relatedControls;
 
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(nullable: true)]
@@ -128,11 +169,67 @@ class AuditFinding
     #[ORM\OneToMany(targetEntity: CorrectiveAction::class, mappedBy: 'finding', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $correctiveActions;
 
+    /**
+     * F15 — Linked ComplianceRequirements (M2M).
+     * Linking triggers AutoTaskCreator to create CorrectiveAction tasks per owner.
+     *
+     * @var Collection<int, ComplianceRequirement>
+     */
+    #[ORM\ManyToMany(targetEntity: ComplianceRequirement::class)]
+    #[ORM\JoinTable(name: 'audit_finding_requirement')]
+    #[ORM\JoinColumn(name: 'audit_finding_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'compliance_requirement_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private Collection $linkedRequirements;
+
+    // ── S17 B4 — Hybrid JSON Nonconformity details (ISO 27001 Cl. 10.2 b) + d)) ──
+    /**
+     * Structured nonconformity details (Root-Cause-Analysis method, corrective
+     * actions, verification evidence). Only populated when type ∈ {major_nc, minor_nc}.
+     * Schema:
+     *   - rootCauseAnalysisMethod: '5-why' | 'ishikawa' | 'fmea' | 'other'
+     *   - correctiveActions: list<{description: string, owner_id: ?int, deadline: ?string}>
+     *   - verificationMethod: 'document-review' | 'walkthrough' | 'test' | 'metrics-monitoring'
+     *   - verificationEvidence: string
+     *
+     * @var array<string, mixed>|null
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    private ?array $nonconformityDetails = null;
+
+    /** Short narrative summary of the root-cause analysis result. */
+    #[ORM\Column(name: 'nc_root_cause_summary', type: Types::TEXT, nullable: true)]
+    private ?string $ncRootCauseSummary = null;
+
+    /** ISO 27001 Cl. 10.2 c) — auditable deadline for the corrective measure. */
+    #[ORM\Column(name: 'nc_correction_due_date', type: Types::DATE_IMMUTABLE, nullable: true)]
+    private ?DateTimeImmutable $ncCorrectionDueDate = null;
+
+    /** Timestamp when verification of effectiveness was completed. */
+    #[ORM\Column(name: 'nc_verified_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?DateTimeImmutable $ncVerifiedAt = null;
+
+    /** Verifier (auditor or independent reviewer). */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'nc_verified_by_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $ncVerifiedBy = null;
+
+    public const RCA_METHOD_5_WHY = '5-why';
+    public const RCA_METHOD_ISHIKAWA = 'ishikawa';
+    public const RCA_METHOD_FMEA = 'fmea';
+    public const RCA_METHOD_OTHER = 'other';
+
+    public const VERIFICATION_DOCUMENT_REVIEW = 'document-review';
+    public const VERIFICATION_WALKTHROUGH = 'walkthrough';
+    public const VERIFICATION_TEST = 'test';
+    public const VERIFICATION_METRICS_MONITORING = 'metrics-monitoring';
+
     public function __construct()
     {
         $this->correctiveActions = new ArrayCollection();
         $this->reportedByDeputyPersons = new ArrayCollection();
         $this->assignedDeputyPersons = new ArrayCollection();
+        $this->linkedRequirements = new ArrayCollection();
+        $this->relatedControls = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
     }
 
@@ -223,9 +320,33 @@ class AuditFinding
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(AuditFindingStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
+        return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?AuditFindingStatus
+    {
+        return AuditFindingStatus::tryFrom($this->status);
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
+    }
+
+    public function getSource(): ?string
+    {
+        return $this->source;
+    }
+
+    public function setSource(?string $source): static
+    {
+        $this->source = $source;
         return $this;
     }
 
@@ -260,6 +381,47 @@ class AuditFinding
     {
         $this->relatedControl = $relatedControl;
         return $this;
+    }
+
+    /** @return Collection<int, Control> */
+    public function getRelatedControls(): Collection
+    {
+        return $this->relatedControls;
+    }
+
+    public function addRelatedControl(Control $control): static
+    {
+        if (!$this->relatedControls->contains($control)) {
+            $this->relatedControls->add($control);
+        }
+        return $this;
+    }
+
+    public function removeRelatedControl(Control $control): static
+    {
+        $this->relatedControls->removeElement($control);
+        return $this;
+    }
+
+    /**
+     * Effective controls view: union of plural Collection and the legacy
+     * singular FK. Use this in templates/services that need a uniform
+     * iterable until callers migrate fully to the plural API.
+     *
+     * @return array<int, Control>
+     */
+    public function getEffectiveRelatedControls(): array
+    {
+        $controls = $this->relatedControls->toArray();
+        if ($this->relatedControl !== null) {
+            foreach ($controls as $existing) {
+                if ($existing === $this->relatedControl) {
+                    return $controls;
+                }
+            }
+            $controls[] = $this->relatedControl;
+        }
+        return $controls;
     }
 
     public function getReportedBy(): ?User
@@ -426,5 +588,92 @@ class AuditFinding
             return false;
         }
         return $this->dueDate < new DateTimeImmutable();
+    }
+
+    // ── F15: Linked ComplianceRequirements ─────────────────────────────────────
+
+    /** @return Collection<int, ComplianceRequirement> */
+    public function getLinkedRequirements(): Collection
+    {
+        return $this->linkedRequirements;
+    }
+
+    public function addLinkedRequirement(ComplianceRequirement $requirement): static
+    {
+        if (!$this->linkedRequirements->contains($requirement)) {
+            $this->linkedRequirements->add($requirement);
+        }
+        return $this;
+    }
+
+    public function removeLinkedRequirement(ComplianceRequirement $requirement): static
+    {
+        $this->linkedRequirements->removeElement($requirement);
+        return $this;
+    }
+
+    // ── S17 B4 — Nonconformity Hybrid JSON accessors ──────────────────────────
+
+    /** @return array<string, mixed>|null */
+    public function getNonconformityDetails(): ?array
+    {
+        return $this->nonconformityDetails;
+    }
+
+    /** @param array<string, mixed>|null $nonconformityDetails */
+    public function setNonconformityDetails(?array $nonconformityDetails): static
+    {
+        $this->nonconformityDetails = $nonconformityDetails;
+        return $this;
+    }
+
+    public function getNcRootCauseSummary(): ?string
+    {
+        return $this->ncRootCauseSummary;
+    }
+
+    public function setNcRootCauseSummary(?string $ncRootCauseSummary): static
+    {
+        $this->ncRootCauseSummary = $ncRootCauseSummary;
+        return $this;
+    }
+
+    public function getNcCorrectionDueDate(): ?DateTimeImmutable
+    {
+        return $this->ncCorrectionDueDate;
+    }
+
+    public function setNcCorrectionDueDate(?DateTimeImmutable $ncCorrectionDueDate): static
+    {
+        $this->ncCorrectionDueDate = $ncCorrectionDueDate;
+        return $this;
+    }
+
+    public function getNcVerifiedAt(): ?DateTimeImmutable
+    {
+        return $this->ncVerifiedAt;
+    }
+
+    public function setNcVerifiedAt(?DateTimeImmutable $ncVerifiedAt): static
+    {
+        $this->ncVerifiedAt = $ncVerifiedAt;
+        return $this;
+    }
+
+    public function getNcVerifiedBy(): ?User
+    {
+        return $this->ncVerifiedBy;
+    }
+
+    public function setNcVerifiedBy(?User $ncVerifiedBy): static
+    {
+        $this->ncVerifiedBy = $ncVerifiedBy;
+        return $this;
+    }
+
+    /** True when finding is classified as a nonconformity (major or minor). */
+    public function isNonconformity(): bool
+    {
+        return in_array($this->type, [self::TYPE_MAJOR_NC, self::TYPE_MINOR_NC], true);
     }
 }

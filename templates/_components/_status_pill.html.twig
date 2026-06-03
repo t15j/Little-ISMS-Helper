@@ -4,7 +4,7 @@
  # Usage:
  #   {% import '_components/_status_pill.html.twig' as pill %}
  #   {{ pill.render('In Arbeit', 'primary') }}
- #   {{ pill.render('Erfüllt', 'success', { icon: 'bi-check-circle' }) }}
+ #   {{ pill.render('Erfüllt', 'success', { icon: 'status-ok' }) }}
  #   {{ pill.render('23', 'accent', { size: 'sm' }) }}
  #
  # Props:
@@ -13,16 +13,21 @@
  #   size:  sm | md  (default: md)
  #   icon:  optional bootstrap-icon class (no dot rendered when icon given)
  #   noDot: boolean — drop dot even without icon (for pure-label pills)
+ #   class: extra CSS classes to append (e.g. 'ms-2')
+ #   title: optional title/tooltip attribute
  #}
 
 {% macro render(label, tone = 'neutral', props = {}) %}
     {% set size = props.size|default('md') %}
     {% set icon = props.icon|default(null) %}
     {% set noDot = props.noDot|default(false) %}
+    {% set extraClass = props.class|default('') %}
+    {% set titleAttr = props.title|default(null) %}
 
-    <span class="fa-status-pill fa-status-pill--{{ tone }} fa-status-pill--{{ size }}">
+    <span class="fa-status-pill fa-status-pill--{{ tone }} fa-status-pill--{{ size }}{{ extraClass ? ' ' ~ extraClass : '' }}"{{ titleAttr ? ' title="' ~ titleAttr ~ '"' : '' }}>
         {% if icon %}
-            <i class="bi {{ icon }}" aria-hidden="true"></i>
+            {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+            <i class="fa-icon fa-icon--{{ (icon starts with 'bi-') ? icon[3:] : icon }}" aria-hidden="true"></i>
         {% elseif not noDot %}
             <span class="fa-status-pill__dot" aria-hidden="true"></span>
         {% endif %}

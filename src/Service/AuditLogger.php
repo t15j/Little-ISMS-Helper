@@ -24,12 +24,68 @@ class AuditLogger
     private const string ACTION_VIEW = 'view';
     private const string ACTION_EXPORT = 'export';
     private const string ACTION_IMPORT = 'import';
+    private const string ACTION_BULK = 'bulk';
+
+    // Notification audit events (Sprint 6a — F3)
+    public const string ACTION_NOTIFICATION_RULE_CREATED    = 'notification.rule.created';
+    public const string ACTION_NOTIFICATION_RULE_UPDATED    = 'notification.rule.updated';
+    public const string ACTION_NOTIFICATION_RULE_DELETED    = 'notification.rule.deleted';
+    public const string ACTION_NOTIFICATION_RULE_ENABLED    = 'notification.rule.enabled';
+    public const string ACTION_NOTIFICATION_RULE_DISABLED   = 'notification.rule.disabled';
+    public const string ACTION_NOTIFICATION_CHANNEL_CREATED  = 'notification.channel.created';
+    public const string ACTION_NOTIFICATION_CHANNEL_UPDATED  = 'notification.channel.updated';
+    public const string ACTION_NOTIFICATION_CHANNEL_VERIFIED = 'notification.channel.verified';
+    public const string ACTION_NOTIFICATION_DELIVERY_SUCCEEDED = 'notification.delivery.succeeded';
+    public const string ACTION_NOTIFICATION_DELIVERY_FAILED    = 'notification.delivery.failed';
+    public const string ACTION_NOTIFICATION_DELIVERY_RETRIED   = 'notification.delivery.retried';
+
+    // SLA Deadline audit events (Sprint 7A — F3 Wave 2)
+    public const string ACTION_SLA_DEADLINE_APPROACHING = 'notification.sla.deadline_approaching';
+    public const string ACTION_SLA_DEADLINE_MISSED      = 'notification.sla.deadline_missed';
+
+    // NIS-2 BSI-Portal registration audit events (Sprint 7B — F29)
+    public const string ACTION_NIS2_REGISTRATION_EXPORTED = 'nis2.registration.exported';
+    public const string ACTION_NIS2_REGISTRATION_UPDATED  = 'nis2.registration.updated';
+
+    // DORA Register of Information audit events (Sprint 8 — F30)
+    public const string ACTION_DORA_ROI_EXPORTED  = 'dora.roi.exported';
+    public const string ACTION_DORA_ROI_SUBMITTED = 'dora.roi.submitted';
+
+    // F11 FTE-Tracking audit events (Sprint 9A)
+    public const string ACTION_FTE_METRIC_RECORDED     = 'fte.metric.recorded';     // low-priority telemetry
+    public const string ACTION_FTE_CALIBRATION_CHANGED = 'fte.calibration.changed'; // high-priority admin action
+
+    // SSO-specific audit events (Wave 2) — used by SsoEventLogger
+    public const string ACTION_SSO_LOGIN_SUCCESS       = 'sso.login.success';
+    public const string ACTION_SSO_LOGIN_FAILURE       = 'sso.login.failure';
+    public const string ACTION_SSO_JIT_PROVISIONED     = 'sso.jit.provisioned';
+    public const string ACTION_SSO_ROLE_CHANGED        = 'sso.role.changed';
+    public const string ACTION_SSO_CONFIG_CHANGED      = 'sso.config.changed';
+    public const string ACTION_SSO_ENFORCEMENT_CHANGED = 'sso.enforcement.changed';
+
+    // Risk-Incident cross-link audit events (Sprint 9B — F16)
+    public const string ACTION_RISK_INCIDENT_LINKED                  = 'risk_incident.linked';
+    public const string ACTION_RISK_INCIDENT_UNLINKED                = 'risk_incident.unlinked';
+    public const string ACTION_RISK_REVIEW_SUGGESTED_FROM_INCIDENT   = 'risk_incident.review_suggested';
+
+    // BSI-200-4 Übungs-Logbuch events (Sprint 10B — F27)
+    public const string ACTION_BSI_2004_LOG_CREATED                  = 'bsi_2004_log.created';
+    public const string ACTION_BSI_2004_LOG_SUBMITTED                = 'bsi_2004_log.submitted';
+    public const string ACTION_BSI_2004_LOG_CONFIRMED                = 'bsi_2004_log.confirmed';
+    public const string ACTION_BSI_2004_IMPROVEMENT_ACTION_OVERDUE   = 'bsi_2004_log.improvement_action_overdue';
+
+    // Library Import/Export events (Sprint 10A — F5b)
+    public const string ACTION_LIBRARY_FRAMEWORK_IMPORTED       = 'library.framework.imported';
+    public const string ACTION_LIBRARY_FRAMEWORK_EXPORTED_YAML  = 'library.framework.exported_yaml';
+    public const string ACTION_LIBRARY_FRAMEWORK_EXPORTED_CSV   = 'library.framework.exported_csv';
+    public const string ACTION_LIBRARY_MAPPING_IMPORTED         = 'library.mapping.imported';
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly RequestStack $requestStack,
         private readonly Security $security,
         private readonly ?AuditLogIntegrityService $integrityService = null,
+        private readonly ?\App\Service\TenantContext $tenantContext = null,
     ) {}
 
     /**
@@ -85,6 +141,83 @@ class AuditLogger
     }
 
     /**
+     * Log a bulk operation as a hybrid pattern: 1 batch-entry + N per-entity-entries.
+     *
+     * Required for ISO 27001 Clause 7.5.3 (Documented Information) — auditor must
+     * be able to ask "show me history of Asset X" AND "show me the import event
+     * with source-file-hash". Per-entity entries reference the batch_id so both
+     * questions are answerable without external files.
+     *
+     * @param string $eventType   Specific event type (e.g. "bulk_import", "sso.jit.batch")
+     * @param string $entityType  Entity-class short name (e.g. "Asset")
+     * @param array  $batchData   Batch-level metadata: source_file_hash, file_name,
+     *                            row_count_total, row_count_success, row_count_skipped,
+     *                            row_count_error, dry_run_result_hash, mode (initial/delta/dry_run)
+     * @param array  $perEntityData Array of per-entity rows: each row is
+     *                              ['entity_id' => int|null, 'action' => 'create'|'update'|'delete',
+     *                               'old_values' => array|null, 'new_values' => array|null]
+     * @param string|null $description Optional human-readable description
+     *
+     * @return string The generated batch_id (UUIDv4) — referenced from per-entity entries
+     */
+    public function logBulk(
+        string $eventType,
+        string $entityType,
+        array $batchData,
+        array $perEntityData,
+        ?string $description = null,
+    ): string {
+        $batchId = $this->generateBatchId();
+        $batchEnvelope = array_merge($batchData, [
+            'batch_id' => $batchId,
+            'event_type' => $eventType,
+            'per_entity_count' => count($perEntityData),
+        ]);
+
+        // 1 batch-entry: source-file provenance + aggregate counts
+        $this->log(
+            self::ACTION_BULK,
+            $entityType,
+            null,
+            null,
+            $batchEnvelope,
+            $description ?? sprintf('Bulk %s: %d rows', $eventType, count($perEntityData)),
+        );
+
+        // N per-entity-entries: each references batch_id for traceability
+        foreach ($perEntityData as $row) {
+            $action = $row['action'] ?? self::ACTION_CREATE;
+            $entityId = $row['entity_id'] ?? null;
+            $oldValues = $row['old_values'] ?? null;
+            $newValues = isset($row['new_values'])
+                ? array_merge($row['new_values'], ['_batch_id' => $batchId])
+                : ['_batch_id' => $batchId];
+
+            $this->log(
+                $action,
+                $entityType,
+                $entityId,
+                $oldValues,
+                $newValues,
+                sprintf('Bulk-row of batch %s', $batchId),
+            );
+        }
+
+        return $batchId;
+    }
+
+    /**
+     * Generate a UUIDv4 for batch-id correlation.
+     */
+    private function generateBatchId(): string
+    {
+        $data = random_bytes(16);
+        $data[6] = chr((ord($data[6]) & 0x0f) | 0x40);
+        $data[8] = chr((ord($data[8]) & 0x3f) | 0x80);
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+    }
+
+    /**
      * Log a custom action
      */
     public function logCustom(
@@ -100,9 +233,13 @@ class AuditLogger
     }
 
     /**
-     * Core logging method
+     * Core logging method.
+     *
+     * Public so callers can log with an explicit domain-specific action
+     * constant (e.g. ACTION_NOTIFICATION_RULE_CREATED) that the
+     * logCreate()/logUpdate()/logDelete() convenience wrappers do not cover.
      */
-    private function log(
+    public function log(
         string $action,
         string $entityType,
         ?int $entityId,
@@ -122,6 +259,18 @@ class AuditLogger
         // Set user information (use provided userName or get from security context)
         $userName ??= $this->getCurrentUserName();
         $auditLog->setUserName($userName);
+
+        // Symfony-BP audit #5: capture tenant at write time. Future user-rename
+        // or re-tenancy cannot leak this row across boundaries. Falls back to
+        // the acting user's tenant if the context is empty (e.g. system actions).
+        $tenant = $this->tenantContext?->getCurrentTenant();
+        if ($tenant === null) {
+            $user = $this->security->getUser();
+            if ($user instanceof \App\Entity\User) {
+                $tenant = $user->getTenant();
+            }
+        }
+        $auditLog->setTenant($tenant);
 
         // ISB Sprint-2 gate: capture actor's highest role at time of action.
         $auditLog->setActorRole($this->getCurrentActorRole());
@@ -155,8 +304,25 @@ class AuditLogger
         // AUD-02: sign before persist (no-op if hmac secret not configured)
         $this->integrityService?->sign($auditLog);
 
-        $this->entityManager->persist($auditLog);
-        $this->entityManager->flush();
+        // EM may be closed after a prior persistence error (e.g. constraint
+        // violation in an isolated mark-all loop iteration). Persisting on a
+        // closed EM throws EntityManagerClosed. Skip silently if so — the
+        // audit log is best-effort in this recovery context.
+        if (!$this->entityManager->isOpen()) {
+            return;
+        }
+
+        // After a DDL migration that implicitly commits in MySQL, the
+        // connection's SAVEPOINT context is gone. flush() then throws
+        // "SAVEPOINT DOCTRINE_N does not exist". Audit log is best-effort
+        // here — swallow rather than crash the operator UI.
+        try {
+            $this->entityManager->persist($auditLog);
+            $this->entityManager->flush();
+        } catch (\Throwable) {
+            // Silent skip — audit log will be missing this row but the
+            // calling operation (mark-all-phantom-diff, etc.) must not abort.
+        }
     }
 
     /**

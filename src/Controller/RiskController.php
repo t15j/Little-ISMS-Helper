@@ -12,33 +12,50 @@ use Symfony\Component\Security\Core\User\UserInterface;
 use Traversable;
 use Exception;
 use DomainException;
+use App\Controller\Trait\LocalizedFlashTrait;
 use App\Entity\Incident;
 use App\Entity\Risk;
 use App\Entity\Vulnerability;
 use App\Form\RiskQuickType;
 use App\Form\RiskType;
 use App\Repository\AuditLogRepository;
+use App\Repository\CommentRepository;
 use App\Repository\IncidentRepository;
 use App\Repository\RiskRepository;
+use App\Repository\RiskTreatmentPlanRepository;
 use App\Repository\VulnerabilityRepository;
+use App\Risk\RiskMatrixThresholds;
+use App\Service\InverseCoverageService;
 use App\Service\RiskMatrixService;
 use App\Service\RiskService;
 use App\Service\RiskAcceptanceWorkflowService;
 use App\Service\ExcelExportService;
 use App\Service\PdfExportService;
+use App\Service\RoleDashboardService;
 use App\Service\TagFilterService;
-use App\Service\WorkflowAutoProgressionService;
+use App\Service\Risk\RiskIncidentLinkService;
+use App\Repository\RiskIncidentLinkRepository;
+use App\Repository\UserRepository;
+use App\Service\AuditLogger;
+use App\Service\Clone\RiskCloner;
+use App\Controller\Trait\BulkActionTrait;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
+use App\Util\CsvSanitizer;
 
 class RiskController extends AbstractController
 {
+    use LocalizedFlashTrait;
+    use BulkActionTrait;
+
     public function __construct(
         private readonly RiskRepository $riskRepository,
         private readonly RiskService $riskService,
@@ -50,12 +67,30 @@ class RiskController extends AbstractController
         private readonly ExcelExportService $excelExportService,
         private readonly PdfExportService $pdfExportService,
         private readonly Security $security,
-        private readonly WorkflowAutoProgressionService $workflowAutoProgressionService,
         private readonly TagFilterService $tagFilterService,
         private readonly VulnerabilityRepository $vulnerabilityRepository,
-        private readonly IncidentRepository $incidentRepository
+        private readonly IncidentRepository $incidentRepository,
+        private readonly RiskTreatmentPlanRepository $riskTreatmentPlanRepository,
+        private readonly ?InverseCoverageService $inverseCoverageService = null,
+        private readonly ?CommentRepository $commentRepository = null,
+        private readonly ?RiskIncidentLinkService $riskIncidentLinkService = null,
+        private readonly ?RiskIncidentLinkRepository $riskIncidentLinkRepository = null,
+        private readonly ?RoleDashboardService $roleDashboardService = null,
+        private readonly ?AuditLogger $auditLogger = null,
+        private readonly ?UserRepository $userRepository = null,
+        private readonly ?RiskCloner $riskCloner = null,
     ) {}
-    #[Route('/risk/', name: 'app_risk_index')]
+
+    protected function getFlashDomain(): string
+    {
+        return 'risk';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
+    }
+    #[Route('/risk', name: 'app_risk_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(Request $request): Response
     {
@@ -120,14 +155,8 @@ class RiskController extends AbstractController
         // Apply filters
         if ($level) {
             $risks = array_filter($risks, function(Risk $risk) use ($level): bool {
-                $score = $risk->getRiskScore();
-                return match($level) {
-                    'critical' => $score >= 15,
-                    'high' => $score >= 8 && $score < 15,
-                    'medium' => $score >= 4 && $score < 8,
-                    'low' => $score < 4,
-                    default => true
-                };
+                // SSoT — App\Risk\RiskMatrixThresholds (ISO 27001 Cl. 6.1.2 b).
+                return RiskMatrixThresholds::classify($risk->getRiskScore()) === $level;
             });
         }
 
@@ -189,7 +218,7 @@ class RiskController extends AbstractController
             'detailedStats' => $detailedStats,
         ]);
     }
-    #[Route('/risk/export', name: 'app_risk_export')]
+    #[Route('/risk/export', name: 'app_risk_export', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function export(Request $request): Response
     {
@@ -209,14 +238,8 @@ class RiskController extends AbstractController
         // Apply filters (same logic as index)
         if ($level) {
             $risks = array_filter($risks, function(Risk $risk) use ($level): bool {
-                $score = $risk->getRiskScore();
-                return match($level) {
-                    'critical' => $score >= 15,
-                    'high' => $score >= 8 && $score < 15,
-                    'medium' => $score >= 4 && $score < 8,
-                    'low' => $score < 4,
-                    default => true
-                };
+                // SSoT — App\Risk\RiskMatrixThresholds (ISO 27001 Cl. 6.1.2 b).
+                return RiskMatrixThresholds::classify($risk->getRiskScore()) === $level;
             });
         }
 
@@ -346,7 +369,7 @@ class RiskController extends AbstractController
         // Create CSV content
         $handle = fopen('php://temp', 'r+');
         foreach ($csv as $row) {
-            fputcsv($handle, array_map([$this, 'sanitizeCsvValue'], $row), ';', escape: '\\'); // Use semicolon as delimiter for Excel compatibility
+            fputcsv($handle, array_map([CsvSanitizer::class, 'sanitize'], $row), ';', escape: '\\'); // Use semicolon as delimiter for Excel compatibility
         }
         rewind($handle);
         $csvContent .= stream_get_contents($handle);
@@ -356,7 +379,121 @@ class RiskController extends AbstractController
 
         return $response;
     }
-    #[Route('/risk/export/excel', name: 'app_risk_export_excel')]
+
+    /**
+     * Async wrapper around {@see self::export()}: dispatches an
+     * {@see \App\Job\ExportRisksJob} that writes the filtered register to
+     * var/exports/<jobId>.csv and renders a polling progress page with a
+     * Download CTA once the worker reports succeeded.
+     *
+     * The legacy sync GET route is kept for browser bookmarks and any
+     * integration that already targets it; new UI traffic should use this
+     * dispatch endpoint to avoid PHP-FPM timeout on large registers.
+     *
+     * Phase 2.5 of the async admin-jobs rollout.
+     */
+    #[Route('/risk/export/dispatch', name: 'app_risk_export_dispatch', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function exportDispatch(
+        Request $request,
+        \App\Service\Job\JobStatusService $jobStatusService,
+        \App\Service\Job\JobDispatcher $jobDispatcher,
+    ): Response {
+        if (!$this->isCsrfTokenValid('risk_export_dispatch', $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('common.csrf_error', [], 'messages'));
+            return $this->redirectToRoute('app_risk_index');
+        }
+
+        $user = $this->security->getUser();
+        $tenant = $user instanceof User ? $user->getTenant() : null;
+
+        $args = [
+            'tenantId' => $tenant?->getId(),
+            'userId' => $user instanceof User ? $user->getId() : null,
+            'level' => $request->request->get('level') ?? $request->query->get('level'),
+            'status' => $request->request->get('status') ?? $request->query->get('status'),
+            'treatment' => $request->request->get('treatment') ?? $request->query->get('treatment'),
+            'owner' => $request->request->get('owner') ?? $request->query->get('owner'),
+        ];
+
+        $jobId = $jobStatusService->create('risk.export', $args + [
+            '_label' => $this->translator->trans('risk.export.progress_title', [], 'risk'),
+            '_subtitle' => $this->translator->trans('risk.export.progress_subtitle', [], 'risk'),
+            '_download_label' => $this->translator->trans('risk.export.download_button', [], 'risk'),
+        ]);
+        // Patch download URL after we know the UUID (JobStatusService::create
+        // mints the UUID inside the method, so we can't reference it before).
+        $jobStatusService->updatePayload($jobId, [
+            '_download_url' => $this->generateUrl('app_risk_export_download', ['id' => $jobId]),
+        ]);
+
+        // PRG: 303 redirect to the shared progress page so Turbo can follow
+        // the redirect instead of erroring on a 200+HTML form response.
+        // JobDispatcher flushes it then runs the export in this same
+        // PHP-FPM worker (or hands it to a Messenger daemon when
+        // `app.async_job.runner=messenger`).
+        $response = $this->redirectToRoute('admin_job_progress_page', [
+            'id'     => $jobId,
+            'return' => $this->generateUrl('app_risk_index'),
+        ], Response::HTTP_SEE_OTHER);
+
+        return $jobDispatcher->dispatch(
+            \App\Job\ExportRisksJob::class,
+            $args,
+            $jobId,
+            $response,
+            $request->getSession(),
+        );
+    }
+
+    /**
+     * Streams the file produced by {@see \App\Job\ExportRisksJob} and removes
+     * it from disk afterwards. The job ID UUID-v4 is the canonical filename
+     * stem so we can derive the path without any user-controlled string.
+     */
+    #[Route('/risk/export/download/{id}', name: 'app_risk_export_download', methods: ['GET'])]
+    #[IsGranted('ROLE_USER')]
+    public function exportDownload(
+        string $id,
+        \App\Service\Job\JobStatusService $jobStatusService,
+        \Symfony\Component\HttpKernel\KernelInterface $kernel,
+    ): Response {
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $id)) {
+            throw $this->createNotFoundException('Invalid export ID.');
+        }
+        if (!$jobStatusService->exists($id)) {
+            throw $this->createNotFoundException(
+                $this->translator->trans('risk.export.file_not_found', [], 'risk'),
+            );
+        }
+        $record = $jobStatusService->read($id);
+        if (($record['status'] ?? '') !== 'succeeded') {
+            throw $this->createNotFoundException(
+                $this->translator->trans('risk.export.file_not_found', [], 'risk'),
+            );
+        }
+
+        $path = $kernel->getProjectDir() . '/var/exports/' . $id . '.csv';
+        if (!is_file($path)) {
+            throw $this->createNotFoundException(
+                $this->translator->trans('risk.export.file_not_found', [], 'risk'),
+            );
+        }
+
+        $filename = sprintf('risk_export_%s.csv', date('Y-m-d_His'));
+
+        $response = new \Symfony\Component\HttpFoundation\BinaryFileResponse($path);
+        $response->headers->set('Content-Type', 'text/csv; charset=utf-8');
+        $response->setContentDisposition(
+            \Symfony\Component\HttpFoundation\ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            $filename,
+        );
+        $response->deleteFileAfterSend(true);
+
+        return $response;
+    }
+
+    #[Route('/risk/export/excel', name: 'app_risk_export_excel', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function exportExcel(Request $request): Response
     {
@@ -376,14 +513,8 @@ class RiskController extends AbstractController
         // Apply filters (same logic as index)
         if ($level) {
             $risks = array_filter($risks, function(Risk $risk) use ($level): bool {
-                $score = $risk->getRiskScore();
-                return match($level) {
-                    'critical' => $score >= 15,
-                    'high' => $score >= 8 && $score < 15,
-                    'medium' => $score >= 4 && $score < 8,
-                    'low' => $score < 4,
-                    default => true
-                };
+                // SSoT — App\Risk\RiskMatrixThresholds (ISO 27001 Cl. 6.1.2 b).
+                return RiskMatrixThresholds::classify($risk->getRiskScore()) === $level;
             });
         }
 
@@ -603,7 +734,7 @@ class RiskController extends AbstractController
 
         return $response;
     }
-    #[Route('/risk/export/pdf', name: 'app_risk_export_pdf')]
+    #[Route('/risk/export/pdf', name: 'app_risk_export_pdf', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function exportPdf(Request $request): Response
     {
@@ -639,14 +770,8 @@ class RiskController extends AbstractController
         // Apply filters (same logic as index)
         if ($level) {
             $risks = array_filter($risks, function(Risk $risk) use ($level): bool {
-                $score = $risk->getRiskScore();
-                return match($level) {
-                    'critical' => $score >= 15,
-                    'high' => $score >= 8 && $score < 15,
-                    'medium' => $score >= 4 && $score < 8,
-                    'low' => $score < 4,
-                    default => true
-                };
+                // SSoT — App\Risk\RiskMatrixThresholds (ISO 27001 Cl. 6.1.2 b).
+                return RiskMatrixThresholds::classify($risk->getRiskScore()) === $level;
             });
         }
 
@@ -714,7 +839,7 @@ class RiskController extends AbstractController
 
         return $response;
     }
-    #[Route('/risk/new', name: 'app_risk_new')]
+    #[Route('/risk/new', name: 'app_risk_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
@@ -792,20 +917,21 @@ class RiskController extends AbstractController
             $this->entityManager->persist($risk);
             $this->entityManager->flush();
 
-            // Check and auto-progress workflow if conditions are met
-            $currentUser = $this->security->getUser();
-            if ($currentUser instanceof User) {
-                $this->workflowAutoProgressionService->checkAndProgressWorkflow($risk, $currentUser);
-            }
+            // Auto-progression fires via FieldCompletionAutoTransition Doctrine listener
+            // (postUpdate event) — no explicit service call required (canonical since Y.1).
 
-            $this->addFlash('success', $this->translator->trans('risk.success.created'));
+            $this->flashSuccess('risk.success.created');
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('risk/new.html.twig', [
             'risk' => $risk,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/risk/new/quick', name: 'app_risk_new_quick', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
@@ -826,30 +952,36 @@ class RiskController extends AbstractController
             $this->entityManager->persist($risk);
             $this->entityManager->flush();
 
-            // Check and auto-progress workflow if conditions are met
-            $currentUser = $this->security->getUser();
-            if ($currentUser instanceof User) {
-                $this->workflowAutoProgressionService->checkAndProgressWorkflow($risk, $currentUser);
-            }
+            // Auto-progression fires via FieldCompletionAutoTransition Doctrine listener
+            // (postUpdate event) — no explicit service call required (canonical since Y.1).
 
-            $this->addFlash('success', $this->translator->trans('risk.success.created'));
+            $this->flashSuccess('risk.success.created');
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('risk/new_quick.html.twig', [
             'risk' => $risk,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
-    #[Route('/risk/matrix', name: 'app_risk_matrix')]
+    #[Route('/risk/matrix', name: 'app_risk_matrix', methods: ['GET'])]
+    #[IsGranted('ROLE_USER')]
     public function matrix(): Response
     {
         // Get current user's tenant
         $user = $this->security->getUser();
         $tenant = $user?->getTenant();
 
-        // Get risks: tenant-filtered if user has tenant, all risks if not
-        $risks = $tenant ? $this->riskService->getRisksForTenant($tenant) : $this->riskRepository->findAll();
+        // C-01 fix: tenant-scoped query only. Previously this route fell back
+        // to $riskRepository->findAll() when $tenant was null, leaking
+        // cross-tenant data. With #[IsGranted('ROLE_USER')] above the user is
+        // always authenticated; if they have no tenant assigned, return an
+        // empty matrix rather than every tenant's risks.
+        $risks = $tenant ? $this->riskService->getRisksForTenant($tenant) : [];
 
         $matrixData = $this->riskMatrixService->generateMatrix();
         $statistics = $this->riskMatrixService->getRiskStatistics();
@@ -870,6 +1002,37 @@ class RiskController extends AbstractController
             'risksByLevel' => $risksByLevel,
         ]);
     }
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * Warns if a Risk has linked Treatment Plans or Incidents before deletion.
+     */
+    #[Route('/risk/bulk-delete-check', name: 'app_risk_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = array_filter((array) ($data['ids'] ?? []), 'is_int');
+        if ($ids === []) {
+            return new JsonResponse(['dependencies' => [], 'checked_count' => 0]);
+        }
+
+        $user = $this->security->getUser();
+        $tenant = $user?->getTenant();
+        $risks = $this->riskRepository->findBy(['id' => $ids, 'tenant' => $tenant]);
+
+        return $this->checkBulkDependencies($risks, 'getTitle', [
+            fn (Risk $risk): ?array => count($this->riskTreatmentPlanRepository->findByRisk($risk)) > 0
+                ? ['message' => sprintf('%d Behandlungsplan/-pläne verknüpft', count($this->riskTreatmentPlanRepository->findByRisk($risk))), 'icon' => 'file-earmark-check']
+                : null,
+            fn (Risk $risk): ?array => ($c = $risk->getIncidents()->count()) > 0
+                ? ['message' => sprintf('%d Vorfall/Vorfälle verknüpft', $c), 'icon' => 'exclamation-triangle']
+                : null,
+            fn (Risk $risk): ?array => ($c = $risk->getControls()->count()) > 0
+                ? ['message' => sprintf('%d Maßnahme(n) verknüpft', $c), 'icon' => 'check-circle']
+                : null,
+        ]);
+    }
+
     #[Route('/risk/bulk-delete', name: 'app_risk_bulk_delete', methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function bulkDelete(Request $request): Response
@@ -927,7 +1090,7 @@ class RiskController extends AbstractController
             'message' => "$deleted risks deleted successfully"
         ]);
     }
-    #[Route('/risk/{id}', name: 'app_risk_show', requirements: ['id' => '\d+'])]
+    #[Route('/risk/{id}', name: 'app_risk_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(Risk $risk): Response
     {
@@ -957,6 +1120,24 @@ class RiskController extends AbstractController
             $linkedVulnerabilities[] = $risk->getLinkedVulnerability();
         }
 
+        // Risk Treatment Plans linked to this risk (ISO 27001 Cl.6.1.3)
+        $treatmentPlans = $this->riskTreatmentPlanRepository->findByRisk($risk);
+
+        // V3 B6 / EF-4: Inverse-Coverage Impact-Analyse
+        $impactCoverage = $this->inverseCoverageService?->forRisk($risk) ?? ['total' => 0, 'frameworks' => []];
+
+        // V3 W2-H3: Comment-Thread (C7) — load thread for this Risk.
+        $comments = [];
+        if ($this->commentRepository !== null && $tenant !== null && $risk->getId() !== null) {
+            $comments = $this->commentRepository->findThread($tenant, 'Risk', $risk->getId());
+        }
+
+        // F16: structured incident cross-links
+        $riskIncidentLinks = $this->riskIncidentLinkRepository?->findByRisk($risk) ?? [];
+
+        // Z.0 — Workflow transparency: pre-compute pending banner for this entity
+        $workflowInfo = $this->roleDashboardService?->getWorkflowInfoForEntity('Risk', $risk->getId()) ?? [];
+
         return $this->render('risk/show.html.twig', [
             'risk' => $risk,
             'auditLogs' => $recentAuditLogs,
@@ -967,9 +1148,116 @@ class RiskController extends AbstractController
             // Data-Reuse: one-click link matrix
             'linkedVulnerabilities' => $linkedVulnerabilities,
             'linkedIncidents' => $risk->getIncidents(),
+            // V3 B3: Treatment plans collection on Risk show
+            'treatmentPlans' => $treatmentPlans,
+            // V3 B6: Impact analysis (which frameworks break if this risk changes?)
+            'impact_coverage' => $impactCoverage,
+            // V3 W2-H3: Comments thread + form action
+            'comments' => $comments,
+            // F16: structured incident cross-links
+            'riskIncidentLinks' => $riskIncidentLinks,
+            // Z.0: lifecycle pending banner data (no N+1)
+            'workflow_info' => $workflowInfo,
         ]);
     }
-    #[Route('/risk/{id}/edit', name: 'app_risk_edit', requirements: ['id' => '\d+'])]
+    /**
+     * F16: Link an Incident to this Risk.
+     */
+    #[Route('/risk/{id}/link-incident', name: 'app_risk_link_incident', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function linkIncident(Request $request, Risk $risk): Response
+    {
+        if (!$this->isCsrfTokenValid('link_incident_' . $risk->getId(), $request->request->get('_token'))) {
+            $this->flashError('risk.link_incident.csrf_invalid');
+            return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
+        }
+
+        $incidentId = (int) $request->request->get('incident_id');
+        $linkType   = (string) $request->request->get('link_type', 'related');
+        $notes      = $request->request->get('notes');
+
+        $incident = $this->incidentRepository->find($incidentId);
+        if ($incident === null) {
+            $this->flashError('risk.link_incident.incident_not_found');
+            return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
+        }
+
+        /** @var \App\Entity\User|null $currentUser */
+        $currentUser = $this->security->getUser();
+        $this->riskIncidentLinkService?->link(
+            $risk,
+            $incident,
+            $linkType,
+            $currentUser instanceof \App\Entity\User ? $currentUser : null,
+            is_string($notes) ? $notes : null,
+        );
+
+        $this->flashSuccess('risk.link_incident.linked');
+        return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
+    }
+
+    /**
+     * F16: Unlink an Incident from this Risk by link ID.
+     */
+    #[Route('/risk/{id}/unlink-incident/{linkId}', name: 'app_risk_unlink_incident', requirements: ['id' => '\d+', 'linkId' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function unlinkIncident(Request $request, Risk $risk, int $linkId): Response
+    {
+        if (!$this->isCsrfTokenValid('unlink_incident_' . $linkId, $request->request->get('_token'))) {
+            $this->flashError('risk.link_incident.csrf_invalid');
+            return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
+        }
+
+        $link = $this->riskIncidentLinkRepository?->find($linkId);
+        if ($link === null || $link->getRisk()?->getId() !== $risk->getId()) {
+            $this->flashError('risk.link_incident.link_not_found');
+            return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
+        }
+
+        $incident = $link->getIncident();
+        if ($incident !== null) {
+            $this->riskIncidentLinkService?->unlink($risk, $incident);
+        }
+
+        $this->flashSuccess('risk.link_incident.unlinked');
+        return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
+    }
+
+    /**
+     * Clone a Risk (C4-C1 — Klon-Funktionen). Open to any ROLE_USER so
+     * every ISMS-user can template their own risks. The clone preserves
+     * the assessment scaffolding and resets lifecycle state.
+     */
+    #[Route('/risk/{id}/clone', name: 'app_risk_clone', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function clone(Request $request, Risk $risk): Response
+    {
+        if (!$this->isCsrfTokenValid('clone_risk_' . $risk->getId(), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+        if ($this->riskCloner === null) {
+            throw $this->createNotFoundException('Risk clone service is not available.');
+        }
+
+        $clone = $this->riskCloner->clone(
+            $risk,
+            null,
+            trim((string) $request->request->get('title_override', '')) ?: null,
+        );
+        $this->entityManager->flush();
+
+        $this->auditLogger?->logCreate(
+            entityType: 'Risk',
+            entityId: $clone->getId(),
+            newValues: ['cloned_from_id' => $risk->getId(), 'title' => $clone->getTitle()],
+            description: 'Cloned from Risk #' . $risk->getId(),
+        );
+
+        $this->addFlash('success', $this->translator->trans('risk.clone.success', [], 'risk'));
+        return $this->redirectToRoute('app_risk_edit', ['id' => $clone->getId()]);
+    }
+
+    #[Route('/risk/{id}/edit', name: 'app_risk_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, Risk $risk): Response
     {
@@ -979,7 +1267,7 @@ class RiskController extends AbstractController
 
         // Check if risk can be edited (not inherited) - only if user has tenant
         if ($tenant && !$this->riskService->canEditRisk($risk, $tenant)) {
-            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_edit_inherited'));
+            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_edit_inherited', [], 'messages'));
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
 
@@ -989,20 +1277,21 @@ class RiskController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             $this->entityManager->flush();
 
-            // Check and auto-progress workflow if conditions are met
-            $currentUser = $this->security->getUser();
-            if ($currentUser instanceof User) {
-                $this->workflowAutoProgressionService->checkAndProgressWorkflow($risk, $currentUser);
-            }
+            // Auto-progression fires via FieldCompletionAutoTransition Doctrine listener
+            // (postUpdate event) — no explicit service call required (canonical since Y.1).
 
-            $this->addFlash('success', $this->translator->trans('risk.success.updated'));
+            $this->flashSuccess('risk.success.updated');
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('risk/edit.html.twig', [
             'risk' => $risk,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/risk/{id}/delete', name: 'app_risk_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -1014,7 +1303,7 @@ class RiskController extends AbstractController
 
         // Check if risk can be deleted (not inherited) - only if user has tenant
         if ($tenant && !$this->riskService->canEditRisk($risk, $tenant)) {
-            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_edit_inherited'));
+            $this->addFlash('error', $this->translator->trans('corporate.inheritance.cannot_edit_inherited', [], 'messages'));
             return $this->redirectToRoute('app_risk_index');
         }
 
@@ -1022,7 +1311,7 @@ class RiskController extends AbstractController
             $this->entityManager->remove($risk);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('risk.success.deleted'));
+            $this->flashSuccess('risk.success.deleted');
         }
 
         return $this->redirectToRoute('app_risk_index');
@@ -1039,13 +1328,13 @@ class RiskController extends AbstractController
 
         // Check if risk has "accept" treatment strategy
         if ($risk->getTreatmentStrategy() !== TreatmentStrategy::Accept) {
-            $this->addFlash('error', $this->translator->trans('risk.acceptance.error.wrong_strategy'));
+            $this->flashError('risk.acceptance.error.wrong_strategy');
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
 
         // Check if already formally accepted
         if ($risk->isFormallyAccepted()) {
-            $this->addFlash('warning', $this->translator->trans('risk.acceptance.error.already_accepted'));
+            $this->flashWarning('risk.acceptance.error.already_accepted');
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
 
@@ -1053,14 +1342,14 @@ class RiskController extends AbstractController
         if ($request->isMethod('POST')) {
             // CSRF token validation
             if (!$this->isCsrfTokenValid('request-acceptance'.$risk->getId(), $request->request->get('_token'))) {
-                $this->addFlash('error', $this->translator->trans('security.csrf_token_invalid'));
+                $this->addFlash('error', $this->translator->trans('security.csrf_token_invalid', [], 'messages'));
                 return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
             }
 
             $justification = $request->request->get('justification');
 
             if (empty($justification)) {
-                $this->addFlash('error', $this->translator->trans('risk.acceptance.error.justification_required'));
+                $this->flashError('risk.acceptance.error.justification_required');
             } else {
                 try {
                     $result = $this->riskAcceptanceWorkflowService->requestAcceptance(
@@ -1071,13 +1360,13 @@ class RiskController extends AbstractController
 
                     if ($result['status'] === 'accepted') {
                         // Automatic acceptance
-                        $this->addFlash('success', $this->translator->trans('risk.acceptance.success.auto_accepted'));
+                        $this->flashSuccess('risk.acceptance.success.auto_accepted');
                     } else {
                         // Pending approval
-                        $this->addFlash('success', $this->translator->trans(
+                        $this->flashSuccess(
                             'risk.acceptance.success.approval_requested',
                             ['%approver%' => $result['approver'], '%level%' => $result['approval_level']]
-                        ));
+                        );
                     }
 
                     return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
@@ -1107,7 +1396,7 @@ class RiskController extends AbstractController
         $user = $this->security->getUser();
 
         if (!$this->isCsrfTokenValid('approve-acceptance'.$risk->getId(), $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('security.csrf_token_invalid'));
+            $this->addFlash('error', $this->translator->trans('security.csrf_token_invalid', [], 'messages'));
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
 
@@ -1115,7 +1404,7 @@ class RiskController extends AbstractController
 
         try {
             $result = $this->riskAcceptanceWorkflowService->approveAcceptance($risk, $user, $comments);
-            $this->addFlash('success', $this->translator->trans('risk.acceptance.success.approved'));
+            $this->flashSuccess('risk.acceptance.success.approved');
         } catch (Exception $e) {
             $this->addFlash('error', $e->getMessage());
         }
@@ -1132,20 +1421,20 @@ class RiskController extends AbstractController
         $user = $this->security->getUser();
 
         if (!$this->isCsrfTokenValid('reject-acceptance'.$risk->getId(), $request->request->get('_token'))) {
-            $this->addFlash('error', $this->translator->trans('security.csrf_token_invalid'));
+            $this->addFlash('error', $this->translator->trans('security.csrf_token_invalid', [], 'messages'));
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
 
         $reason = $request->request->get('reason');
 
         if (empty($reason)) {
-            $this->addFlash('error', $this->translator->trans('risk.acceptance.error.reason_required'));
+            $this->flashError('risk.acceptance.error.reason_required');
             return $this->redirectToRoute('app_risk_show', ['id' => $risk->getId()]);
         }
 
         try {
             $result = $this->riskAcceptanceWorkflowService->rejectAcceptance($risk, $user, $reason);
-            $this->addFlash('warning', $this->translator->trans('risk.acceptance.success.rejected'));
+            $this->flashWarning('risk.acceptance.success.rejected');
         } catch (Exception $e) {
             $this->addFlash('error', $e->getMessage());
         }
@@ -1202,17 +1491,118 @@ class RiskController extends AbstractController
     }
 
     /**
-     * Sanitize a CSV cell value to prevent formula injection (OWASP - Injection).
-     * Prefixes values starting with =, +, -, @, TAB or CR with a single quote.
+     * Bulk CSV export of selected risks.
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
      */
-    private function sanitizeCsvValue(mixed $value): mixed
+    #[Route('/risk/bulk-export', name: 'app_risk_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function bulkExport(Request $request): StreamedResponse|Response
     {
-        if (!is_string($value)) {
-            return $value;
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
         }
-        if ($value !== '' && in_array($value[0], ['=', '+', '-', '@', "\t", "\r"], true)) {
-            return "'" . $value;
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
         }
-        return $value;
+
+        $user   = $this->security->getUser();
+        $tenant = $user instanceof User ? $user->getTenant() : null;
+
+        $risks = [];
+        foreach ($ids as $rawId) {
+            $risk = $this->riskRepository->find((int) $rawId);
+            if ($risk === null) {
+                continue;
+            }
+            if ($tenant !== null && $risk->getTenant() !== $tenant) {
+                continue;
+            }
+            $risks[] = $risk;
+        }
+
+        if ($risks === []) {
+            return $this->json(['error' => 'No exportable risks'], 404);
+        }
+
+        $headers = ['ID', 'Title', 'Category', 'Status', 'Probability', 'Impact', 'Treatment Strategy', 'Owner'];
+
+        return $this->streamCsvExport(
+            $risks,
+            $headers,
+            static function (Risk $r): array {
+                return [
+                    (string) $r->getId(),
+                    (string) $r->getTitle(),
+                    (string) $r->getCategory(),
+                    (string) ($r->getStatus()?->value ?? ''),
+                    (string) $r->getProbability(),
+                    (string) $r->getImpact(),
+                    (string) ($r->getTreatmentStrategy()?->value ?? ''),
+                    (string) ($r->getRiskOwnerName() ?? ''),
+                ];
+            },
+            'risks-export',
+            'Risk',
+            $this->auditLogger,
+        );
+    }
+
+    /**
+     * Bulk assign selected risks to a user (sets riskOwner).
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/risk/bulk-assign', name: 'app_risk_bulk_assign', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkAssign(Request $request): Response
+    {
+        $data     = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids      = $data['ids'] ?? [];
+        $assignId = (int) ($data['assignee_id'] ?? 0);
+
+        if (!is_array($ids) || $ids === [] || $assignId === 0) {
+            return $this->json(['error' => 'No items selected or no assignee'], 400);
+        }
+
+        $user   = $this->security->getUser();
+        $tenant = $user instanceof User ? $user->getTenant() : null;
+
+        $assignee = $this->userRepository?->find($assignId);
+        if (!$assignee instanceof User) {
+            return $this->json(['error' => 'Assignee not found'], 404);
+        }
+        if ($tenant !== null && $assignee->getTenant() !== $tenant) {
+            return $this->json(['error' => 'Assignee tenant mismatch'], 403);
+        }
+
+        $risks = [];
+        foreach ($ids as $rawId) {
+            $risk = $this->riskRepository->find((int) $rawId);
+            if ($risk === null) {
+                continue;
+            }
+            if ($tenant !== null && $risk->getTenant() !== $tenant) {
+                continue;
+            }
+            $risks[] = $risk;
+        }
+
+        $result = $this->applyBulkAssign(
+            $risks,
+            static function (Risk $r, User $u): void { $r->setRiskOwner($u); },
+            $assignee,
+            'Risk',
+            $this->auditLogger,
+        );
+
+        if ($result['changed'] > 0) {
+            $this->entityManager->flush();
+        }
+
+        return $this->json($result);
     }
 }

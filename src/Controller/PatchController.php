@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use Symfony\Component\Security\Core\User\UserInterface;
+use App\Controller\Trait\BulkActionTrait;
 use App\Entity\Patch;
 use App\Form\PatchType;
 use App\Repository\PatchRepository;
+use App\Service\AuditLogger;
 use Doctrine\ORM\EntityManagerInterface;
+use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
@@ -20,14 +25,17 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 #[IsGranted('ROLE_USER')]
 class PatchController extends AbstractController
 {
+    use BulkActionTrait;
+
     public function __construct(
         private readonly PatchRepository $patchRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly TranslatorInterface $translator,
-        private readonly Security $security
+        private readonly Security $security,
+        private readonly ?AuditLogger $auditLogger = null,
     ) {}
 
-    #[Route('/patch/', name: 'app_patch_index')]
+    #[Route('/patch', name: 'app_patch_index', methods: ['GET'])]
     public function index(Request $request): Response
     {
         // Get current user's tenant
@@ -79,7 +87,7 @@ class PatchController extends AbstractController
         ]);
     }
 
-    #[Route('/patch/new', name: 'app_patch_new')]
+    #[Route('/patch/new', name: 'app_patch_new', methods: ['GET', 'POST'])]
     public function new(Request $request): Response
     {
         $patch = new Patch();
@@ -97,17 +105,21 @@ class PatchController extends AbstractController
             $this->entityManager->persist($patch);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('patch.success.created'));
+            $this->addFlash('success', $this->translator->trans('patch.success.created', [], 'messages'));
             return $this->redirectToRoute('app_patch_show', ['id' => $patch->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('patch/new.html.twig', [
             'patch' => $patch,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
-    #[Route('/patch/{id}', name: 'app_patch_show', requirements: ['id' => '\d+'])]
+    #[Route('/patch/{id}', name: 'app_patch_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(Patch $patch): Response
     {
         return $this->render('patch/show.html.twig', [
@@ -115,7 +127,7 @@ class PatchController extends AbstractController
         ]);
     }
 
-    #[Route('/patch/{id}/edit', name: 'app_patch_edit', requirements: ['id' => '\d+'])]
+    #[Route('/patch/{id}/edit', name: 'app_patch_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     public function edit(Request $request, Patch $patch): Response
     {
         $form = $this->createForm(PatchType::class, $patch);
@@ -124,14 +136,18 @@ class PatchController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('patch.success.updated'));
+            $this->addFlash('success', $this->translator->trans('patch.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_patch_show', ['id' => $patch->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('patch/edit.html.twig', [
             'patch' => $patch,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
     #[Route('/patch/{id}/delete', name: 'app_patch_delete', methods: ['POST'])]
@@ -141,7 +157,7 @@ class PatchController extends AbstractController
             $this->entityManager->remove($patch);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('patch.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('patch.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_patch_index');
@@ -187,5 +203,122 @@ class PatchController extends AbstractController
             'subsidiaries' => $subsidiariesCount,
             'total' => $ownCount + $inheritedCount + $subsidiariesCount
         ];
+    }
+
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * Patches have no blocking FK relations — returns empty dependencies.
+     */
+    #[Route('/patch/bulk-delete-check', name: 'app_patch_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = (array) ($data['ids'] ?? []);
+        return new JsonResponse(['dependencies' => [], 'checked_count' => count($ids)]);
+    }
+
+    #[Route('/patch/bulk-delete', name: 'app_patch_bulk_delete', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDelete(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+        $ids = $data['ids'] ?? [];
+
+        if (empty($ids)) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $tenant = $this->security->getUser()?->getTenant();
+        $deleted = 0;
+        $errors = [];
+
+        foreach ($ids as $id) {
+            try {
+                $patch = $this->patchRepository->find($id);
+                if (!$patch) {
+                    $errors[] = "Patch ID $id not found";
+                    continue;
+                }
+                if ($tenant && $patch->getTenant() !== $tenant) {
+                    $errors[] = "Patch ID $id does not belong to your organization";
+                    continue;
+                }
+                $this->entityManager->remove($patch);
+                $deleted++;
+            } catch (Exception $e) {
+                $errors[] = "Error deleting Patch ID $id: " . $e->getMessage();
+            }
+        }
+
+        if ($deleted > 0) {
+            $this->entityManager->flush();
+        }
+
+        return $this->json([
+            'success' => $deleted > 0,
+            'deleted' => $deleted,
+            'errors' => $errors,
+            'message' => "$deleted patches deleted successfully",
+        ]);
+    }
+
+    /**
+     * Bulk CSV export of selected patches.
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/patch/bulk-export', name: 'app_patch_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $user   = $this->security->getUser();
+        $tenant = $user?->getTenant();
+
+        $patches = [];
+        foreach ($ids as $rawId) {
+            $patch = $this->patchRepository->find((int) $rawId);
+            if ($patch === null) {
+                continue;
+            }
+            if ($tenant !== null && $patch->getTenant() !== $tenant) {
+                continue;
+            }
+            $patches[] = $patch;
+        }
+
+        if ($patches === []) {
+            return $this->json(['error' => 'No exportable patches'], 404);
+        }
+
+        $headers = ['ID', 'Title', 'Status', 'Priority', 'Version', 'Vendor', 'Product', 'Release Date'];
+
+        return $this->streamCsvExport(
+            $patches,
+            $headers,
+            static function (Patch $p): array {
+                return [
+                    (string) $p->getId(),
+                    (string) $p->getTitle(),
+                    (string) $p->getStatus(),
+                    (string) $p->getPriority(),
+                    (string) $p->getVersion(),
+                    (string) $p->getVendor(),
+                    (string) $p->getProduct(),
+                    $p->getReleaseDate()?->format('Y-m-d') ?? '',
+                ];
+            },
+            'patches-export',
+            'Patch',
+            $this->auditLogger,
+        );
     }
 }

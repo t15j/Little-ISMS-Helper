@@ -11,6 +11,7 @@ soa:
         back_to_category: 'Zurück zu %category%'
         print: 'Drucken / PDF speichern'
         back_to_overview: 'Zurück zur Übersicht'
+        open_monitor: 'Wirksamkeits-Monitor öffnen'
     filter:
         view: Ansicht
         search: Suche
@@ -49,9 +50,10 @@ soa:
         metadata: Metadaten
         training_coverage: 'Trainingsabdeckung'
         control_effectiveness: 'Control-Wirksamkeit'
+        effectiveness_check: 'Wirksamkeits-Check (ISO 27001 §9.1)'
     category:
         Organizational: Organisatorische
-        People: Menschen
+        People: Personenbezogene
         Physical: Physische
         Technological: Technologische
     table:
@@ -79,6 +81,7 @@ soa:
         reibung_warning_body: 'MRIS empfiehlt das Control umzugestalten oder durch flankierende Mythos-Härtungs-Controls (MHC) zu ergänzen. Allein-Nutzung als Mitigation ist Audit-Risiko unter Gen-AI-beschleunigter Offensive.'
         degradiert_hint_title: 'Teilweise degradiert — Wirksamkeit unter Mythos eingeschränkt.'
         degradiert_hint_body: 'Das Control bleibt nutzbar, sollte aber durch flankierende MHCs ergänzt werden:'
+        source_attribution: 'MRIS v1.5 nach Peddi (CC BY 4.0)'
     status:
         implemented: Implementiert
         in_progress: 'In Arbeit'
@@ -87,6 +90,7 @@ soa:
         not_started: 'Nicht begonnen'
         not_applicable: 'Nicht anwendbar'
         approved: Freigegeben
+        verified: 'Verifiziert'
     value:
         'yes': Ja
         'no': Nein
@@ -96,6 +100,10 @@ soa:
         control_coverage: 'Control Coverage:'
         incidents: Incidents
         review_required: 'Review erforderlich:'
+        last_effectiveness_test: 'Letzte Wirksamkeitsprüfung'
+        never_tested: 'Noch nie geprüft'
+        overdue: 'Überfällig'
+        check_current: 'Aktuell'
         not_applicable_prefix: 'Nicht anwendbar:'
         responsible: 'Verantwortlich:'
         linked_risks: 'Zugeordnete Risiken:'
@@ -104,7 +112,7 @@ soa:
         effectiveness_score: 'Wirksamkeitswert'
     message:
         no_controls_filtered: 'Keine Controls gefunden, die den Filterkriterien entsprechen.'
-        auto_seeded: '%count% ISO 27001 Annex A Controls wurden automatisch für diesen Tenant geladen.'
+        auto_seeded: '%count% ISO 27001 Annex A Controls wurden automatisch für diese Organisation geladen.'
         no_justification: 'Keine Begründung hinterlegt. Bitte ergänzen Sie eine Begründung für die Anwendbarkeit dieser Maßnahme.'
         no_implementation_notes: 'Keine Umsetzungshinweise hinterlegt.'
         control_coverage: 'Diese Maßnahme schützt %count% Asset(s) mit einem Gesamtwert von €%value%.'
@@ -113,16 +121,21 @@ soa:
         related_incidents_count: 'Vorfälle betrafen diese Maßnahme.'
         review_required: 'Aufgrund der Vorfälle sollte die Wirksamkeit dieser Maßnahme überprüft werden.'
     empty:
+        title: 'Keine Controls im aktuellen Filter'
+        body: 'Lockern Sie die aktiven Filter oder laden Sie die ISO 27001 Annex-A-Controls, um Ihre SoA zu pflegen. Pro Control entscheiden Sie über Anwendbarkeit, Begründung und Umsetzungsstatus.'
+        help_link: '/de/help/glossary#glossary-soa'
+        create_first: 'Erstes Control anlegen'
+        reset_filter: 'Filter zurücksetzen'
         no_controls_for_tenant:
-            title: 'Noch keine ISO 27001 Annex A Controls für diesen Tenant'
-            iso_active: 'Das Controls-Modul ist aktiv, aber es wurden noch keine 93 Annex-A-Controls für diesen Tenant geladen. Ohne die Controls kann keine Anwendbarkeitserklärung gepflegt werden.'
-            iso_inactive: 'Das Controls-Modul ist für diesen Tenant nicht aktiv. Aktiviere es im Modul-Management oder lade die Annex-A-Controls manuell.'
-        no_controls_in_category: 'Keine Controls in Kategorie „%category%". Tenant hat insgesamt %total% Controls geladen — die Kategorie hat aber keinen Treffer.'
+            title: 'Noch keine ISO 27001 Annex A Controls für diese Organisation'
+            iso_active: 'Das Controls-Modul ist aktiv, aber es wurden noch keine 93 Annex-A-Controls für diese Organisation geladen. Ohne die Controls kann keine Anwendbarkeitserklärung gepflegt werden.'
+            iso_inactive: 'Das Controls-Modul ist für diese Organisation nicht aktiv. Aktiviere es im Modul-Management oder lade die Annex-A-Controls manuell.'
+        no_controls_in_category: 'Keine Controls in Kategorie „%category%". Die Organisation hat insgesamt %total% Controls geladen — die Kategorie hat aber keinen Treffer.'
         load_button: 'ISO 27001 Annex A Controls laden'
         contact_admin: 'Bitte kontaktiere einen Administrator, um die Annex-A-Controls laden zu lassen.'
-        no_tenant: 'Kein aktiver Tenant — Controls können nicht geladen werden.'
+        no_tenant: 'Keine aktive Organisation — Controls können nicht geladen werden.'
         loaded_flash: '%count% ISO 27001 Annex A Controls erfolgreich geladen.'
-        already_loaded_flash: 'Annex-A-Controls waren bereits für diesen Tenant geladen — keine Änderung.'
+        already_loaded_flash: 'Annex-A-Controls waren bereits für diese Organisation geladen — keine Änderung.'
         no_justification: 'Keine Begründung angegeben.'
         no_implementation_notes: 'Keine Implementierungsnotizen vorhanden.'
         control_coverage: 'Dieses Control schützt %count% Asset(s) mit Gesamtwert %value%.'
@@ -155,6 +168,7 @@ soa:
         implementation_notes: Implementierungsnotizen
         responsible_person: 'Verantwortliche Person'
         unassigned: 'Nicht zugewiesen'
+        deputies: 'Stellvertreter'
         target_date: Zieldatum
         not_set: 'Nicht festgelegt'
         cia: CIA
@@ -168,3 +182,78 @@ soa:
     iso27001_full_title: 'ISO/IEC 27001:2022 vollständiger Titel'
     in_progress_badge: 'In Arbeit'
     in_progress_badge_emoji: '🚧 In Arbeit'
+    snapshot:
+        badge: 'SoA-Stichtag'
+        page:
+            title: 'SoA-Stichtag-Snapshots'
+            subtitle: 'Frieren Sie die Anwendbarkeitserklärung zum Audit-Stichtag ein, damit Exporte reproduzierbar bleiben.'
+        new:
+            title: 'Neuen SoA-Snapshot erstellen'
+            subtitle: 'Wählen Sie das Stichtagsdatum für die Audit-relevante SoA-Sicht.'
+            help_title: 'Was passiert beim Snapshot?'
+            help_text: 'Pro anwendbarem Control wird die Implementierungsstatus-Bewertung, das jeweils gültige Nachweisdokument (inkl. Versionshistorie) und der Freigeber zum Stichtag eingefroren. Der Snapshot ist unveränderlich (kein UPDATE) und per SHA-256 manipulationsgeschützt.'
+        show:
+            title: 'SoA-Snapshot %date%'
+        empty:
+            title: 'Noch keine SoA-Snapshots'
+            text: 'Sobald Sie einen Snapshot erstellen, wird die Anwendbarkeitserklärung zum gewählten Stichtag eingefroren und kann beim Zertifizierungs-Bundle wieder genau so exportiert werden.'
+        section:
+            integrity: 'Integrität'
+            controls: 'Eingefrorener Control-Stand'
+        action:
+            new: 'Neuen Snapshot erstellen'
+            create: 'Snapshot einfrieren'
+            export_csv: 'CSV exportieren'
+        field:
+            as_of_date: 'Stichtagsdatum'
+            as_of_date_help: 'Inklusiv-Datum: Dokumente und Freigaben bis einschließlich dieses Tages werden berücksichtigt.'
+            purpose: 'Zweck'
+            purpose_placeholder: 'z.B. Externes Audit 2026-06-15 (TÜV)'
+            purpose_help: 'Wird im Audit-Trail und in den Cert-Bundle-Metadaten ausgewiesen.'
+            notes: 'Notizen'
+            checksum: 'SHA-256 Prüfsumme'
+        kpi:
+            controls: 'Controls im Snapshot'
+            as_of: 'Stichtag'
+            frozen_at: 'Eingefroren am'
+            created_by: 'Erstellt von'
+        col:
+            as_of_date: 'Stichtag'
+            purpose: 'Zweck'
+            created_at: 'Erstellt am'
+            created_by: 'Erstellt von'
+            controls: 'Controls'
+            checksum: 'SHA-256'
+            control_id: 'Control-ID'
+            name: 'Name'
+            applicable: 'Anwendbar'
+            status: 'Status'
+            evidence: 'Nachweise'
+            approved_by: 'Freigegeben von'
+            approved_at: 'Freigegeben am'
+        flash:
+            created: 'SoA-Snapshot zum Stichtag %date% erstellt (%count% Controls eingefroren).'
+        error:
+            invalid_date: 'Bitte ein gültiges Datum im Format YYYY-MM-DD angeben.'
+            future_date: 'Stichtagsdatum darf nicht in der Zukunft liegen.'
+
+
+    no_tenant:
+        title: 'Deinem Konto ist noch keine Organisation zugewiesen'
+        subtitle: 'Ohne Organisationsbezug können keine Controls geladen werden — was zu tun ist:'
+        body_admin: |
+            Als Administrator kannst du das selbst lösen:
+            1. Öffne die Benutzerverwaltung und weise diesem Konto eine Organisation zu.
+            2. Alternativ kann die Daten-Reparatur Organisations-Zuweisungen über mehrere Benutzer hinweg fixen (Bulk-Mode).
+    
+            Falls noch kein passender Organisation existiert, lege ihn vorher unter Administration → Organisationsverwaltung an.
+        body_user: |
+            Bitte einen Administrator bitten, dein Benutzerkonto unter
+            „Administration → Benutzerverwaltung" einer Organisation zuzuweisen.
+            Erst dann sind ISMS-Daten (Controls, Risiken, Vorfälle, VVT-Einträge) sichtbar.
+    
+            Wenn du nicht weißt, wer Administrator ist: deine IT- oder QM-Abteilung
+            ist üblicherweise zuständig.
+        cta_user_management: 'Benutzerverwaltung öffnen'
+        cta_data_repair: 'Daten-Reparatur öffnen'
+        cta_logout: 'Abmelden und neu anmelden'

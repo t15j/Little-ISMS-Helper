@@ -5,13 +5,18 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Tenant;
+use App\Entity\WorkflowInstance;
+use App\Enum\RiskTreatmentPlanStatus;
 use App\Enum\TreatmentStrategy;
+use App\Enum\WorkflowInstanceStatus;
+use App\Repository\ComplianceFrameworkRepository;
 use App\Repository\ControlRepository;
 use App\Repository\IncidentRepository;
 use App\Repository\InternalAuditRepository;
 use App\Repository\RiskRepository;
 use App\Repository\RiskTreatmentPlanRepository;
 use App\Repository\WorkflowInstanceRepository;
+use App\Service\Tisax\TisaxMaturityAssessmentService;
 use Symfony\Bundle\SecurityBundle\Security;
 
 /**
@@ -41,6 +46,8 @@ class RoleDashboardService
         private readonly TenantContext $tenantContext,
         private readonly ?RiskTreatmentPlanRepository $treatmentPlanRepository = null,
         private readonly ?InternalAuditRepository $auditRepository = null,
+        private readonly ?TisaxMaturityAssessmentService $tisaxAssessment = null,
+        private readonly ?ComplianceFrameworkRepository $frameworkRepository = null,
     ) {
     }
 
@@ -68,16 +75,19 @@ class RoleDashboardService
         $managementKpis = $this->dashboardStatisticsService->getManagementKPIs();
 
         // Top risks requiring attention
-        $criticalRisks = $this->getCriticalRisks($tenant, 5);
+        $criticalRisks = $this->getCriticalRisks(5);
 
         // Pending approvals
         $pendingApprovals = $this->getPendingApprovals();
 
         // Recent incidents
-        $recentIncidents = $this->getRecentIncidents($tenant, 5);
+        $recentIncidents = $this->getRecentIncidents(5);
 
         // DORA KPIs (conditionally included when DORA framework is active)
         $doraKpis = $this->dashboardStatisticsService->getDoraKPIs();
+
+        // TISAX per-tier aggregate (null when module not active or no requirements uploaded)
+        $tisaxAggregate = $this->buildTisaxAggregate($tenant);
 
         return [
             'summary' => [
@@ -108,7 +118,36 @@ class RoleDashboardService
             'recent_incidents' => $recentIncidents,
             'management_kpis' => $managementKpis,
             'dora_kpis' => $doraKpis,
+            'tisax_aggregate' => $tisaxAggregate,
         ];
+    }
+
+    /**
+     * Build TISAX per-tier aggregate for a tenant.
+     * Returns null when the tisax module is inactive, no framework found, or no requirements uploaded.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function buildTisaxAggregate(?Tenant $tenant): ?array
+    {
+        if ($tenant === null || $this->tisaxAssessment === null || $this->frameworkRepository === null) {
+            return null;
+        }
+        $settings = $tenant->getSettings() ?? [];
+        $tisaxEnabled = $settings['modules']['tisax'] ?? true;
+        if (!$tisaxEnabled) {
+            return null;
+        }
+        $framework = $this->frameworkRepository->findOneBy(['code' => 'TISAX']);
+        if ($framework === null) {
+            return null;
+        }
+        $aggregate = $this->tisaxAssessment->computeAggregate($framework, $tenant);
+        if ($aggregate['total'] === 0) {
+            return null;
+        }
+
+        return $aggregate;
     }
 
     /**
@@ -121,10 +160,10 @@ class RoleDashboardService
         $tenant = $this->tenantContext->getCurrentTenant();
 
         // Risk treatment pipeline
-        $treatmentPipeline = $this->getRiskTreatmentPipeline($tenant);
+        $treatmentPipeline = $this->getRiskTreatmentPipeline();
 
         // Risk distribution by category
-        $risksByCategory = $this->getRisksByCategory($tenant);
+        $risksByCategory = $this->getRisksByCategory();
 
         // Risk appetite compliance
         $riskAppetite = $this->riskForecastService->getRiskAppetiteCompliance();
@@ -137,15 +176,19 @@ class RoleDashboardService
         $controlRiskMatrix = $this->controlEffectivenessService->getControlRiskMatrix();
 
         // Overdue treatment plans
-        $overdueTreatments = $this->getOverdueTreatmentPlans($tenant);
+        $overdueTreatments = $this->getOverdueTreatmentPlans();
 
         // Top untreated risks
-        $untreatedRisks = $this->getUntreatedRisks($tenant, 10);
+        $untreatedRisks = $this->getUntreatedRisks(10);
+
+        // Z.0 — workflow transparency
+        $pendingApprovals = $this->getPendingApprovals();
+        $lifecycleStuck = $this->getLifecycleStuck();
 
         return [
             'summary' => [
                 'total_risks' => count($this->riskRepository->findAll()),
-                'high_critical' => $this->countHighCriticalRisks($tenant),
+                'high_critical' => $this->countHighCriticalRisks(),
                 'treated_percentage' => $treatmentPipeline['treated_percentage'],
                 'overdue_treatments' => count($overdueTreatments),
                 'appetite_status' => $riskAppetite['is_compliant'] ? 'compliant' : 'breach',
@@ -164,6 +207,8 @@ class RoleDashboardService
             ],
             'overdue_treatments' => $overdueTreatments,
             'untreated_risks' => $untreatedRisks,
+            'pending_approvals' => $pendingApprovals,
+            'lifecycle_stuck' => $lifecycleStuck,
         ];
     }
 
@@ -240,7 +285,7 @@ class RoleDashboardService
         // Risk data
         $riskAppetite = $this->riskForecastService->getRiskAppetiteCompliance();
         $riskVelocity = $this->riskForecastService->getRiskVelocity();
-        $highCriticalRisks = $this->countHighCriticalRisks($tenant);
+        $highCriticalRisks = $this->countHighCriticalRisks();
 
         // Build RAG status based on various metrics
         $ragStatus = $this->buildRAGStatus($overallCompliance, $riskAppetite, $stats);
@@ -307,7 +352,7 @@ class RoleDashboardService
                 'risk_status' => $riskAppetite['is_compliant'] ? 'green' : 'red',
                 'trend' => $riskVelocity['trend'],
             ],
-            'critical_items' => $this->getTop3CriticalItems($tenant),
+            'critical_items' => $this->getTop3CriticalItems(),
         ];
     }
 
@@ -361,7 +406,7 @@ class RoleDashboardService
         $items = [];
 
         // Critical risks
-        $criticalRisks = $this->getCriticalRisks($tenant, 3);
+        $criticalRisks = $this->getCriticalRisks(3);
         foreach ($criticalRisks as $risk) {
             $items[] = [
                 'priority' => 'critical',
@@ -371,7 +416,7 @@ class RoleDashboardService
         }
 
         // Overdue treatments
-        $overdueTreatments = $this->getOverdueTreatmentPlans($tenant);
+        $overdueTreatments = $this->getOverdueTreatmentPlans();
         foreach (array_slice($overdueTreatments, 0, 2) as $treatment) {
             $items[] = [
                 'priority' => 'high',
@@ -447,7 +492,11 @@ class RoleDashboardService
     }
 
     /**
-     * Determine which dashboard a user should see based on their role
+     * Determine which dashboard a user should see based on their role.
+     *
+     * Audit V3 W2-C5: persona-roles take precedence over the generic
+     * Manager/Admin fallback so a user with ROLE_DPO sees the
+     * Compliance-Manager dashboard rather than the CISO one.
      */
     public function getRecommendedDashboard(): string
     {
@@ -457,9 +506,20 @@ class RoleDashboardService
             return 'default';
         }
 
-        // Check roles in order of specificity
+        // Check persona-roles first — most specific takes precedence.
+        if ($this->security->isGranted('ROLE_CISO')) {
+            return 'ciso';
+        }
+        if ($this->security->isGranted('ROLE_RISK_MANAGER')) {
+            return 'risk_manager';
+        }
+        if ($this->security->isGranted('ROLE_COMPLIANCE_MANAGER') || $this->security->isGranted('ROLE_DPO')) {
+            return 'compliance_manager';
+        }
+
+        // Generic role fallbacks
         if ($this->security->isGranted('ROLE_SUPER_ADMIN') || $this->security->isGranted('ROLE_ADMIN')) {
-            return 'ciso'; // Admins see CISO view
+            return 'ciso'; // Admins inherit all persona-roles, default landing is CISO view
         }
 
         if ($this->security->isGranted('ROLE_MANAGER')) {
@@ -475,7 +535,7 @@ class RoleDashboardService
 
     // ==================== Private Helper Methods ====================
 
-    private function getCriticalRisks(?Tenant $tenant, int $limit): array
+    private function getCriticalRisks(int $limit): array
     {
         $risks = $this->riskRepository->findAll();
 
@@ -495,7 +555,15 @@ class RoleDashboardService
         ], array_slice($criticalRisks, 0, $limit));
     }
 
-    private function getPendingApprovals(): array
+    /**
+     * Get pending workflow approvals for the current user.
+     *
+     * Z.0 — made public so DPO/ComplianceManager/RiskManager dashboards
+     * can reuse the same computation without an N+1 query per persona.
+     *
+     * @return array<int, array{id: int|null, title: string, entity_type: string|null, created_at: \DateTimeImmutable|null}>
+     */
+    public function getPendingApprovals(): array
     {
         $user = $this->security->getUser();
         if ($user === null) {
@@ -506,13 +574,73 @@ class RoleDashboardService
 
         return array_map(fn($w) => [
             'id' => $w->getId(),
-            'title' => $w->getDefinition()?->getName() ?? 'Unknown',
+            'title' => $w->getWorkflow()?->getName() ?? 'Unknown',
             'entity_type' => $w->getEntityType(),
-            'created_at' => $w->getCreatedAt(),
+            'entity_id' => $w->getEntityId(),
+            'created_at' => $w->getStartedAt(),
+            'due_date' => $w->getDueDate(),
+            'status' => $w->getStatus(),
         ], array_slice($pending, 0, 5));
     }
 
-    private function getRecentIncidents(?Tenant $tenant, int $limit): array
+    /**
+     * Get lifecycle-stuck workflow instances (active but past due).
+     *
+     * Z.0 — surfaces workflows that auto-progression missed, or manual
+     * approver did not act within the deadline. Limit 10 to avoid noise.
+     *
+     * @return WorkflowInstance[]
+     */
+    public function getLifecycleStuck(): array
+    {
+        $tenant = $this->tenantContext->getCurrentTenant();
+        if ($tenant === null) {
+            return [];
+        }
+        $overdue = $this->workflowInstanceRepository->findOverdueForTenant($tenant);
+        return array_slice($overdue, 0, 10);
+    }
+
+    /**
+     * Get workflow_info dict for a specific entity (used by show-page banner).
+     *
+     * Z.0 — Returns a pre-computed dict for the `_lifecycle_pending_banner`
+     * macro. Checks whether the entity has an active WorkflowInstance that the
+     * current user is expected to act on. Returns an empty array when no pending
+     * instance exists, preventing an N+1 loop in templates.
+     *
+     * @param string   $entityType  Short entity class name (e.g. 'Risk', 'DataBreach')
+     * @param int|null $entityId    Entity primary key
+     * @return array<string, mixed> workflow_info dict or [] when no pending workflow
+     */
+    public function getWorkflowInfoForEntity(string $entityType, ?int $entityId): array
+    {
+        if ($entityId === null) {
+            return [];
+        }
+
+        $instances = $this->workflowInstanceRepository->findByEntity($entityType, $entityId);
+        $now = new \DateTimeImmutable();
+
+        foreach ($instances as $instance) {
+            if (!in_array($instance->getStatus(), [WorkflowInstanceStatus::Pending->value, WorkflowInstanceStatus::InProgress->value], true)) {
+                continue;
+            }
+            $dueDate = $instance->getDueDate();
+            return [
+                'id'        => $instance->getId(),
+                'title'     => $instance->getWorkflow()?->getName() ?? $entityType . ' Workflow',
+                'status'    => $instance->getStatus(),
+                'due_date'  => $dueDate,
+                'stuck'     => $dueDate !== null && $dueDate < $now,
+                'step_name' => $instance->getCurrentStep()?->getName() ?? null,
+            ];
+        }
+
+        return [];
+    }
+
+    private function getRecentIncidents(int $limit): array
     {
         $incidents = $this->incidentRepository->findAll();
 
@@ -527,11 +655,10 @@ class RoleDashboardService
         ], array_slice($incidents, 0, $limit));
     }
 
-    private function getRiskTreatmentPipeline(?Tenant $tenant): array
+    private function getRiskTreatmentPipeline(): array
     {
         $risks = $this->riskRepository->findAll();
         $total = count($risks);
-
         $byStrategy = [
             'mitigate' => 0,
             'accept' => 0,
@@ -539,7 +666,6 @@ class RoleDashboardService
             'avoid' => 0,
             'untreated' => 0,
         ];
-
         foreach ($risks as $risk) {
             $strategy = $risk->getTreatmentStrategy()?->value;
             if ($strategy === null) {
@@ -548,9 +674,7 @@ class RoleDashboardService
                 $byStrategy[$strategy]++;
             }
         }
-
         $treated = $total - $byStrategy['untreated'];
-
         return [
             'total' => $total,
             'treated' => $treated,
@@ -560,10 +684,9 @@ class RoleDashboardService
         ];
     }
 
-    private function getRisksByCategory(?Tenant $tenant): array
+    private function getRisksByCategory(): array
     {
         $risks = $this->riskRepository->findAll();
-
         $byCategory = [];
         foreach ($risks as $risk) {
             $category = $risk->getCategory() ?? 'Uncategorized';
@@ -577,33 +700,27 @@ class RoleDashboardService
                 $byCategory[$category]['high']++;
             }
         }
-
         arsort($byCategory);
-
         return array_slice($byCategory, 0, 10, true);
     }
 
-    private function countHighCriticalRisks(?Tenant $tenant): int
+    private function countHighCriticalRisks(): int
     {
         $risks = $this->riskRepository->findAll();
-
         return count(array_filter($risks, fn($r) => $r->getInherentRiskLevel() >= 12));
     }
 
-    private function getOverdueTreatmentPlans(?Tenant $tenant): array
+    private function getOverdueTreatmentPlans(): array
     {
         if ($this->treatmentPlanRepository === null) {
             return [];
         }
-
         $plans = $this->treatmentPlanRepository->findAll();
         $now = new \DateTime();
-
         $overdue = array_filter($plans, fn($p) => $p->getTargetCompletionDate() !== null
             && $p->getTargetCompletionDate() < $now
-            && $p->getStatus() !== 'completed'
+            && $p->getStatus() !== RiskTreatmentPlanStatus::Completed->value
         );
-
         return array_map(fn($p) => [
             'id' => $p->getId(),
             'risk_title' => $p->getRisk()?->getTitle() ?? 'Unknown',
@@ -612,7 +729,7 @@ class RoleDashboardService
         ], array_slice($overdue, 0, 10));
     }
 
-    private function getUntreatedRisks(?Tenant $tenant, int $limit): array
+    private function getUntreatedRisks(int $limit): array
     {
         $risks = $this->riskRepository->findAll();
 
@@ -660,7 +777,7 @@ class RoleDashboardService
                 'id' => $a->getId(),
                 'title' => $a->getTitle(),
                 'planned_date' => $a->getPlannedDate(),
-                'type' => $a->getType(),
+                'type' => $a->getScopeType(),
             ], array_slice($upcoming, 0, 5)),
         ];
     }
@@ -711,12 +828,11 @@ class RoleDashboardService
         ];
     }
 
-    private function getTop3CriticalItems(?Tenant $tenant): array
+    private function getTop3CriticalItems(): array
     {
         $items = [];
-
         // Critical risks
-        $criticalRisks = $this->getCriticalRisks($tenant, 1);
+        $criticalRisks = $this->getCriticalRisks(1);
         if (!empty($criticalRisks)) {
             $items[] = [
                 'type' => 'risk',
@@ -725,9 +841,8 @@ class RoleDashboardService
                 'action' => 'Immediate treatment required',
             ];
         }
-
         // Overdue treatments
-        $overdueTreatments = $this->getOverdueTreatmentPlans($tenant);
+        $overdueTreatments = $this->getOverdueTreatmentPlans();
         if (!empty($overdueTreatments)) {
             $items[] = [
                 'type' => 'treatment',
@@ -736,9 +851,8 @@ class RoleDashboardService
                 'action' => $overdueTreatments[0]['days_overdue'] . ' days overdue',
             ];
         }
-
         // Open incidents
-        $incidents = $this->getRecentIncidents($tenant, 1);
+        $incidents = $this->getRecentIncidents(1);
         $openIncidents = array_filter($incidents, fn($i) => in_array($i['status'], ['reported', 'in_investigation', 'in_resolution'], true));
         if (!empty($openIncidents)) {
             $incident = reset($openIncidents);
@@ -749,57 +863,7 @@ class RoleDashboardService
                 'action' => 'Investigation in progress',
             ];
         }
-
         return array_slice($items, 0, 3);
-    }
-
-    private function getRAGMetrics(?Tenant $tenant): array
-    {
-        $stats = $this->dashboardStatisticsService->getDashboardStatistics();
-        $riskAppetite = $this->riskForecastService->getRiskAppetiteCompliance();
-
-        return [
-            'compliance' => [
-                'label' => 'Control Compliance',
-                'value' => $stats['compliancePercentage'],
-                'unit' => '%',
-                'status' => $this->getRAGStatus($stats['compliancePercentage'], 80, 60),
-            ],
-            'risk_appetite' => [
-                'label' => 'Risk Appetite',
-                'value' => $riskAppetite['compliance_score'],
-                'unit' => '%',
-                'status' => $riskAppetite['is_compliant'] ? 'green' : 'red',
-            ],
-            'high_risks' => [
-                'label' => 'High/Critical Risks',
-                'value' => $stats['risks_high'],
-                'unit' => '',
-                'status' => $stats['risks_high'] > 10 ? 'red' : ($stats['risks_high'] > 5 ? 'amber' : 'green'),
-            ],
-            'incidents' => [
-                'label' => 'Open Incidents',
-                'value' => $stats['incidents_open'],
-                'unit' => '',
-                'status' => $stats['incidents_open'] > 5 ? 'red' : ($stats['incidents_open'] > 0 ? 'amber' : 'green'),
-            ],
-        ];
-    }
-
-    private function getTrendIndicators(?Tenant $tenant): array
-    {
-        $riskVelocity = $this->riskForecastService->getRiskVelocity();
-
-        return [
-            'risks' => [
-                'direction' => $riskVelocity['trend'],
-                'change' => $riskVelocity['last_30_days']['net_change'],
-            ],
-            'compliance' => [
-                'direction' => 'stable', // Would need historical data
-                'change' => 0,
-            ],
-        ];
     }
 
     private function getRAGStatus(float $value, float $greenThreshold, float $amberThreshold): string

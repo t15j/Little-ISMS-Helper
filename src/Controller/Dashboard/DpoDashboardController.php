@@ -1,0 +1,112 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controller\Dashboard;
+
+use App\Repository\ComplianceFrameworkRepository;
+use App\Repository\DataBreachRepository;
+use App\Repository\DataProtectionImpactAssessmentRepository;
+use App\Repository\ProcessingActivityRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
+use App\Service\RoleDashboardService;
+use App\Service\TenantContext;
+use App\Service\Tisax\TisaxMaturityAssessmentService;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+
+/**
+ * DPO persona dashboard — Art. 39 GDPR operational view.
+ *
+ * Surfaces:
+ *   - Open data breaches (Art. 33/34) count + 72 h ticking
+ *   - DPIAs in-progress (Art. 35)
+ *   - Processing activities requiring DPIA
+ *   - Processing activities due for review
+ *   - Processing activities with third-country transfers
+ *   - Quick actions (VVT export, DPIA list, data breaches)
+ *
+ * Module gate: 'privacy'. Role gate: PERSONA_DPO (Role-Scope Phase 6 —
+ * resolves to ROLE_DPO via TenantScopedAdminVoter).
+ */
+// @no-methods-required — class-level path prefix, methods declared per action
+#[Route('/dashboards/dpo', name: 'app_dashboard_dpo')]
+#[IsGranted(TenantScopedAdminVoter::PERSONA_DPO)]
+final class DpoDashboardController extends AbstractController
+{
+    public function __construct(
+        private readonly TenantContext $tenantContext,
+        private readonly DataBreachRepository $dataBreachRepo,
+        private readonly DataProtectionImpactAssessmentRepository $dpiaRepo,
+        private readonly ProcessingActivityRepository $processingActivityRepo,
+        private readonly RoleDashboardService $roleDashboardService,
+        private readonly TisaxMaturityAssessmentService $tisaxAssessment,
+        private readonly ComplianceFrameworkRepository $frameworkRepository,
+    ) {
+    }
+
+    public function __invoke(): Response
+    {
+        $tenant = $this->tenantContext->getCurrentTenant();
+        if ($tenant === null) {
+            throw $this->createNotFoundException();
+        }
+
+        // Open data breaches (not yet completed)
+        $openBreaches = $this->dataBreachRepo->findIncomplete($tenant);
+
+        // Breaches with 72 h authority-notification clock ticking
+        $ticking72h = $this->dataBreachRepo->findAuthorityNotification72hTicking($tenant);
+
+        // DPIAs in review / draft
+        $dpiasInProgress = array_merge(
+            $this->dpiaRepo->findDrafts($tenant),
+            $this->dpiaRepo->findInReview($tenant),
+        );
+
+        // Processing activities that need a DPIA but don't have one
+        $activitiesNeedingDpia = $this->processingActivityRepo->findRequiringDPIA($tenant);
+
+        // Processing activities due for periodic review
+        $activitiesDueReview = $this->processingActivityRepo->findDueForReview($tenant);
+
+        // Processing activities with third-country transfers (Art. 44-49 GDPR)
+        $thirdCountryTransfers = $this->processingActivityRepo->findWithThirdCountryTransfers($tenant);
+
+        // Z.0 — workflow transparency
+        $pendingApprovals = $this->roleDashboardService->getPendingApprovals();
+        $lifecycleStuck   = $this->roleDashboardService->getLifecycleStuck();
+
+        // TISAX DP-tier aggregate — DPO sees data_protection chapter 9 compliance only
+        $tisaxDpAggregate = null;
+        $settings = $tenant->getSettings() ?? [];
+        if ($settings['modules']['tisax'] ?? true) {
+            $framework = $this->frameworkRepository->findOneBy(['code' => 'TISAX']);
+            if ($framework !== null) {
+                $agg = $this->tisaxAssessment->computeAggregate($framework, $tenant);
+                $dp  = $agg['byTier']['data_protection'] ?? null;
+                if ($dp !== null && ($dp['total'] ?? 0) > 0) {
+                    $tisaxDpAggregate = $dp;
+                }
+            }
+        }
+
+        return $this->render('dashboards/dpo.html.twig', [
+            'dashboard' => [
+                'open_breaches'            => $openBreaches,
+                'open_breaches_count'      => count($openBreaches),
+                'ticking_72h_count'        => count($ticking72h),
+                'dpias_in_progress'        => $dpiasInProgress,
+                'dpias_in_progress_count'  => count($dpiasInProgress),
+                'activities_needing_dpia'  => $activitiesNeedingDpia,
+                'activities_due_review'    => $activitiesDueReview,
+                'third_country_transfers'  => $thirdCountryTransfers,
+                'pending_approvals'        => $pendingApprovals,
+                'lifecycle_stuck'          => $lifecycleStuck,
+                'tisax_dp_aggregate'       => $tisaxDpAggregate,
+            ],
+        ]);
+    }
+}

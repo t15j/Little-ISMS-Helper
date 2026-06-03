@@ -14,10 +14,20 @@ use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 
 #[ORM\Entity(repositoryClass: TenantRepository::class)]
-#[UniqueEntity(fields: ['code'], message: 'This tenant code is already in use')]
+#[ORM\Index(name: 'idx_tenant_status', columns: ['status'])]
+#[UniqueEntity(fields: ['code'], message: 'tenant.validation.code_unique')]
 #[ORM\HasLifecycleCallbacks]
 class Tenant
 {
+    // Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+    // 5-stage lifecycle: draft → active ⇄ suspended → terminated → archived.
+    // SUPER_ADMIN-gated, 4-eyes on suspend/reactivate/terminate.
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_SUSPENDED = 'suspended';
+    public const STATUS_TERMINATED = 'terminated';
+    public const STATUS_ARCHIVED = 'archived';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -39,8 +49,36 @@ class Tenant
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $azureTenantId = null;
 
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+     *
+     * Legacy boolean preserved for backward-compat with 30+ readers:
+     *   - Repository::createQueryBuilder()->where('t.isActive = :active')
+     *   - findBy(['isActive' => true])  (Doctrine hits the column directly, NOT the method)
+     *   - Twig templates calling tenant.isActive
+     *
+     * Kept in lockstep with `status` via setStatus(): every status transition
+     * also mutates isActive so the column-level Doctrine queries stay correct.
+     */
     #[ORM\Column(type: Types::BOOLEAN, options: ['default' => true])]
     private bool $isActive = true;
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+     * Owned by `tenant_lifecycle` — never call setStatus() directly outside
+     * the initial-marking bootstrap; route transitions through
+     * LifecycleService::transition().
+     */
+    #[ORM\Column(length: 30, options: ['default' => self::STATUS_DRAFT])]
+    private string $status = self::STATUS_DRAFT;
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+     * Optimistic-lock guard for concurrent lifecycle transitions.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     #[ORM\Column(type: Types::JSON, nullable: true)]
     private ?array $settings = null;
@@ -139,11 +177,118 @@ class Tenant
     #[ORM\Column(length: 50, nullable: true)]
     private ?string $legalForm = null;
 
+    /**
+     * Bucket-6a (DORA RoI Sprint 9) — Legal Entity Identifier per ISO 17442.
+     * 20-character alphanumeric LEI as issued by a GLEIF-accredited LOU.
+     * Required for DORA Art. 28 ROI XBRL export — wired into B_01.01.0020
+     * (reporting-entity-LEI). Nullable to keep non-DORA-obligated tenants
+     * working without forced migration of pre-existing rows.
+     *
+     * Format: [A-Z0-9]{18}\d{2} (18 LOU-prefix + 2 ISO 17442 checksum digits).
+     */
+    #[ORM\Column(length: 20, nullable: true)]
+    #[Assert\Length(max: 20)]
+    #[Assert\Regex(
+        pattern: '/^[A-Z0-9]{18}\d{2}$/',
+        message: 'tenant.validation.lei_code_format',
+    )]
+    private ?string $leiCode = null;
+
+    /**
+     * Bucket-6a (DORA RoI Sprint 9) — ISO 4217 reporting currency for DORA
+     * Art. 28 RoI XBRL output (B_01.01.0040). EUR default; tenants reporting
+     * in other currencies (CHF, GBP, USD) override here.
+     */
+    #[ORM\Column(length: 3, nullable: true, options: ['default' => 'EUR'])]
+    #[Assert\Length(min: 3, max: 3)]
+    #[Assert\Regex(
+        pattern: '/^[A-Z]{3}$/',
+        message: 'tenant.validation.reporting_currency_format',
+    )]
+    private ?string $reportingCurrency = 'EUR';
+
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $nis2ContactPoint = null;
 
     #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $nis2RegisteredAt = null;
+
+    /**
+     * DORA Art. 2 entity classification — determines whether this tenant is subject to DORA:
+     * - none:                    Not subject to DORA (default — most tenants)
+     * - financial_entity:        Bank / Versicherer / Investmentfirm per DORA Art. 2(2)
+     * - critical_ict_third_party: Designated CTPP by ESAs per DORA Art. 31
+     *
+     * When 'none', all DORA-specific UI, routes, and AlvaHint rules are suppressed.
+     * This flag is tenant-level (is this organisation DORA-obligated at all?).
+     * Entity-level DORA relevance (which assets/suppliers are RoI-relevant) is
+     * managed via Supplier.isDoraRelevant and Asset.isDoraRelevant.
+     */
+    public const DORA_NONE                     = 'none';
+    public const DORA_FINANCIAL_ENTITY         = 'financial_entity';
+    public const DORA_CRITICAL_ICT_THIRD_PARTY = 'critical_ict_third_party';
+
+    #[ORM\Column(length: 40, nullable: false, options: ['default' => 'none'])]
+    private string $doraEntityCategory = self::DORA_NONE;
+
+    // Tier-1 Compliance Settings (locale + audit-window + DPO + TLP + supervisory authorities + retention policies).
+    #[ORM\Column(length: 10, nullable: true, options: ['default' => 'de_DE'])]
+    private ?string $locale = 'de_DE';
+
+    #[ORM\Column(length: 50, nullable: true, options: ['default' => 'Europe/Berlin'])]
+    private ?string $timezone = 'Europe/Berlin';
+
+    #[ORM\Column(type: Types::SMALLINT, nullable: true, options: ['default' => 1, 'comment' => 'Financial year start month 1-12'])]
+    private ?int $financialYearStartMonth = 1;
+
+    #[ORM\Column(length: 16, nullable: true, options: ['default' => 'amber', 'comment' => 'TLP default for incident sharing: clear|green|amber|red'])]
+    private ?string $tlpDefault = 'amber';
+
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $dpoContactName = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $dpoContactEmail = null;
+
+    /** @var array<string, array{name: string, email: string, phone?: string, scope?: string}>|null */
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['comment' => 'Supervisory authorities map keyed by jurisdiction/role (BSI, BaFin, LDA, CSIRT-bund etc.)'])]
+    private ?array $supervisoryAuthorities = null;
+
+    /** @var array<string, array{years: int, basis?: string}>|null */
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['comment' => 'GDPR retention policies keyed by data category (e.g. crm, contracts, audit_evidence)'])]
+    private ?array $dataRetentionPolicies = null;
+
+    // Tier-2 Operational Settings (risk methodology, matrix size, notifications, wizard maturity target, CSIRT endpoints, on-call rotation).
+    #[ORM\Column(length: 32, nullable: true, options: ['default' => 'iso_27005', 'comment' => 'iso_27005|nist_800_30|fair|custom'])]
+    private ?string $riskMethodology = 'iso_27005';
+
+    #[ORM\Column(type: Types::SMALLINT, nullable: true, options: ['default' => 5, 'comment' => 'Risk matrix size 3, 4, 5'])]
+    private ?int $riskMatrixSize = 5;
+
+    #[ORM\Column(length: 32, nullable: true, options: ['default' => 'baseline', 'comment' => 'Default maturity target across wizards: baseline|enhanced'])]
+    private ?string $wizardMaturityTarget = 'baseline';
+
+    /** @var array<string, array{email?: bool, slack?: bool, teams?: bool}>|null */
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['comment' => 'Notification preferences keyed by event type (incident, breach, audit_finding, training_overdue)'])]
+    private ?array $notificationPreferences = null;
+
+    /** @var array<string, array{url?: string, contact?: string, auth_type?: string}>|null */
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['comment' => 'CSIRT endpoints for automated incident reporting (BSI, sectoral CSIRT, ENISA)'])]
+    private ?array $csirtEndpoints = null;
+
+    /** @var array<int, array{date: string, primary?: string, deputy?: string}>|null */
+    #[ORM\Column(type: Types::JSON, nullable: true, options: ['comment' => 'Crisis team on-call rotation entries (each: date, primary, deputy)'])]
+    private ?array $crisisTeamOnCall = null;
+
+    #[ORM\Column(type: Types::INTEGER, nullable: true, options: ['default' => 600, 'comment' => 'API requests/minute per tenant (default 600 = 10/sec)'])]
+    private ?int $apiRateLimitPerMinute = 600;
+
+    /** When true, all users in this tenant are required to login via SSO (local passwords locked). */
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $ssoEnforced = false;
+
+    public function isSsoEnforced(): bool { return $this->ssoEnforced; }
+    public function setSsoEnforced(bool $v): static { $this->ssoEnforced = $v; return $this; }
 
     public function getBsiPhase(): ?string
     {
@@ -211,6 +356,36 @@ class Tenant
         return $this;
     }
 
+    /**
+     * Bucket-6a — ISO 17442 Legal Entity Identifier. Wired into DORA RoI
+     * XBRL export (B_01.01.0020). Null when the tenant is not DORA-obligated.
+     */
+    public function getLeiCode(): ?string
+    {
+        return $this->leiCode;
+    }
+
+    public function setLeiCode(?string $value): static
+    {
+        $this->leiCode = $value !== null ? strtoupper(trim($value)) : null;
+        return $this;
+    }
+
+    /**
+     * Bucket-6a — ISO 4217 reporting currency. EUR default. Wired into DORA
+     * RoI XBRL export (B_01.01.0040) and the iso4217:* unit measure.
+     */
+    public function getReportingCurrency(): ?string
+    {
+        return $this->reportingCurrency ?? 'EUR';
+    }
+
+    public function setReportingCurrency(?string $value): static
+    {
+        $this->reportingCurrency = $value !== null ? strtoupper(trim($value)) : null;
+        return $this;
+    }
+
     public function getNis2ContactPoint(): ?string
     {
         return $this->nis2ContactPoint;
@@ -238,11 +413,41 @@ class Tenant
         return in_array($this->nis2Classification, [self::NIS2_ESSENTIAL, self::NIS2_IMPORTANT], true);
     }
 
+    public function getDoraEntityCategory(): string
+    {
+        return $this->doraEntityCategory;
+    }
+
+    public function setDoraEntityCategory(string $doraEntityCategory): static
+    {
+        $this->doraEntityCategory = $doraEntityCategory;
+        return $this;
+    }
+
+    /**
+     * Returns true when this tenant is subject to DORA (any category other than 'none').
+     */
+    public function isDoraObligated(): bool
+    {
+        return $this->doraEntityCategory !== self::DORA_NONE;
+    }
+
     public function __construct()
     {
         $this->users = new ArrayCollection();
         $this->subsidiaries = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
+    }
+
+    /**
+     * Required by Symfony's DoctrineType EntityType when callers don't pass
+     * an explicit `choice_label` callback. Without this, form-rendering
+     * throws "Object of class App\Entity\Tenant could not be converted to
+     * string" (DoctrineType.php:54).
+     */
+    public function __toString(): string
+    {
+        return $this->name ?? sprintf('Tenant#%d', $this->id ?? 0);
     }
 
     public function getId(): ?int
@@ -255,7 +460,7 @@ class Tenant
         return $this->code;
     }
 
-    public function setCode(string $code): static
+    public function setCode(?string $code): static
     {
         $this->code = $code;
         return $this;
@@ -266,7 +471,7 @@ class Tenant
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -299,10 +504,64 @@ class Tenant
         return $this->isActive;
     }
 
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+     *
+     * Direct setter preserved for backward-compat with 30+ readers. Mirrors
+     * the boolean into `status` so the lifecycle marking stays consistent:
+     *   true  → STATUS_ACTIVE (unless already in a non-active terminal state)
+     *   false → STATUS_SUSPENDED (unless already terminated/archived)
+     *
+     * For new code prefer `LifecycleService::transition($tenant,
+     * 'tenant_lifecycle', 'suspend'|'activate'|...)`.
+     */
     public function setIsActive(bool $isActive): static
     {
         $this->isActive = $isActive;
+
+        // Mirror into status — but never resurrect a terminal record.
+        if (!in_array($this->status, [self::STATUS_TERMINATED, self::STATUS_ARCHIVED], true)) {
+            $this->status = $isActive ? self::STATUS_ACTIVE : self::STATUS_SUSPENDED;
+        }
+
         return $this;
+    }
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+     */
+    public function getStatus(): string
+    {
+        return $this->status;
+    }
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+     *
+     * Do NOT call directly outside the initial-marking bootstrap; route
+     * transitions through LifecycleService::transition(). The
+     * Symfony-Workflow marking-store calls this setter to apply state
+     * changes; the boolean `isActive` mirror is kept in lockstep so the
+     * 30+ legacy readers (including Doctrine `findBy(['isActive' => true])`)
+     * stay correct.
+     */
+    public function setStatus(string $status): static
+    {
+        $this->status = $status;
+        // Mirror status → isActive. Only `active` keeps the legacy boolean
+        // true; every other place (draft / suspended / terminated /
+        // archived) flips it to false so existing voter + repository
+        // filters stay correct.
+        $this->isActive = ($status === self::STATUS_ACTIVE);
+        return $this;
+    }
+
+    /**
+     * Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper).
+     */
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     public function getSettings(): ?array
@@ -408,9 +667,11 @@ class Tenant
     {
         if ($parent instanceof Tenant) {
             if ($parent === $this) {
+                // @intentional-assertion: programmer-error guard — cycle detection in entity graph
                 throw new \LogicException('A tenant cannot be its own parent');
             }
             if ($parent->isChildOf($this)) {
+                // @intentional-assertion: programmer-error guard — cycle detection in entity graph
                 throw new \LogicException(sprintf(
                     'Setting parent would create a cycle: tenant "%s" is already a descendant of "%s"',
                     $parent->getCode() ?? '?',
@@ -552,4 +813,66 @@ class Tenant
 
         return $ancestors;
     }
+
+    // Tier-1 Compliance Settings — getters/setters
+
+    public function getLocale(): ?string { return $this->locale; }
+    public function setLocale(?string $locale): static { $this->locale = $locale; return $this; }
+
+    public function getTimezone(): ?string { return $this->timezone; }
+    public function setTimezone(?string $timezone): static { $this->timezone = $timezone; return $this; }
+
+    public function getFinancialYearStartMonth(): ?int { return $this->financialYearStartMonth; }
+    public function setFinancialYearStartMonth(?int $month): static { $this->financialYearStartMonth = $month; return $this; }
+
+    public function getTlpDefault(): ?string { return $this->tlpDefault; }
+    public function setTlpDefault(?string $tlp): static { $this->tlpDefault = $tlp; return $this; }
+
+    public function getDpoContactName(): ?string { return $this->dpoContactName; }
+    public function setDpoContactName(?string $name): static { $this->dpoContactName = $name; return $this; }
+
+    public function getDpoContactEmail(): ?string { return $this->dpoContactEmail; }
+    public function setDpoContactEmail(?string $email): static { $this->dpoContactEmail = $email; return $this; }
+
+    /** @return array<string, array{name: string, email: string, phone?: string, scope?: string}>|null */
+    public function getSupervisoryAuthorities(): ?array { return $this->supervisoryAuthorities; }
+
+    /** @param array<string, array{name: string, email: string, phone?: string, scope?: string}>|null $authorities */
+    public function setSupervisoryAuthorities(?array $authorities): static { $this->supervisoryAuthorities = $authorities; return $this; }
+
+    /** @return array<string, array{years: int, basis?: string}>|null */
+    public function getDataRetentionPolicies(): ?array { return $this->dataRetentionPolicies; }
+
+    /** @param array<string, array{years: int, basis?: string}>|null $policies */
+    public function setDataRetentionPolicies(?array $policies): static { $this->dataRetentionPolicies = $policies; return $this; }
+
+    public function getRiskMethodology(): ?string { return $this->riskMethodology; }
+    public function setRiskMethodology(?string $m): static { $this->riskMethodology = $m; return $this; }
+
+    public function getRiskMatrixSize(): ?int { return $this->riskMatrixSize; }
+    public function setRiskMatrixSize(?int $size): static { $this->riskMatrixSize = $size; return $this; }
+
+    public function getWizardMaturityTarget(): ?string { return $this->wizardMaturityTarget; }
+    public function setWizardMaturityTarget(?string $target): static { $this->wizardMaturityTarget = $target; return $this; }
+
+    /** @return array<string, array{email?: bool, slack?: bool, teams?: bool}>|null */
+    public function getNotificationPreferences(): ?array { return $this->notificationPreferences; }
+
+    /** @param array<string, array{email?: bool, slack?: bool, teams?: bool}>|null $prefs */
+    public function setNotificationPreferences(?array $prefs): static { $this->notificationPreferences = $prefs; return $this; }
+
+    /** @return array<string, array{url?: string, contact?: string, auth_type?: string}>|null */
+    public function getCsirtEndpoints(): ?array { return $this->csirtEndpoints; }
+
+    /** @param array<string, array{url?: string, contact?: string, auth_type?: string}>|null $endpoints */
+    public function setCsirtEndpoints(?array $endpoints): static { $this->csirtEndpoints = $endpoints; return $this; }
+
+    /** @return array<int, array{date: string, primary?: string, deputy?: string}>|null */
+    public function getCrisisTeamOnCall(): ?array { return $this->crisisTeamOnCall; }
+
+    /** @param array<int, array{date: string, primary?: string, deputy?: string}>|null $rotation */
+    public function setCrisisTeamOnCall(?array $rotation): static { $this->crisisTeamOnCall = $rotation; return $this; }
+
+    public function getApiRateLimitPerMinute(): ?int { return $this->apiRateLimitPerMinute; }
+    public function setApiRateLimitPerMinute(?int $limit): static { $this->apiRateLimitPerMinute = $limit; return $this; }
 }

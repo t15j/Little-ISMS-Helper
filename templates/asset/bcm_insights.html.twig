@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% trans_default_domain 'bcm' %}
 
@@ -15,22 +16,20 @@
         ]
     } %}
 
-    <div class="page-header">
-        <div>
-            <h1><i class="fa-icon fa-icon--nav-bar-chart" aria-hidden="true"></i> {{ 'bcm.title.asset_insights'|trans({}, 'bcm') }}</h1>
-            <p class="text-muted">{{ asset.name }}</p>
-        </div>
-        <div class="button-group">
-            <a href="{{ path('app_asset_show', {id: asset.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> {{ 'common.back'|trans({}, 'messages') }}
-            </a>
-            {% if canEdit %}
-            <a href="{{ path('app_asset_edit', {id: asset.id}) }}" class="fa-cyber-btn fa-cyber-btn--primary">
-                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'common.edit'|trans({}, 'messages') }}
-            </a>
-            {% endif %}
-        </div>
-    </div>
+    {% set _header_actions = [
+        { label: 'common.back'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_asset_show', {id: asset.id}) }
+    ] %}
+    {% if canEdit %}
+        {% set _header_actions = _header_actions|merge([
+            { label: 'common.edit'|trans({}, 'messages'), variant: 'primary', icon: 'ui-edit', href: path('app_asset_edit', {id: asset.id}) }
+        ]) %}
+    {% endif %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-bar-chart', label: 'nav.bcm'|trans({}, 'nav') },
+        title: 'bcm.title.asset_insights'|trans({}, 'bcm'),
+        subtitle: asset.name,
+        actions: _header_actions
+    }) }}
 
     {# Protection Requirement Analysis #}
     {% if analysis %}
@@ -51,7 +50,7 @@
                                 <div class="fw-bold fs-6 mb-2">{{ 'bcm.field.confidentiality'|trans({}, 'bcm') }}</div>
                                 {% set confLevel = analysis.confidentiality.level|default('normal') %}
                                 {% set levelColors = {'very_high': 'danger', 'high': 'warning', 'normal': 'info', 'low': 'secondary'} %}
-                                {% include '_components/_badge.html.twig' with { variant: levelColors[confLevel]|default('secondary'), class: 'fs-5', content: ('bcm.level.' ~ confLevel)|trans({}, 'bcm') } %}
+                                {% include '_components/_badge.html.twig' with { variant: levelColors[confLevel]|default('secondary'), class: 'fa-status-pill--lg', content: ('bcm.level.' ~ confLevel)|trans({}, 'bcm') } %}
                             </div>
                         {% endblock %}
                     {% endembed %}
@@ -65,7 +64,7 @@
                             <div class="text-center">
                                 <div class="fw-bold fs-6 mb-2">{{ 'bcm.field.integrity'|trans({}, 'bcm') }}</div>
                                 {% set intLevel = analysis.integrity.level|default('normal') %}
-                                {% include '_components/_badge.html.twig' with { variant: levelColors[intLevel]|default('secondary'), class: 'fs-5', content: ('bcm.level.' ~ intLevel)|trans({}, 'bcm') } %}
+                                {% include '_components/_badge.html.twig' with { variant: levelColors[intLevel]|default('secondary'), class: 'fa-status-pill--lg', content: ('bcm.level.' ~ intLevel)|trans({}, 'bcm') } %}
                             </div>
                         {% endblock %}
                     {% endembed %}
@@ -79,7 +78,7 @@
                             <div class="text-center">
                                 <div class="fw-bold fs-6 mb-2">{{ 'bcm.field.availability'|trans({}, 'bcm') }}</div>
                                 {% set availLevel = analysis.availability.level|default('normal') %}
-                                {% include '_components/_badge.html.twig' with { variant: levelColors[availLevel]|default('secondary'), class: 'fs-5', content: ('bcm.level.' ~ availLevel)|trans({}, 'bcm') } %}
+                                {% include '_components/_badge.html.twig' with { variant: levelColors[availLevel]|default('secondary'), class: 'fa-status-pill--lg', content: ('bcm.level.' ~ availLevel)|trans({}, 'bcm') } %}
                             </div>
                         {% endblock %}
                     {% endembed %}
@@ -103,42 +102,40 @@
         {% endblock %}
         {% block card_body %}
             {% if processes|length > 0 %}
-            <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
+            {% embed '_components/_fa_table.html.twig' %}
+                {% block table_head %}
                     <tr>
-                        <th scope="col">{{ 'bcm.field.process_name'|trans({}, 'bcm') }}</th>
-                        <th scope="col">{{ 'bcm.field.criticality'|trans({}, 'bcm') }}</th>
-                        <th scope="col">{{ 'bcm.field.rto'|trans({}, 'bcm') }}</th>
-                        <th scope="col">{{ 'bcm.field.rpo'|trans({}, 'bcm') }}</th>
-                        <th scope="col" class="text-center">{{ 'common.actions'|trans({}, 'messages') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'bcm.field.process_name'|trans({}, 'bcm') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'bcm.field.criticality'|trans({}, 'bcm') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'bcm.field.rto'|trans({}, 'bcm') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'bcm.field.rpo'|trans({}, 'bcm') }}</th>
+                        <th scope="col" class="fa-table__th fa-table__th--center">{{ 'common.actions'|trans({}, 'messages') }}</th>
                     </tr>
-                </thead>
-                <tbody>
+                {% endblock %}
+                {% block table_body %}
                     {% for process in processes %}
-                    <tr>
-                        <td>
+                    <tr class="fa-table__row">
+                        <td class="fa-table__cell">
                             <strong>{{ process.name }}</strong>
                             {% if process.description %}
                             <br><small class="text-muted">{{ process.description|slice(0, 100) }}{% if process.description|length > 100 %}...{% endif %}</small>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="fa-table__cell">
                             {% set critColors = {'critical': 'danger', 'high': 'warning', 'medium': 'info', 'low': 'secondary'} %}
                             {% include '_components/_badge.html.twig' with { variant: critColors[process.criticality]|default('secondary'), content: ('bcm.criticality.' ~ process.criticality)|trans({}, 'bcm') } %}
                         </td>
-                        <td>{{ process.rto|default('-') }}h</td>
-                        <td>{{ process.rpo|default('-') }}h</td>
-                        <td class="text-center">
+                        <td class="fa-table__cell">{{ process.rto|default('-') }}h</td>
+                        <td class="fa-table__cell">{{ process.rpo|default('-') }}h</td>
+                        <td class="fa-table__cell fa-table__cell--center">
                             <a href="{{ path('app_business_process_show', {id: process.id}) }}" class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost">
                                 <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i>
                             </a>
                         </td>
                     </tr>
                     {% endfor %}
-                </tbody>
-            </table>
-            </div>
+                {% endblock %}
+            {% endembed %}
             {% else %}
             <div class="text-center text-muted py-4">
                 <i class="fa-icon fa-icon--nav-process fs-1 d-block mb-2" aria-hidden="true"></i>

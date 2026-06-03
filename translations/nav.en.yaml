@@ -2,10 +2,15 @@ nav:
     home: Home
     dashboard: Dashboard
     my_profile: 'My Profile'
+    my_day: 'My Day'
+    activity: 'Activity'
+    tenant_info: 'Organisation information'
     context: 'ISMS Context'
     analytics: Analytics
+    fte_tracking: 'FTE Tracking'
     interested_parties: 'Interested Parties'
-    soa: SoA
+    soa: 'SoA (Statement of Applicability)'
+    effectiveness_monitor: 'Effectiveness Monitor'
     assets: Assets
     suppliers: Suppliers
     risks: Risks
@@ -17,9 +22,12 @@ nav:
     compliance_frameworks: 'Compliance Frameworks'
     framework_dashboard: 'Framework Dashboard'
     nis2: 'NIS2 Assessment'
+    nis2_art21_requirements: 'Art. 21(2) Measures Catalogue'
     bsi_check: 'IT-Grundschutz Check'
     prototype_protection: 'Prototype Protection (TISAX)'
+    tisax_import: 'Start TISAX Self-Assessment'
     compliance_wizard: 'Compliance Wizard'
+    policy_wizard: 'Policy Wizard'
     industry_baselines: 'Industry Baselines'
     group_report: 'Group Reports'
     management_reports: 'Management Reports'
@@ -52,6 +60,7 @@ nav:
     compare: Compare
     mapping_hub: 'Mapping Hub'
     mapping_quality: 'Mapping Quality'
+    mapping_tour: 'Start mapping tour'
     mris_kpis: 'MRIS KPIs'
     mris_baselines: 'MRIS Baselines'
     mris_glossar: 'MRIS Glossary'
@@ -64,14 +73,31 @@ nav:
     risk_treatment_plans: 'Treatment Plans'
     crisis_team: 'Crisis Team'
     workflows: Workflows
+    workflow_definitions: 'Workflow Definitions'
+    workflow_overlay: 'Workflow Overlay Editor'
     training: Training
     management_review: 'Management Review'
     admin_portal: 'Admin Portal'
     privacy_hub: 'Privacy Hub'
-    vvt: 'RoPA (Art. 30)'
-    dpia: 'DPIA (Art. 35)'
+    vvt: 'RoPA – Records of Processing Activities (Art. 30)'
+    dpia: 'DPIA – Data Protection Impact Assessment (Art. 35)'
     data_breaches: 'Data Breaches (Art. 33/34)'
     consents: 'Consents (Art. 7)'
+    # Audit-V3 ME-1..ME-12: Module discoverability fix.
+    consent: 'Consents (Art. 7)'
+    data_subject_request: 'Data Subject Requests (Art. 15-22)'
+    audit_programs: 'Audit Programmes'
+    audit_findings: 'Audit Findings'
+    audit_freeze: 'Audit Freeze (SoA snapshot)'
+    audit_package: 'Audit Package (framework export)'
+    corrective_actions: 'Corrective Actions (Cl. 10.1)'
+    threat_intelligence: 'Threat Intelligence (A.5.7)'
+    policy_ack_inbox: 'My Policy Acknowledgements'
+    four_eyes_inbox: 'Four-Eyes Inbox'
+    alva_inbox: 'Alva Inbox'
+    dora_compliance: 'DORA Compliance Dashboard'
+    scheduled_reports: 'Scheduled Reports'
+    report_builder: 'Report Builder'
     toggle_menu: 'Toggle Menu'
     main_navigation: 'Main Navigation'
 
@@ -87,6 +113,13 @@ nav:
             compliance: Compliance
             admin: Administration
             help: 'Help & Resources'
+            # Aurora v4 Welle 2 — new categories (2026-05-27)
+            cockpit: 'My Cockpit'
+            portfolio: Portfolio
+            isms_foundation: 'ISMS Foundation'
+            daily_work: 'Daily Work'
+            compliance_audits: 'Compliance & Audits'
+            help_onboarding: 'Help & Onboarding'
 
         section:
             overview: Overview
@@ -105,6 +138,33 @@ nav:
             system: 'System Administration'
             help_resources: 'Help & Resources'
             shortcuts: Shortcuts
+            # Audit-V3 ME-*: Discovery sections.
+            my_inbox: 'My Inbox'
+            reports: 'Reports & Exports'
+            # V3 B7 / KL-2: Compliance-Panel sub-sections
+            frameworks_mapping: 'Frameworks & Mapping'
+            wizards: 'Wizards & Assistants'
+            specialized_tools: 'DORA / NIS2 / MRIS / AI'
+            # V3 W2-H2: Persona dashboards (Compliance-Manager dashboard)
+            persona_dashboards: 'Persona Dashboards'
+            # Aurora v4 Welle 2 — new sections (2026-05-27)
+            quick_actions: 'Quick Actions'
+            cockpit_personas: 'Persona Overview'
+            coverage: 'Framework Coverage'
+            eu_regulatory: 'EU Regulation & GDPR'
+            bcm_continuity: 'Business Continuity'
+            audits_reviews: 'Audits & Reviews'
+            onboarding: 'Getting Started'
+            learning_paths: 'Learning Paths'
+            reference: Reference
+
+        dashboard:
+            compliance_manager: 'Compliance Manager Dashboard'
+            ciso: 'CISO Dashboard'
+            risk_manager: 'Risk Manager Dashboard'
+            auditor: 'Auditor Dashboard'
+            board: 'Board Dashboard'
+            dpo: 'DPO Dashboard'
 
         help:
             iso9001_bridge: 'ISO 9001 → 27001 Bridge'
@@ -113,12 +173,17 @@ nav:
             mris_tour: 'Start MRIS tour'
 
         desc:
+            # Wave 5 — Prominent-Hero short-descriptions
+            my_day_short: 'Today''s tasks and deadlines'
+            activity_short: 'Recent system activity'
             home: 'Overview and quick access'
             dashboard: 'Key metrics and insights'
             analytics: 'Reports and analytics'
+            fte_tracking: 'FTE savings from SSO JIT, Bulk-Import, and Evidence reuse'
             context: 'Organization context and scope'
             interested_parties: 'Stakeholders and requirements'
             soa: 'Statement of Applicability (ISO 27001 Annex A)'
+            effectiveness_monitor: 'Track control effectiveness cadence (ISO 27001 §9.1 / A.5.35/5.36)'
             objectives: 'ISMS objectives and targets'
             assets: 'IT and information assets inventory'
             suppliers: 'Third-party suppliers and vendors'
@@ -138,16 +203,25 @@ nav:
             documents: 'Policies, procedures, and documentation'
             change_requests: 'Change management workflow'
             workflows: 'Automated business workflows'
+            workflow_definitions: 'Manage workflow templates and steps'
+            workflow_overlay: 'Per-tenant workflow step overrides for regulatory and lifecycle configurations'
             incidents: 'Security incident management'
             vulnerabilities: 'Vulnerability tracking'
             patches: 'Patch management system'
             audits: 'Internal and external audits'
             training: 'Security awareness training'
             management_reviews: 'Management review meetings'
+            compliance_manager_dashboard: 'Coverage heatmap, open findings, audit plan, doc approvals'
+            ciso_dashboard: 'Risk, incident and control overview for CISOs'
+            risk_manager_dashboard: 'Top risks, treatments, acceptances, KRI trends'
+            auditor_dashboard: 'Findings, evidence, audit plan, sample tracking'
+            board_dashboard: 'Strategic risks, ROI, compliance status for executives'
+            dpo_dashboard: 'Data breaches (Art. 33), DPIA status (Art. 35), processing register'
             compliance_frameworks: 'Multi-framework management'
             framework_dashboard: 'Cross-framework overview'
             mapping_hub: 'Central entry: wizard, seeds, quality, transitive coverage'
             mapping_quality: 'Cross-framework mapping quality analysis'
+            mapping_tour: 'Guided tour: mapping, inheritance, coverage & quality in 6 steps'
             mris_kpis: 'Mythos-relevant KPIs (MRIS v1.5 Ch. 10.6)'
             mris_baselines: 'Industry baselines (KRITIS, Finance, Automotive, SaaS) — target maturity per MHC'
             mris_glossar: 'Glossary with terms, 9001 analogies and standards references'
@@ -155,9 +229,12 @@ nav:
             ai_agents: 'AI Agent Inventory (EU AI Act + ISO 42001 + MHC-13)'
             data_reuse: 'Top-reused documents and suppliers across all frameworks'
             nis2: 'NIS2 Directive assessment'
+            nis2_art21_requirements: 'Art. 21(2) measures — 10 mandatory cybersecurity obligations'
             bsi_check: 'BSI IT-Grundschutz Soll/Ist per Baustein with MUSS/SOLLTE/KANN weighting'
             prototype_protection: 'TISAX Chapter 8 — prototype, test-vehicle, events & shoots protection'
+            tisax_import: 'Upload VDA-ISA workbook and score Reifegrad 0–5 (ENX licence required)'
             compliance_wizard: 'Guided compliance assessment'
+            policy_wizard: 'ISO 27001 / DORA / BSI / BCM / GDPR — generate mandatory policies from a 7-step wizard'
             industry_baselines: 'Per-industry starter packs — do not bootstrap from zero'
             group_report: 'Corporate tree + NIS2 registration matrix (Group-CISO)'
             management_reports: 'Board One-Pager, Executive Summary, Risk/BCM/Compliance reports (PDF + Excel)'
@@ -171,6 +248,70 @@ nav:
             glossary: 'ISMS terms explained — from Asset to Vulnerability'
             keyboard_shortcuts: 'All keyboard shortcuts at a glance'
             mris_tour: 'Eight-stop walkthrough of the MRIS module (~6 min, skip anytime)'
+            # Audit-V3 ME-1..ME-12: Module discoverability fix — descriptions.
+            consent: 'Consents for personal data processing (GDPR Art. 7)'
+            data_subject_request: 'Subject access, deletion and rectification requests (GDPR Art. 15-22)'
+            audit_programs: 'Manage ISO 19011 §5.4 annual internal audit programmes'
+            audit_findings: 'Structured audit findings incl. severity and status'
+            audit_freeze: 'Freeze SoA snapshot for audits (SHA-256 sealed)'
+            audit_package: 'Export framework-specific audit package'
+            corrective_actions: 'Corrective and preventive actions (ISO 27001 Cl. 10.1)'
+            threat_intelligence: 'Capture threat intel and link to risks (A.5.7)'
+            policy_ack_inbox: 'Your pending policy acknowledgements'
+            four_eyes_inbox: 'Segregation of duties — your pending approvals'
+            alva_inbox: 'All active Alva tips for your tenant'
+            dora_compliance: 'EU-DORA overview for ICT risk and third-party management'
+            scheduled_reports: 'Schedule recurring report dispatch (PDF/CSV)'
+            report_builder: 'Compose custom reports from the widget library'
+            evidence_reviewer_queue: 'Review evidence documents and mark as re-verified (ISO 27001 Cl. 7.5.3)'
+
+        # Wave 5 — Flyout titles (2026-05-28)
+        flyout:
+            dashboard:
+                title: 'Dashboard & Reports'
+            isms_core:
+                title: 'ISMS Core & Foundations'
+            assets_risk:
+                title: 'Assets, Risk & Resources'
+            bcm:
+                title: 'Business Continuity Management'
+            privacy:
+                title: 'Privacy & GDPR'
+            cockpit:
+                title: 'Persona Cockpit'
+            portfolio:
+                title: 'Portfolio & Group'
+            operations:
+                title: 'Daily Work & Operations'
+            compliance:
+                title: 'Compliance & Audits'
+            admin:
+                title: 'Administration & System'
+            help:
+                title: 'Help, Resources & Onboarding'
+
+        # Wave 5 — Sidebar bottom (Tenant-Strip + Density-Toggle)
+        close: 'Close flyout'
+        tenant:
+            organisation: 'Organisation'
+            user: 'User'
+        density:
+            label: 'Menu density'
+            basic_short: 'BAS'
+            standard_short: 'STD'
+            expert_short: 'EXP'
+            basic: 'Basic — essential items only'
+            standard: 'Standard — balanced view'
+            expert: 'Expert — all items incl. maturity scores'
+
+        # Aurora v4 Phase 2 — Onboarding Banner (2026-05-27)
+        onboarding:
+            title: 'New to information security?'
+            body: 'Start with the guided tour or check your open tasks in "My Day".'
+            cta_tour: 'Start guided tour'
+            cta_checklist: 'Open My Day'
+
+    evidence_reviewer_queue: 'Evidence Reviewer Queue'
 
     section:
         isms_core: 'ISMS Core'

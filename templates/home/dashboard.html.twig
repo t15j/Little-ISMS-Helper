@@ -1,5 +1,7 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_progress.html.twig' as _fa_progress %}
+{% import '_components/_fa_skel.html.twig' as _fa_skel %}
 
 {% block title %}Dashboard{% endblock %}
 
@@ -37,14 +39,14 @@
             {% include '_components/_page_header.html.twig' with {
                 title: 'dashboard.title'|trans({}, 'dashboard'),
                 subtitle: 'dashboard.subtitle'|trans({}, 'dashboard'),
-                icon: 'bi-speedometer2'
+                icon: 'nav-dashboard'
             } %}
         </div>
         <div class="btn-group">
             {# Role-Based Dashboard Switcher #}
             <div class="dropdown me-2">
-                <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="bi bi-grid" aria-hidden="true"></i> {{ 'dashboard.action.role_dashboards'|trans({}, 'dashboard') }}
+                <button class="fa-cyber-btn fa-cyber-btn--ghost dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fa-icon fa-icon--nav-grid" aria-hidden="true"></i> {{ 'dashboard.action.role_dashboards'|trans({}, 'dashboard') }}
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     {% if is_granted('ROLE_MANAGER') %}
@@ -60,7 +62,7 @@
                     </li>
                     <li>
                         <a class="dropdown-item" href="{{ path('app_dashboard_board') }}">
-                            <i class="bi bi-briefcase me-2" aria-hidden="true"></i>{{ 'dashboard.role.board'|trans({}, 'dashboard') }}
+                            <i class="fa-icon me-2 fa-icon--nav-process" aria-hidden="true"></i>{{ 'dashboard.role.board'|trans({}, 'dashboard') }}
                         </a>
                     </li>
                     {% endif %}
@@ -85,14 +87,14 @@
 
     {# Urgent Tasks Alert Banner (ported from Welcome page) #}
     {% if total_urgent_count|default(0) > 0 %}
-    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'danger', class: 'mb-4' } } %}
+    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'danger', class: 'mb-4 mt-3' } } %}
         {% block alert_body %}
             <div class="d-flex align-items-center">
                 <strong>{{ total_urgent_count }} {{ 'dashboard.urgent_items'|trans({}, 'dashboard') }}</strong>
                 <div class="ms-auto">
                     {% for task in urgent_tasks|default([]) %}
                         <a href="{{ task.url }}" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm ms-1">
-                            {{ task.label }} <span class="badge bg-danger fa-status-pill fa-status-pill--danger">{{ task.count }}</span>
+                            {{ task.label }} <span class="fa-status-pill fa-status-pill--danger">{{ task.count }}</span>
                         </a>
                     {% endfor %}
                 </div>
@@ -109,7 +111,7 @@
             {% block alert_body %}
                 <div class="d-flex align-items-center">
                     <div class="flex-shrink-0 me-3">
-                        <i class="fa-icon {% if total_overdue > 0 %}fa-icon--status-warning{% else %}bi-clock-fill{% endif %} fa-glyph-size-md" aria-hidden="true"></i>
+                        <i class="fa-icon {% if total_overdue > 0 %}fa-icon--status-warning{% else %}{% endif %} fa-glyph-size-md fa-icon--ui-clock" aria-hidden="true"></i>
                     </div>
                     <div class="flex-grow-1">
                         <div class="fa-alert__title">
@@ -148,7 +150,7 @@
                 'bg-primary',
                 'dashboard.stats.registered_assets'|trans({}, 'dashboard'),
                 stats.assets_total|default(0),
-                'bi bi-arrow-up',
+                'fa-icon fa-icon--util-arrow-up',
                 stats.assets_critical|default(0) ~ ' ' ~ 'dashboard.stats.critical'|trans({}, 'dashboard'),
                 'positive'
             ) }}
@@ -170,7 +172,7 @@
                 'bg-warning',
                 'dashboard.stats.identified_risks'|trans({}, 'dashboard'),
                 stats.risks_total|default(0),
-                'bi bi-arrow-up',
+                'fa-icon fa-icon--util-arrow-up',
                 stats.risks_high|default(0) ~ ' ' ~ 'dashboard.stats.high'|trans({}, 'dashboard'),
                 'negative'
             ) }}
@@ -210,11 +212,11 @@
         <div class="col-lg-3 col-md-6">
             <a href="{{ path('app_incident_index') }}" class="text-decoration-none">
             {{ cards.stat_card(
-                'bi bi-exclamation-circle',
+                'fa-icon fa-icon--status-warning',
                 'bg-danger',
                 'dashboard.stats.open_incidents'|trans({}, 'dashboard'),
                 stats.incidents_open|default(0),
-                'bi bi-clock-history',
+                'fa-icon fa-icon--ui-clock',
                 'dashboard.stats.in_progress'|trans({}, 'dashboard'),
                 ''
             ) }}
@@ -249,7 +251,7 @@
                                 <div class="small text-muted">{{ 'dashboard.reuse_fte.subtitle'|trans({}, 'dashboard') }}</div>
                             </div>
                             <div class="text-end">
-                                <span class="badge bg-success-subtle text-success fs-6 fa-status-pill fa-status-pill--success">
+                                <span class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm">
                                     <i class="fa-icon fa-icon--nav-bar-chart" aria-hidden="true"></i>
                                     {{ 'dashboard.reuse_fte.cta'|trans({}, 'dashboard') }}
                                 </span>
@@ -266,8 +268,12 @@
     <div class="row mb-4">
         <div class="col-12">
             <div data-controller="skeleton" data-skeleton-duration-value="350">
-                <div data-skeleton-target="skeleton">
-                    {% include '_components/_skeleton.html.twig' with { type: 'kpi-grid', count: 6 } %}
+                <div data-skeleton-target="skeleton" aria-busy="true">
+                    <div class="row g-3">
+                        {% for i in 1..6 %}
+                            <div class="col-md-2">{{ _fa_skel.render({ variant: 'card' }) }}</div>
+                        {% endfor %}
+                    </div>
                 </div>
                 <div data-skeleton-target="content" class="hidden">
                     {% include 'home/_management_kpis_widget.html.twig' with {
@@ -319,7 +325,11 @@
                         {{ 'dashboard.chart.risk_distribution'|trans({}, 'dashboard') }}
                     </h3>
                     <div class="widget-actions">
-                        <button class="widget-action" title="{{ 'common.refresh'|trans({}, 'messages') }}" aria-label="{{ 'common.refresh'|trans({}, 'messages') }}">
+                        <button type="button" class="widget-action"
+                                data-controller="ui-actions"
+                                data-action="click->ui-actions#reload"
+                                title="{{ 'common.refresh'|trans({}, 'messages') }}"
+                                aria-label="{{ 'common.refresh'|trans({}, 'messages') }}">
                             <i class="fa-icon fa-icon--ui-refresh" aria-hidden="true"></i>
                         </button>
                     </div>
@@ -383,7 +393,8 @@
                                 <div class="d-flex justify-content-between align-items-start">
                                     <div class="flex-grow-1">
                                         <a href="{{ task.url }}" class="text-decoration-none">
-                                            <i class="bi {{ task.icon }} text-{{ task.priority }} me-1" aria-hidden="true"></i>
+                                            {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+                                            <i class="fa-icon fa-icon--{{ (task.icon starts with 'bi-') ? task.icon[3:] : task.icon }} text-{{ task.priority }} me-1" aria-hidden="true"></i>
                                             {{ task.title|length > 40 ? task.title|slice(0, 40) ~ '...' : task.title }}
                                         </a>
                                         <div class="small text-muted">
@@ -555,13 +566,7 @@
                                         {% set daysOverdue = plan.daysOverdue ?? 0 %}
                                         <span class="text-danger">({{ daysOverdue }} {{ 'dashboard.overdue_treatment_plans.days_overdue'|trans({}, 'dashboard') }})</span>
                                     </div>
-                                    <div class="progress progress-h-4 mt-1">
-                                        <div class="progress-bar bg-danger" role="progressbar"
-                                             style="width: {{ plan.completionPercentage }}%"
-                                             aria-valuenow="{{ plan.completionPercentage }}"
-                                             aria-valuemin="0"
-                                             aria-valuemax="100"></div>
-                                    </div>
+                                    {{ _fa_progress.render({ value: plan.completionPercentage, tone: 'danger', class: 'mt-1' }) }}
                                 </div>
                                 {% include '_components/_badge.html.twig' with {
                                     variant: plan.priority == 'critical' ? 'danger' : (plan.priority == 'high' ? 'warning' : 'secondary'),
@@ -614,13 +619,7 @@
                                         {% set daysRemaining = plan.daysUntilTarget ?? 0 %}
                                         <span>({{ daysRemaining }} {{ 'dashboard.approaching_treatment_plans.days_remaining'|trans({}, 'dashboard') }})</span>
                                     </div>
-                                    <div class="progress progress-h-4 mt-1">
-                                        <div class="progress-bar" role="progressbar"
-                                             style="width: {{ plan.completionPercentage }}%"
-                                             aria-valuenow="{{ plan.completionPercentage }}"
-                                             aria-valuemin="0"
-                                             aria-valuemax="100"></div>
-                                    </div>
+                                    {{ _fa_progress.render({ value: plan.completionPercentage, class: 'mt-1' }) }}
                                 </div>
                             </div>
                         </li>
@@ -640,9 +639,9 @@
                         {{ 'dashboard.activity_feed.title'|trans({}, 'dashboard') }}
                     </h3>
                     <div class="widget-actions">
-                        <button class="widget-action" title="{{ 'common.view_all'|trans({}, 'messages') }}" aria-label="{{ 'common.view_all'|trans({}, 'messages') }}">
-                            <i class="bi bi-arrows-fullscreen" aria-hidden="true"></i>
-                        </button>
+                        <a href="{{ path('app_audit_log_index') }}" class="widget-action" title="{{ 'common.view_all'|trans({}, 'messages') }}" aria-label="{{ 'common.view_all'|trans({}, 'messages') }}">
+                            <i class="fa-icon fa-icon--util-zoom-in" aria-hidden="true"></i>
+                        </a>
                     </div>
                 </div>
                 {% include '_components/_activity_feed.html.twig' with {

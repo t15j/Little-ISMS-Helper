@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Controller\Trait\LocalizedFlashTrait;
 use App\Service\TenantContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * Share Target Controller
@@ -22,19 +24,32 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  */
 class ShareController extends AbstractController
 {
+    use LocalizedFlashTrait;
+
     public function __construct(
         private readonly TenantContext $tenantContext,
         private readonly LoggerInterface $logger,
         #[Autowire('%kernel.project_dir%')]
         private readonly string $projectDir,
+        private readonly TranslatorInterface $translator,
     ) {
+    }
+
+    protected function getFlashDomain(): string
+    {
+        return 'messages';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
     }
 
     /**
      * Handle shared content from Web Share Target API
      */
     #[Route('/share', name: 'app_share_target', methods: ['GET', 'POST'])]
-    #[IsGranted('IS_AUTHENTICATED_FULLY')]
+    #[IsGranted('IS_AUTHENTICATED_REMEMBERED')]
     public function handleShare(Request $request): Response
     {
         $title = $request->request->get('title') ?? $request->query->get('title', '');
@@ -82,9 +97,14 @@ class ShareController extends AbstractController
      * Process the shared content into a specific entity
      */
     #[Route('/share/process', name: 'app_share_process', methods: ['POST'])]
-    #[IsGranted('IS_AUTHENTICATED_FULLY')]
+    #[IsGranted('IS_AUTHENTICATED_REMEMBERED')]
     public function processShare(Request $request): Response
     {
+        if (!$this->isCsrfTokenValid('share_process', $request->request->get('_token'))) {
+            $this->flashError('common.csrf_error');
+            return $this->redirectToRoute('app_share_target', ['_locale' => $request->getLocale()]);
+        }
+
         $action = $request->request->get('action');
         $title = $request->request->get('title', '');
         $text = $request->request->get('text', '');
@@ -116,13 +136,13 @@ class ShareController extends AbstractController
 
             case 'note':
                 // Store as a quick note (could be implemented as a simple entity)
-                $this->addFlash('success', 'Note saved successfully');
+                $this->flashSuccess('share.success.note_saved');
                 return $this->redirectToRoute('app_dashboard', [
                     '_locale' => $request->getLocale(),
                 ]);
 
             default:
-                $this->addFlash('warning', 'Unknown action');
+                $this->flashWarning('share.warning.unknown_action');
                 return $this->redirectToRoute('app_dashboard', [
                     '_locale' => $request->getLocale(),
                 ]);
@@ -160,7 +180,7 @@ class ShareController extends AbstractController
                 [
                     'id' => 'note',
                     'label' => 'share.action.save_note',
-                    'icon' => 'bi-sticky',
+                    'icon' => 'nav-clipboard-check',
                     'description' => 'share.action.note_desc',
                 ],
             ],
@@ -176,7 +196,7 @@ class ShareController extends AbstractController
                 array_unshift($context['actions'], [
                     'id' => 'incident',
                     'label' => 'share.action.create_incident',
-                    'icon' => 'bi-exclamation-triangle',
+                    'icon' => 'status-warning',
                     'description' => 'share.action.incident_desc',
                     'highlight' => true,
                 ]);
@@ -192,7 +212,7 @@ class ShareController extends AbstractController
                 array_unshift($context['actions'], [
                     'id' => 'risk',
                     'label' => 'share.action.create_risk',
-                    'icon' => 'bi-shield-exclamation',
+                    'icon' => 'nav-shield-alert',
                     'description' => 'share.action.risk_desc',
                     'highlight' => true,
                 ]);
@@ -205,7 +225,7 @@ class ShareController extends AbstractController
             $context['actions'][] = [
                 'id' => 'document',
                 'label' => 'share.action.create_document',
-                'icon' => 'bi-file-earmark-text',
+                'icon' => 'nav-file-earmark-text',
                 'description' => 'share.action.document_desc',
             ];
         }
@@ -216,7 +236,7 @@ class ShareController extends AbstractController
             $context['actions'][] = [
                 'id' => 'document',
                 'label' => 'share.action.create_document',
-                'icon' => 'bi-file-earmark-text',
+                'icon' => 'nav-file-earmark-text',
                 'description' => 'share.action.document_desc',
             ];
         }

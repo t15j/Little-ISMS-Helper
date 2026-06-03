@@ -1,52 +1,63 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% trans_default_domain 'soa' %}
+{% import '_components/_status_pill.html.twig' as pill %}
 
 {% block title %}{{ control.controlId }} - {{ control.name }} - Little ISMS Helper{% endblock %}
 
 {% block body %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 <div class="container">
+    {# M-4 — module-gating: SoA / Control Management (ISO 27001 Annex A) #}
+    {% if not is_module_active('controls') %}
+        {{ _fa_alert.render({
+            variant: 'info',
+            icon: 'nav-shield-alert',
+            body: 'common.module_not_active'|trans({'%module%': 'Controls / SoA'}, 'messages')
+        }) }}
+    {% else %}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
             { label: 'nav.soa'|trans({}, 'nav'), url: path('app_soa_index') },
             { label: control.controlId ~ ': ' ~ control.name }
         ]
     } %}
-</div>
 
-<div class="page-header">
-    <div>
-        <h1>{{ control.controlId }}: {{ control.name }}</h1>
-        <div class="mt-2">
-            {% include '_components/_badge.html.twig' with { variant: 'info', content: ('soa.category.' ~ control.category)|trans({}, 'soa') } %}
-            {% set mrisLocale = app.request.locale|default('de') %}
-            {% if control.mythosResilience == 'standfest' %}
-                <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.standfest', 'tooltip', mrisLocale) }}">
-                    {% include '_components/_badge.html.twig' with { variant: 'success', content: 'soa.mris.standfest'|trans({}, 'soa') } %}
-                </span>
-            {% elseif control.mythosResilience == 'degradiert' %}
-                <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.partially_degraded', 'tooltip', mrisLocale) }}">
-                    {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'soa.mris.degradiert'|trans({}, 'soa') } %}
-                </span>
-            {% elseif control.mythosResilience == 'reibung' %}
-                <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.pure_friction', 'tooltip', mrisLocale) }}">
-                    {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'soa.mris.reibung'|trans({}, 'soa') } %}
-                </span>
-            {% elseif control.mythosResilience == 'nicht_betroffen' %}
-                <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.not_affected', 'tooltip', mrisLocale) }}">
-                    {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'soa.mris.nicht_betroffen'|trans({}, 'soa') } %}
-                </span>
-            {% endif %}
-        </div>
-    </div>
-    <div class="button-group">
-        <a href="{{ path('app_soa_edit', {id: control.id}) }}" class="fa-cyber-btn fa-cyber-btn--primary">
-            <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'soa.action.edit'|trans({}, 'soa') }}
-        </a>
-        {%- set categoryLabel = ('soa.category.' ~ control.category)|trans({}, 'soa') -%}
-        <a href="{{ path('app_soa_by_category', {category: control.category}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-            ← {{ 'soa.action.back_to_category'|trans({'%category%': categoryLabel}, 'soa') }}
-        </a>
+    {% set hint = alva_hint(control) %}
+    {% if hint %}{{ _fa_alva_hint.render(hint) }}{% endif %}
+
+    {%- set categoryLabel = ('soa.category.' ~ control.category)|trans({}, 'soa') -%}
+    {{ _fa_page_header.render({
+        badge: { icon: 'status-ok', label: control.controlId },
+        title: control.name,
+        subtitle: categoryLabel,
+        actions: [
+            { label: 'soa.action.edit'|trans({}, 'soa'), variant: 'primary', icon: 'ui-edit', href: path('app_soa_edit', {id: control.id}) },
+            { label: 'soa.action.back_to_category'|trans({'%category%': categoryLabel}, 'soa'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_soa_by_category', {category: control.category}) }
+        ]
+    }) }}
+
+    {# MRIS resilience badge kept below header — multi-badge title row not supported by macro #}
+    {% set mrisLocale = app.request.locale|default('de') %}
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        {% if control.mythosResilience == 'standfest' %}
+            <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.standfest', 'tooltip', mrisLocale) }}">
+                {% include '_components/_badge.html.twig' with { variant: 'success', content: 'soa.mris.standfest'|trans({}, 'soa') } %}
+            </span>
+        {% elseif control.mythosResilience == 'degradiert' %}
+            <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.partially_degraded', 'tooltip', mrisLocale) }}">
+                {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'soa.mris.degradiert'|trans({}, 'soa') } %}
+            </span>
+        {% elseif control.mythosResilience == 'reibung' %}
+            <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.pure_friction', 'tooltip', mrisLocale) }}">
+                {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'soa.mris.reibung'|trans({}, 'soa') } %}
+            </span>
+        {% elseif control.mythosResilience == 'nicht_betroffen' %}
+            <span data-bs-toggle="tooltip" title="{{ mris_help('mris.help.not_affected', 'tooltip', mrisLocale) }}">
+                {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'soa.mris.nicht_betroffen'|trans({}, 'soa') } %}
+            </span>
+        {% endif %}
     </div>
 </div>
 
@@ -70,7 +81,7 @@
     {% endembed %}
 </div>
 {% elseif control.mythosResilience == 'degradiert' and control.mythosFlankingMhcs is not empty %}
-    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'warning', icon: 'bi-info-circle-fill', class: 'mb-4' } } %}
+    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'warning', icon: 'status-info', class: 'mb-4' } } %}
         {% block alert_body %}
             <strong>{{ 'soa.mris.degradiert_hint_title'|trans({}, 'soa') }}</strong><br>
             {{ 'soa.mris.degradiert_hint_body'|trans({}, 'soa') }}
@@ -97,6 +108,7 @@
 {# Applicability Status #}
 {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
     {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
         <h2>{{ 'soa.section.applicability_status'|trans({}, 'soa') }}</h2>
         <div class="stats-grid mt-2 grid-responsive-200">
             <div class="stat-item">
@@ -115,11 +127,11 @@
             <div class="stat-item">
                 <strong class="fs-4">
                     {% if control.implementationStatus == 'implemented' %}
-                        {% include '_components/_badge.html.twig' with { variant: 'success', size: 'lg', icon: 'bi-check-circle', content: 'soa.status.implemented'|trans({}, 'soa') } %}
+                        {% include '_components/_badge.html.twig' with { variant: 'success', size: 'lg', icon: 'status-ok', content: 'soa.status.implemented'|trans({}, 'soa') } %}
                     {% elseif control.implementationStatus == 'in_progress' %}
-                        {% include '_components/_badge.html.twig' with { variant: 'warning', size: 'lg', icon: 'bi-arrow-clockwise', content: 'soa.status.in_progress'|trans({}, 'soa') } %}
+                        {% include '_components/_badge.html.twig' with { variant: 'warning', size: 'lg', icon: 'util-refresh', content: 'soa.status.in_progress'|trans({}, 'soa') } %}
                     {% elseif control.implementationStatus == 'not_started' %}
-                        {% include '_components/_badge.html.twig' with { variant: 'danger', size: 'lg', icon: 'bi-pause-circle', content: 'soa.status.not_started'|trans({}, 'soa') } %}
+                        {% include '_components/_badge.html.twig' with { variant: 'danger', size: 'lg', icon: 'pause', content: 'soa.status.not_started'|trans({}, 'soa') } %}
                     {% else %}
                         {% include '_components/_badge.html.twig' with { variant: 'secondary', size: 'lg', class: 'badge-neutral-lg', content: 'soa.value.na'|trans({}, 'soa') } %}
                     {% endif %}
@@ -135,11 +147,7 @@
         </div>
 
         {% if control.applicable %}
-        <div class="progress mt-3 progress-lg">
-            <div class="progress-bar" style="width: {{ control.implementationPercentage }}%; font-size: 1rem;">
-                {{ control.implementationPercentage }}%
-            </div>
-        </div>
+        {{ _fa_progress.render({ value: control.implementationPercentage, showText: true, size: 'lg', class: 'mt-3' }) }}
         {% endif %}
     {% endblock %}
 {% endembed %}
@@ -186,13 +194,23 @@
         <div class="stats-grid mt-3 grid-responsive-250">
             <div class="stat-item">
                 <strong>
-                    {% if control.responsiblePerson %}
+                    {% if control.responsiblePersonUser %}
+                        {{ control.responsiblePersonUser.fullName }}
+                    {% elseif control.responsiblePersonRef %}
+                        {{ control.responsiblePersonRef.displayName }}
+                    {% elseif control.responsiblePerson %}
                         {{ control.responsiblePerson }}
                     {% else %}
                         <span class="text-muted">{{ 'soa.field.unassigned'|trans({}, 'soa') }}</span>
                     {% endif %}
                 </strong>
                 <span>{{ 'soa.field.responsible_person'|trans({}, 'soa') }}</span>
+                {% if control.responsibleDeputyPersons|length > 0 %}
+                    <span class="text-muted small d-block">
+                        {{ 'soa.field.deputies'|trans({}, 'soa') }}:
+                        {{ control.responsibleDeputyPersons|map(p => p.displayName)|join(', ') }}
+                    </span>
+                {% endif %}
             </div>
 
             <div class="stat-item">
@@ -215,7 +233,7 @@
 {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
     {% block card_body %}
         <h2><i class="fa-icon fa-icon--compliance-shield" aria-hidden="true"></i> {{ 'soa.section.data_reuse_protected_assets'|trans({'%count%': control.protectedAssets|length}, 'soa') }}</h2>
-        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-exclamation-triangle', class: 'mt-2' } } %}
+        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-warning', class: 'mt-2' } } %}
             {% block alert_body %}<strong>{{ 'soa.label.control_coverage'|trans({}, 'soa') }}</strong> {{ 'soa.message.control_coverage'|trans({'%count%': control.protectedAssets|length, '%value%': control.protectedAssetValue}, 'soa') }} {% if control.highRiskAssetCount > 0 %} <br><strong><i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ control.highRiskAssetCount }}</strong> {{ 'soa.message.high_risk_assets'|trans({}, 'soa') }} {% endif %}{% endblock %}
         {% endembed %}
         <div class="data-reuse-list">
@@ -257,7 +275,7 @@
 {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
     {% block card_body %}
         <h2><i class="fa-icon fa-icon--nav-list-check" aria-hidden="true"></i> {{ 'soa.section.data_reuse_related_incidents'|trans({'%count%': control.incidents|length}, 'soa') }}</h2>
-        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'warning', icon: 'bi-exclamation-triangle' } } %}
+        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'warning', icon: 'status-warning' } } %}
             {% block alert_body %}<strong><i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ control.incidents|length }} {{ 'soa.label.incidents'|trans({}, 'soa') }}</strong> {{ 'soa.message.related_incidents_count'|trans({}, 'soa') }} {% if control.isReviewNeeded %} <br><strong>{{ 'soa.label.review_required'|trans({}, 'soa') }}</strong> {{ 'soa.message.review_required'|trans({}, 'soa') }} {% endif %}{% endblock %}
         {% endembed %}
         <div class="data-reuse-list">
@@ -324,6 +342,39 @@
 {% endembed %}
 {% endif %}
 
+{# Wirksamkeits-Check Widget — ISO 27001 §9.1 cross-link #}
+{% if control.applicable %}
+{% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
+    {% block card_body %}
+        <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+            <div>
+                <h2 class="h6 mb-1">{{ 'soa.section.effectiveness_check'|trans({}, 'soa') }}</h2>
+                {% set lastTest = control.lastEffectivenessTest %}
+                {% set isOverdue = lastTest is null or lastTest < date('-12 months') %}
+                <div class="d-flex align-items-center gap-2 mt-2">
+                    {% if lastTest %}
+                        <span class="text-muted small">{{ 'soa.label.last_effectiveness_test'|trans({}, 'soa') }}: <strong>{{ lastTest|date('d.m.Y') }}</strong></span>
+                    {% else %}
+                        <span class="text-muted small"><em>{{ 'soa.label.never_tested'|trans({}, 'soa') }}</em></span>
+                    {% endif %}
+                    {% if isOverdue %}
+                        <span class="badge bg-danger">{{ 'soa.label.overdue'|trans({}, 'soa') }}</span>
+                    {% else %}
+                        <span class="badge bg-success">{{ 'soa.label.check_current'|trans({}, 'soa') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% if is_granted('ROLE_AUDITOR') %}
+            <a href="{{ path('app_effectiveness_monitor') }}" class="btn btn-sm btn-ghost">
+                <i class="fa-icon fa-icon--nav-speedometer" aria-hidden="true"></i>
+                {{ 'soa.action.open_monitor'|trans({}, 'soa') }}
+            </a>
+            {% endif %}
+        </div>
+    {% endblock %}
+{% endembed %}
+{% endif %}
+
 {# Metadata #}
 {% embed '_components/_card.html.twig' %}
     {% block card_body %}
@@ -360,6 +411,7 @@
 {% if mapping_suggestions is defined and mapping_suggestions|length > 0 %}
     {% embed '_components/_card.html.twig' with { class: 'mt-4 border-info' } %}
         {% block card_header %}
+            {% import '_components/_status_pill.html.twig' as pill %}
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h2 class="h6 mb-0">
                     <i class="fa-icon fa-icon--nav-magic" aria-hidden="true"></i>
@@ -368,16 +420,17 @@
                         '%frameworks%': mapping_suggestions|length
                     }, 'control') }}
                 </h2>
-                <span class="badge text-bg-info">{{ mapping_suggestions_total }}</span>
+                {{ pill.render(mapping_suggestions_total, 'primary', {size: 'sm'}) }}
             </div>
         {% endblock %}
         {% block card_body %}
+            {% import '_components/_status_pill.html.twig' as pill %}
             <p class="small text-muted">{{ 'control.mapping_suggestions.description'|trans({}, 'control') }}</p>
 
             {% for code, rows in mapping_suggestions %}
                 <div class="mb-3">
                     <h3 class="h6">
-                        <span class="badge bg-body-secondary border fa-status-pill fa-status-pill--neutral">{{ code }}</span>
+                        <span class="border fa-status-pill fa-status-pill--neutral">{{ code }}</span>
                         {{ rows[0].framework.name }}
                     </h3>
                     <ul class="list-unstyled mb-0">
@@ -401,11 +454,7 @@
                                     {% endif %}
                                 </div>
                                 <div class="ms-2 d-flex align-items-center gap-2">
-                                    <span class="badge text-bg-{{ conf_variant }}"
-                                          title="{{ 'control.mapping_suggestions.confidence.tooltip'|trans({'%pct%': conf_pct}, 'control') }}"
-                                          data-bs-toggle="tooltip">
-                                        {{ conf_label }}
-                                    </span>
+                                    {{ pill.render(conf_label, conf_variant == 'secondary' ? 'neutral' : conf_variant, {size: 'sm', title: 'control.mapping_suggestions.confidence.tooltip'|trans({'%pct%': conf_pct}, 'control')}) }}
                                     <form method="post"
                                           action="{{ path('app_soa_accept_suggestion', { id: control.id, requirementId: row.requirement.id }) }}"
                                           class="d-inline">
@@ -432,6 +481,12 @@
     {% endembed %}
 {% endif %}
 
+{# V3 B6 / EF-4: Inverse-Coverage Impact-Analyse #}
+{% include '_components/_impact_coverage.html.twig' with {
+    impact: impact_coverage|default({total: 0, frameworks: []}),
+    entity_label: 'control'
+} %}
+
 {# Action Buttons #}
 <div class="d-flex gap-2 mt-4">
     <a href="{{ path('app_soa_edit', {id: control.id}) }}" class="fa-cyber-btn fa-cyber-btn--success">
@@ -441,6 +496,17 @@
         <i class="fa-icon fa-icon--ui-list" aria-hidden="true"></i> {{ 'common.back_to_list'|trans({}, 'messages') }}
     </a>
 </div>
+
+{# V4 LB-4: Comment-Thread adoption (C7 macro). #}
+{% include '_components/_isms_comment_thread.html.twig' with {
+    comments: comments|default([]),
+    entityType: 'Control',
+    entityId: control.id,
+    showForm: true,
+    formAction: path('app_comment_post', {entityType: 'Control', entityId: control.id}),
+    csrfToken: csrf_token('isms-comment')
+} only %}
+{% endif %} {# /M-4 controls module gate #}
 
 <style>
 /* Data Reuse Sections */

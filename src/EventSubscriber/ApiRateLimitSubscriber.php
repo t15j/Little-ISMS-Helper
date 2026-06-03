@@ -34,7 +34,7 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
  * - Limiter: apiLimiter (configured in rate_limiter.yaml)
  * - Strategy: Token bucket with 100 tokens/minute
  */
-class ApiRateLimitSubscriber implements EventSubscriberInterface
+final class ApiRateLimitSubscriber implements EventSubscriberInterface
 {
     public function __construct(
         private readonly RateLimiterFactory $rateLimiterFactory
@@ -53,6 +53,14 @@ class ApiRateLimitSubscriber implements EventSubscriberInterface
 
         // Only apply to API routes
         if (!str_starts_with($request->getPathInfo(), '/api/')) {
+            return;
+        }
+
+        // The glossary lookup is a read-only UI helper fired on hover (tiny
+        // static responses, client-side cached per acronym). Exempt it from the
+        // data-API rate limit so tooltip definitions never 429 on a page with
+        // many terms.
+        if (str_starts_with($request->getPathInfo(), '/api/glossary/')) {
             return;
         }
 

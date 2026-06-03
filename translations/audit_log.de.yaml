@@ -1,14 +1,20 @@
 audit_log:
+    integrity:
+        disabled: 'Audit-Log-Integritätsprüfung ist deaktiviert (APP_AUDIT_HMAC_KEY fehlt).'
+        intact: 'Audit-Log-Kette intakt — keine Manipulationen erkannt.'
     page:
         title: 'Audit Log'
         subtitle: 'Vollständige Protokollierung aller Aktivitäten im ISMS zur Sicherstellung der Revisionssicherheit'
         monitoring_subtitle: 'Sicherheits- und Aktivitätsprotokoll'
+        statistics_title: 'Audit Log Statistiken'
+        statistics_subtitle: 'Statistische Auswertung der Protokolleinträge'
     section:
         statistics: Statistik
         filters: Filter
         entries: Protokolleinträge
         table: Tabelle
         timeline: Timeline
+        compact: Kompakt
         quick_filters: Schnellfilter
     stats:
         total_logs: 'Gesamt Protokolleinträge'
@@ -82,6 +88,12 @@ audit_log:
     changes: Changes
     old_values: 'Old Values'
     new_values: 'New Values'
+    user_activity:
+        title: 'Benutzeraktivität'
+        subtitle: 'Aktivitätsverlauf eines Benutzers'
+        header: 'Benutzer: %userName%'
+        count_label: 'Anzahl Aktivitäten'
+        section_title: 'Aktivitätsverlauf'
     retention:
         title: 'Audit-Log Aufbewahrungsdauer'
         subtitle: 'Zentrale Retention-Policy für alle Audit-Log-Einträge.'

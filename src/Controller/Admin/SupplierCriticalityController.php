@@ -8,6 +8,7 @@ use App\Entity\SupplierCriticalityLevel;
 use App\Entity\Tenant;
 use App\Form\Admin\SupplierCriticalityLevelType;
 use App\Repository\SupplierCriticalityLevelRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\AuditLogger;
 use App\Service\TenantContext;
 use Doctrine\ORM\EntityManagerInterface;
@@ -19,9 +20,14 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
  * Phase 8QW-5 — Admin-UI für Supplier-Kritikalitätsstufen pro Tenant.
+ *
+ * Phase 4c role-scope migration: ROLE_ADMIN configures own tenant,
+ * SUPER_ADMIN any. Tenant scope resolves via
+ * {@see TenantContext::resolveAdminScope()}.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/admin/supplier-criticality')]
-#[IsGranted('ROLE_ADMIN')]
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
 class SupplierCriticalityController extends AbstractController
 {
     public function __construct(
@@ -33,9 +39,9 @@ class SupplierCriticalityController extends AbstractController
     }
 
     #[Route('', name: 'app_admin_supplier_criticality_index', methods: ['GET'])]
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $tenant = $this->requireTenant();
+        $tenant = $this->requireTenant($request);
 
         // Lazy-Seeding für Tenants ohne Defaults (z.B. nach Migration-Backfill
         // übersehen oder in Tests). Idempotent — persist() ohne flush im Repo,
@@ -53,7 +59,7 @@ class SupplierCriticalityController extends AbstractController
     #[Route('/new', name: 'app_admin_supplier_criticality_new', methods: ['GET', 'POST'])]
     public function new(Request $request): Response
     {
-        $tenant = $this->requireTenant();
+        $tenant = $this->requireTenant($request);
         $level = new SupplierCriticalityLevel();
         $level->setTenant($tenant);
 
@@ -75,12 +81,20 @@ class SupplierCriticalityController extends AbstractController
             return $this->redirectToRoute('app_admin_supplier_criticality_index');
         }
 
+        // Any render reached after a submit is an error state (validation,
+        // business rule, or DB constraint) — return 422 so Turbo re-renders the
+        // form in place instead of throwing "Form responses must redirect to
+        // another location". Only the initial GET renders 200.
+        $status = $form->isSubmitted()
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/supplier_criticality/new.html.twig', [
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
-    #[Route('/{id}/edit', name: 'app_admin_supplier_criticality_edit', methods: ['GET', 'POST'])]
+    #[Route('/{id}/edit', name: 'app_admin_supplier_criticality_edit', methods: ['GET', 'POST'], requirements: ['id' => '\d+'])]
     public function edit(Request $request, SupplierCriticalityLevel $level): Response
     {
         $this->requireTenantOwnership($level);
@@ -121,13 +135,21 @@ class SupplierCriticalityController extends AbstractController
             return $this->redirectToRoute('app_admin_supplier_criticality_index');
         }
 
+        // Any render reached after a submit is an error state (validation,
+        // business rule, or DB constraint) — return 422 so Turbo re-renders the
+        // form in place instead of throwing "Form responses must redirect to
+        // another location". Only the initial GET renders 200.
+        $status = $form->isSubmitted()
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/supplier_criticality/edit.html.twig', [
             'form' => $form,
             'level' => $level,
-        ]);
+        ], new Response(status: $status));
     }
 
-    #[Route('/{id}/delete', name: 'app_admin_supplier_criticality_delete', methods: ['POST'])]
+    #[Route('/{id}/delete', name: 'app_admin_supplier_criticality_delete', methods: ['POST'], requirements: ['id' => '\d+'])]
     public function delete(Request $request, SupplierCriticalityLevel $level): Response
     {
         $this->requireTenantOwnership($level);
@@ -151,9 +173,14 @@ class SupplierCriticalityController extends AbstractController
         return $this->redirectToRoute('app_admin_supplier_criticality_index');
     }
 
-    private function requireTenant(): Tenant
+    private function requireTenant(Request $request): Tenant
     {
-        $tenant = $this->tenantContext->getCurrentTenant();
+        // GET (index / hover-prefetch) carries no `tenant_id` POST param; for
+        // SUPER_ADMIN resolveAdminScope(null) returns null (global scope) and
+        // would 404 the tenant-scoped index. Fall back to active tenant — POST
+        // callers may still override via `tenant_id` body param.
+        $requested = $request->request->get('tenant_id') ?? $this->tenantContext->getCurrentTenantId();
+        $tenant = $this->tenantContext->resolveAdminScope($requested);
         if (!$tenant instanceof Tenant) {
             throw $this->createNotFoundException('No tenant context.');
         }
@@ -162,9 +189,8 @@ class SupplierCriticalityController extends AbstractController
 
     private function requireTenantOwnership(SupplierCriticalityLevel $level): void
     {
-        $tenant = $this->requireTenant();
-        if ($level->getTenant() !== $tenant) {
-            throw $this->createAccessDeniedException('Level does not belong to current tenant.');
-        }
+        // resolveAdminScope() throws AccessDeniedException for cross-tenant
+        // edits by ROLE_ADMIN; SUPER_ADMIN passes through.
+        $this->tenantContext->resolveAdminScope($level->getTenant()?->getId());
     }
 }

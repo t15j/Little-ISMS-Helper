@@ -11,11 +11,13 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Functional tests for BCExerciseController
  */
+#[AllowMockObjectsWithoutExpectations]
 class BCExerciseControllerTest extends WebTestCase
 {
     private KernelBrowser $client;
@@ -28,7 +30,22 @@ class BCExerciseControllerTest extends WebTestCase
     protected function setUp(): void
     {
         $this->client = static::createClient();
+        $this->client->disableReboot();
+
         $container = static::getContainer();
+
+        $moduleService = $this->createMock(\App\Service\ModuleConfigurationService::class);
+        $moduleService->method('isModuleActive')->willReturnCallback(
+            fn(string $key) => in_array($key, [
+                'core', 'authentication', 'assets', 'risks', 'controls',
+                'incidents', 'audits', 'training', 'reviews', 'bcm',
+                'compliance', 'audit_logging', 'privacy', 'nis2_dora',
+                'ai_governance', 'cloud_security', 'vulnerability_intel',
+                'marisk', 'tisax', 'quantitative_risk', 'notifications', 'eu_authority_reporting', 'tisax_isa', 'ai_act', 'cra_sbom', 'procedures',
+            ], true)
+        );
+        $container->set(\App\Service\ModuleConfigurationService::class, $moduleService);
+
         $this->entityManager = $container->get(EntityManagerInterface::class);
 
         $this->createTestData();
@@ -130,7 +147,7 @@ class BCExerciseControllerTest extends WebTestCase
     #[Test]
     public function testIndexRequiresAuthentication(): void
     {
-        $this->client->request('GET', '/en/bc-exercise/');
+        $this->client->request('GET', '/en/bc-exercise');
         $this->assertResponseRedirects();
     }
 
@@ -138,7 +155,7 @@ class BCExerciseControllerTest extends WebTestCase
     public function testIndexDisplaysForUser(): void
     {
         $this->client->loginUser($this->testUser);
-        $this->client->request('GET', '/en/bc-exercise/');
+        $this->client->request('GET', '/en/bc-exercise');
         $this->assertResponseIsSuccessful();
     }
 

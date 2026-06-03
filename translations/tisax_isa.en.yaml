@@ -1,0 +1,179 @@
+# Translation file: tisax_isa (English)
+# Domain: TISAX VDA-ISA import wizard + assessment
+#
+# Root key is "tisax:" so templates using tisax.import.* resolve correctly.
+# The domain name (tisax_isa) is only the filename — it doesn't affect key lookup.
+
+tisax:
+  nav:
+    title: 'TISAX VDA-ISA Import'
+
+  page:
+    title: 'TISAX BYO VDA-ISA Import Wizard'
+    subtitle: 'Upload your licensed VDA-ISA workbook and assess Reifegrad 0–5 per requirement'
+
+  step:
+    disclaimer: 'Legal Confirmation'
+    upload: 'Upload'
+    validate: 'Validate'
+    preview: 'Preview'
+    commit: 'Commit'
+    assess: 'Assess'
+
+  import:
+    nav:
+      title: 'TISAX VDA-ISA Import'
+
+    page:
+      title: 'TISAX BYO VDA-ISA Import Wizard'
+      subtitle: 'Upload your licensed VDA-ISA workbook and assess Reifegrad 0–5 per requirement'
+
+    step:
+      disclaimer: 'Legal Confirmation'
+      upload: 'Upload'
+      validate: 'Validate'
+      preview: 'Preview'
+      commit: 'Commit'
+      assess: 'Assess'
+
+    disclaimer:
+      title: 'Legal Confirmation — ENX Licence'
+      legal_notice: 'Important: Licensing Notice'
+      enx_notice:
+        title: 'Legal Notice: Incomplete Catalogue (ENX Licence)'
+        body: 'The bundled TISAX framework is intentionally incomplete (10 of approximately 70 controls). The original VDA-ISA questions are licensed by the ENX Association and may not be distributed in software products.'
+        steps_heading: 'How to proceed:'
+        steps:
+          1: 'Obtain the ISA workbook from the '
+          2: 'Upload the workbook here (BYO-Import, next step)'
+          3: 'Conduct the maturity assessment — all ~70 controls will then be available'
+        after_import_label: 'After import'
+        after_import: 'Tenant-scoped requirements are created automatically. Cross-mapping to ISO 27001:2022 runs without further action.'
+      body_1: 'The VDA-ISA (Information Security Assessment) catalogue is published by the VDA/ENX Association and is protected by copyright. The catalogue content cannot be shipped with this application.'
+      body_2: 'Before uploading your workbook, you must confirm that:'
+      bullet_1: 'You hold a valid, current ENX membership or licence that entitles you to use the VDA-ISA workbook.'
+      bullet_2: 'The workbook has been obtained through official ENX channels and has not been modified in a manner that violates the licence.'
+      bullet_3: 'You accept sole responsibility for ensuring your organisation''s licence compliance.'
+      body_3: 'Your confirmation will be recorded with timestamp and IP address as part of your audit trail (ISO 27001 Clause 7.5.3). The IP address is automatically anonymised after 365 days (GDPR Art. 5(1)(e)).'
+      checkbox_label: 'I confirm that I hold a valid ENX licence for the VDA-ISA workbook I am about to upload.'
+      must_confirm: 'You must confirm licence compliance before proceeding.'
+      confirm_button: 'Confirm and Continue'
+      confirmed: 'Licence confirmation recorded. You may now upload your workbook.'
+
+    upload:
+      title: 'Upload VDA-ISA Workbook'
+      subtitle: 'Upload your ENX-licensed VDA-ISA Excel workbook (.xlsx)'
+      instruction: 'Upload the VDA-ISA workbook file. The file must be in XLSX format and must contain a content sheet named "Information Security", "Informationssicherheit", "Prototype Protection", or equivalent.'
+      field_label: 'VDA-ISA Workbook (.xlsx)'
+      help: 'Accepted: .xlsx, max. 10 MB. The file will be parsed and validated before import.'
+      submit_button: 'Upload and Validate'
+      required: 'Please select a workbook file.'
+      xlsx_only: 'Only XLSX files are accepted.'
+      too_large: 'The file must not exceed 10 MB.'
+      disclaimer_required: 'Please confirm the licence disclaimer before uploading.'
+      security_rejected: 'The file was rejected by the security scanner. Please upload a valid XLSX file.'
+      workbook_help:
+        title: 'Where to get the official ENX ISA 6 workbook'
+        download_intro: 'Download the official ENX ISA 6 workbook directly from the ENX portal (ENX membership required):'
+        en_label: 'English'
+        de_label: 'German'
+        expected_sheets_title: 'Expected sheet names (parser selects the first match):'
+        troubleshoot_hint: 'If the parser rejects your workbook, check that it contains a sheet named "Information Security" (EN) or "Informationssicherheit" (DE). Workbooks modified to rename these sheets will not be recognised.'
+
+    validate:
+      title: 'Workbook Validation'
+      subtitle: 'Checking structure and control ID format'
+      summary: 'Validation Summary'
+      sheet: 'Sheet name'
+      control_count: 'Control rows found'
+      detected_columns: 'Detected columns'
+      errors_heading: 'Validation errors (import blocked):'
+      warnings_heading: 'Warnings (non-blocking):'
+      ok: 'Workbook passed all validation checks. You may proceed.'
+      proceed: 'Continue to Preview'
+      no_workbook: 'No workbook found in session. Please upload again.'
+      legacy_five_partial: 'ISA %version% workbook detected: partial import with %count% controls. ISA 5.x is a subset of ISA 6 — matching controls are imported; controls only present in ISA 6 (incl. the expanded data-protection module) remain unassessed.'
+
+    preview:
+      title: 'Import Preview'
+      subtitle: 'Review the delta before committing to the database'
+      delta:
+        total: 'Total controls'
+        new: 'New (to be created)'
+        existing: 'Existing (to be updated)'
+      sample_heading: 'Control sample (first 20 rows)'
+      col:
+        id: 'Control ID'
+        title: 'Question / Requirement'
+        iso_ref: 'ISO 27001 Ref'
+        tier: 'Tier'
+      proceed: 'Commit to Database'
+
+    commit:
+      title: 'Commit Import'
+      subtitle: 'Write requirements to the database'
+      confirm_heading: 'Ready to commit?'
+      confirm_body: 'This will create %new% new requirements and update %existing% existing requirements under framework "%framework%".'
+      irreversible_note: 'Existing requirements will be overwritten in place. This action can be re-run to refresh data from a new workbook version.'
+      submit_button: 'Commit Import'
+      success: 'VDA-ISA requirements imported successfully.'
+      company_mismatch_title: 'Organisation differs'
+      company_mismatch_body: 'The uploaded self-assessment is issued for "%workbook%", but your organisation in this system is "%org%". Please verify you are importing the correct workbook.'
+      company_confirm_label: 'I confirm that the self-assessment from "%workbook%" belongs to our organisation and should be imported.'
+      company_confirm_required: 'Please confirm the differing organisation before committing the import.'
+      maturity_diff_title: 'Reifegrad differences (%count%)'
+      maturity_diff_body: 'For these requirements the workbook Reifegrad differs from the value already stored. Select which workbook values should overwrite the current state. Unchecked requirements keep their existing Reifegrad.'
+      maturity_diff_select_all: 'Apply all'
+      maturity_diff_col_control: 'Requirement'
+      maturity_diff_col_current: 'Current'
+      maturity_diff_col_workbook: 'Workbook'
+
+    assess:
+      title: 'Reifegrad Assessment'
+      subtitle: 'Set maturity levels (Reifegrad 0–5) for each requirement'
+      avg_reifegrad: 'Average Reifegrad'
+      assessed: 'Assessed'
+      requirements_heading: 'Requirements'
+      col:
+        id: 'Control ID'
+        title: 'Requirement'
+        tier: 'Tier'
+        req_levels: 'Requirement Levels'
+        req_levels_tooltip: 'M=Must, S=Should, H=High Protection, VH=Very High Protection. Coloured badges = content present (presence flag only — no ENX text).'
+        reifegrad: 'Current Reifegrad'
+        assessment: 'Assessment'
+        target: 'Target'
+      req_levels:
+        aria: 'Requirement levels M/S/H/VH'
+      req_level:
+        must_tooltip: 'Must requirement (column J) — presence in ENX workbook'
+        should_tooltip: 'Should requirement (column K) — presence in ENX workbook'
+        high_tooltip: 'Additional requirements for high protection needs (column L) — presence in ENX workbook'
+        very_high_tooltip: 'Additional requirements for very high protection needs (column M) — presence in ENX workbook'
+        schutzbedarf_note: 'Protection-need addendum available'
+        byo_hint: 'Read text in your licensed ENX workbook (BYO wizard)'
+      save_button: 'Save Assessment'
+      saved: 'Assessment saved.'
+      no_requirements: 'No requirements found. Please complete the import first.'
+      export_enx: 'Export ENX Schedule (.xlsx)'
+      level:
+        unrated: 'Please select …'
+        incomplete: 'Incomplete — not implemented'
+        performed: 'Performed — ad-hoc'
+        managed: 'Managed — planned and tracked'
+        established: 'Established — standardised'
+        predictable: 'Predictable — measured'
+        optimising: 'Optimising — continuously improving'
+      dp:
+        tile_label: 'Data Protection (Ch. 9)'
+        tier_badge: 'Data Protection'
+        legend: 'Data Protection Assessment (Chapter 9):'
+        hint: >
+          Data protection requirements use a 3-state compliance scale —
+          not Reifegrad 0-5. Please select NA, OK, or Not OK per requirement.
+        aria_group: 'Data protection compliance assessment'
+        target_label: 'Target: OK'
+        state:
+          na: 'NA'
+          ok: 'OK'
+          not_ok: 'Not OK'

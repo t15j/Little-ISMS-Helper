@@ -1,5 +1,4 @@
 import { Controller } from '@hotwired/stimulus';
-import * as bootstrap from 'bootstrap';
 
 /**
  * Dashboard Customizer Controller
@@ -14,7 +13,7 @@ export default class extends Controller {
     static targets = ['widget', 'settingsModal', 'toggleButton', 'widgetContainer', 'sizeSelector'];
     static values = {
         storageKey: { type: String, default: 'dashboard_widget_preferences' },
-        apiUrl: { type: String, default: '/dashboard-layout/config' },
+        apiUrl: { type: String, default: '' },
         useDatabaseSync: { type: Boolean, default: true }
     };
 
@@ -28,13 +27,7 @@ export default class extends Controller {
     }
 
     disconnect() {
-        // Clean up modal instance if it exists
-        if (this.hasSettingsModalTarget) {
-            const modalInstance = bootstrap.Modal?.getInstance(this.settingsModalTarget);
-            if (modalInstance) {
-                modalInstance.dispose();
-            }
-        }
+        // fa-modal shell controller manages its own lifecycle; no Bootstrap cleanup needed
     }
 
     // Enable drag and drop for widgets
@@ -149,7 +142,7 @@ export default class extends Controller {
 
     // Load preferences from API or LocalStorage
     async loadPreferences() {
-        if (this.useDatabaseSyncValue) {
+        if (this.useDatabaseSyncValue && this.apiUrlValue) {
             try {
                 const response = await fetch(this.apiUrlValue, {
                     method: 'GET',
@@ -167,7 +160,10 @@ export default class extends Controller {
                     this.saveToLocalStorage();
                     return;
                 }
+                // non-ok (404, 401, …) — fall through to localStorage silently
             } catch (error) {
+                // Network or parse error — fall through to localStorage
+                console.debug('[dashboard-customizer] API unavailable, using localStorage');
             }
         }
 
@@ -253,7 +249,7 @@ export default class extends Controller {
         // Always save to localStorage immediately
         this.saveToLocalStorage();
 
-        if (!this.useDatabaseSyncValue) {
+        if (!this.useDatabaseSyncValue || !this.apiUrlValue) {
             return;
         }
 
@@ -277,18 +273,31 @@ export default class extends Controller {
                     const data = await response.json();
                     this.lastSyncedAt = data.updated_at;
                 } else {
+                    const msg = response.status === 403
+                        ? 'Keine Berechtigung'
+                        : `Fehler ${response.status}`;
+                    window.faToast(msg, 'danger');
                 }
             } catch (error) {
+                // Network error — localStorage copy still saved above
             }
         }, 1000); // Debounce 1 second
     }
 
     // Toggle widget visibility
     toggleWidget(event) {
-        const widgetId = event.currentTarget.dataset.widgetToggle;
-        const checkbox = event.currentTarget.querySelector('input[type="checkbox"]');
+        // Action wired to input's `change` event (template moved data-action to <input>
+        // 2026-05-22 — see _dashboard_settings_modal.html.twig). Read widget id from
+        // the parent wrapper carrying data-widget-toggle. Falls back to currentTarget
+        // dataset for any legacy callers that still wire click on the wrapper div.
+        const wrapper = event.currentTarget.closest('[data-widget-toggle]')
+            ?? event.currentTarget;
+        const widgetId = wrapper.dataset.widgetToggle;
+        const checkbox = event.currentTarget.matches('input[type="checkbox"]')
+            ? event.currentTarget
+            : wrapper.querySelector('input[type="checkbox"]');
 
-        if (!widgetId) return;
+        if (!widgetId || !checkbox) return;
 
         const isVisible = checkbox.checked;
 
@@ -338,41 +347,19 @@ export default class extends Controller {
         this.savePreferences();
     }
 
-    // Open settings modal
+    // Open settings modal via fa-modal shell
     openSettings() {
         if (this.hasSettingsModalTarget) {
-            // Wait for Bootstrap to be available before opening modal
-            this.waitForBootstrap(() => {
-                // Check if modal is already initialized
-                let modalInstance = bootstrap.Modal.getInstance(this.settingsModalTarget);
-
-                if (!modalInstance) {
-                    modalInstance = new bootstrap.Modal(this.settingsModalTarget);
-                }
-
-                modalInstance.show();
-            });
+            document.dispatchEvent(new CustomEvent('fa-modal:request-open', {
+                bubbles: true,
+                detail: { id: this.settingsModalTarget.id },
+            }));
         }
     }
 
-    // Helper function to wait for Bootstrap to be available
-    waitForBootstrap(callback, maxAttempts = 10) {
-        let attempts = 0;
-        const checkBootstrap = () => {
-            attempts++;
-            if (window.bootstrap && window.bootstrap.Modal) {
-                callback();
-            } else if (attempts < maxAttempts) {
-                setTimeout(checkBootstrap, 100);
-            } else {
-            }
-        };
-        checkBootstrap();
-    }
-
     // Reset to defaults
-    resetToDefaults() {
-        if (confirm(window.translations?.dashboard?.confirm_reset || 'Do you want to reset the dashboard to default settings?')) {
+    async resetToDefaults() {
+        if (await window.faConfirm(window.translations?.dashboard?.confirm_reset || 'Do you want to reset the dashboard to default settings?', { tone: 'warn' })) {
             this.preferences = this.getDefaultPreferences();
             this.savePreferences();
             this.applyPreferences();
@@ -414,9 +401,9 @@ export default class extends Controller {
                 this.savePreferences();
                 this.applyPreferences();
 
-                alert(window.translations?.dashboard?.settings_imported || 'Dashboard settings successfully imported!');
+                window.faToast(window.translations?.dashboard?.settings_imported || 'Dashboard settings successfully imported!', 'success');
             } catch (error) {
-                alert(window.translations?.dashboard?.import_failed || 'Error importing settings. Please check the file.');
+                window.faToast(window.translations?.dashboard?.import_failed || 'Error importing settings. Please check the file.', 'danger');
             }
         };
         reader.readAsText(file);

@@ -37,10 +37,23 @@ export default class extends Controller {
     ];
 
     connect() {
-        this.modalInstance = null;
         this.resolvePromise = null;
         this.rejectPromise = null;
         this.previousFocus = null;
+
+        this.boundOnFaModalClosed = this.onFaModalClosed.bind(this);
+        this.element.addEventListener('fa-modal:closed', this.boundOnFaModalClosed);
+    }
+
+    disconnect() {
+        this.element.removeEventListener('fa-modal:closed', this.boundOnFaModalClosed);
+    }
+
+    onFaModalClosed() {
+        if (this.resolvePromise) {
+            this.resolvePromise(false);
+            this.cleanup();
+        }
     }
 
     /**
@@ -79,15 +92,17 @@ export default class extends Controller {
         this.hideError();
         this.hideDependencies();
 
-        // Get modal instance (Bootstrap 5)
-        if (!this.modalInstance) {
-            this.modalInstance = new bootstrap.Modal(this.modalTarget);
-        }
+        // Open fa-modal shell via dispatch
+        document.dispatchEvent(new CustomEvent('fa-modal:request-open', {
+            bubbles: true,
+            detail: { id: this.modalTarget.id },
+        }));
 
-        // Show modal
-        this.modalInstance.show();
-
-        // Check dependencies if endpoint provided
+        // Check dependencies if endpoint provided.
+        // Not every entity implements bulk-delete-check yet (currently only
+        // Document). For non-supporting entities the endpoint returns 404 —
+        // treat that as "no dependency-info available" and proceed silently
+        // to the confirm prompt instead of blocking with a scary error.
         if (endpoint && ids && ids.length > 0) {
             this.showLoading();
             try {
@@ -99,7 +114,11 @@ export default class extends Controller {
                 }
             } catch (error) {
                 this.hideLoading();
-                this.showError('Fehler beim Laden der Abhängigkeiten: ' + error.message);
+                // Silently skip dep-check on 404 (endpoint not implemented);
+                // surface only real server errors (5xx, parse errors etc).
+                if (!String(error.message).startsWith('HTTP 404')) {
+                    this.showError('Fehler beim Laden der Abhängigkeiten: ' + error.message);
+                }
             }
         }
 
@@ -108,18 +127,10 @@ export default class extends Controller {
             this.confirmButtonTarget.focus();
         }, 100);
 
-        // Return promise that resolves when user confirms or cancels
+        // Cancel-resolution happens via the fa-modal:closed listener bound in connect().
         return new Promise((resolve, reject) => {
             this.resolvePromise = resolve;
             this.rejectPromise = reject;
-
-            // Auto-reject if modal is closed without confirmation
-            this.modalTarget.addEventListener('hidden.bs.modal', () => {
-                if (this.resolvePromise) {
-                    this.resolvePromise(false);
-                    this.cleanup();
-                }
-            }, { once: true });
         });
     }
 
@@ -207,7 +218,7 @@ export default class extends Controller {
             this.resolvePromise(true);
             this.cleanup();
         }
-        this.modalInstance.hide();
+        this.closeModal();
     }
 
     cancel() {
@@ -215,7 +226,15 @@ export default class extends Controller {
             this.resolvePromise(false);
             this.cleanup();
         }
-        this.modalInstance.hide();
+        this.closeModal();
+    }
+
+    closeModal() {
+        const faModal = this.application.getControllerForElementAndIdentifier(
+            this.modalTarget,
+            'fa-modal',
+        );
+        faModal?.close();
     }
 
     cleanup() {

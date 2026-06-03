@@ -15,6 +15,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\Metadata\Delete;
+use App\Enum\AssetStatus;
 use App\Repository\AssetRepository;
 use App\Service\OwnerResolver;
 use App\State\TenantAwareStateProcessor;
@@ -25,6 +26,7 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Serializer\Annotation\MaxDepth;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 #[ORM\Entity(repositoryClass: AssetRepository::class)]
 #[ORM\Index(name: 'idx_asset_type', columns: ['asset_type'])]
@@ -81,8 +83,8 @@ class Asset
 
     #[ORM\Column(length: 255)]
     #[Groups(['asset:read', 'asset:write', 'risk:read'])]
-    #[Assert\NotBlank(message: 'Asset name is required')]
-    #[Assert\Length(max: 255, maxMessage: 'Asset name cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'asset.validation.name_required')]
+    #[Assert\Length(max: 255, maxMessage: 'asset.validation.name_max_length')]
     private ?string $name = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
@@ -91,9 +93,18 @@ class Asset
 
     #[ORM\Column(length: 100)]
     #[Groups(['asset:read', 'asset:write'])]
-    #[Assert\NotBlank(message: 'Asset type is required')]
-    #[Assert\Length(max: 100, maxMessage: 'Asset type cannot exceed { limit } characters')]
+    #[Assert\NotBlank(message: 'asset.validation.asset_type_required')]
+    #[Assert\Length(max: 100, maxMessage: 'asset.validation.asset_type_max_length')]
     private ?string $assetType = null;
+
+    /**
+     * Tenant-konfigurierbarer Sub-Type (S18 B2). Additiv zu $assetType (Top-Level)
+     * — bestehende Daten bleiben unverändert, sub_type ist nullable.
+     */
+    #[ORM\ManyToOne(targetEntity: AssetSubType::class)]
+    #[ORM\JoinColumn(name: 'sub_type_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['asset:read', 'asset:write'])]
+    private ?AssetSubType $subType = null;
 
     // ── AI-Agent-Inventar (Asset-Subtyp 'ai_agent') ───────────────────────
     // Erfüllt EU AI Act Art. 6/9-16, ISO 42001 Annex A, MRIS MHC-13
@@ -103,7 +114,7 @@ class Asset
     #[Groups(['asset:read', 'asset:write'])]
     #[Assert\Choice(
         choices: [null, 'prohibited', 'high_risk', 'limited_risk', 'minimal_risk'],
-        message: 'AI risk classification must be one of: prohibited, high_risk, limited_risk, minimal_risk',
+        message: 'asset.validation.ai_classification_invalid',
     )]
     private ?string $aiAgentClassification = null;
 
@@ -143,14 +154,14 @@ class Asset
 
     #[ORM\Column(length: 100, nullable: true)]
     #[Groups(['asset:read', 'asset:write'])]
-    #[Assert\Length(max: 100, maxMessage: 'Owner cannot exceed { limit } characters')]
+    #[Assert\Length(max: 100, maxMessage: 'asset.validation.owner_max_length')]
     private ?string $owner = null;
 
     // Legacy field - kept for backward compatibility
     // @deprecated Use $physicalLocation instead
     #[ORM\Column(length: 100, nullable: true)]
     #[Groups(['asset:read', 'asset:write'])]
-    #[Assert\Length(max: 100, maxMessage: 'Location cannot exceed { limit } characters')]
+    #[Assert\Length(max: 100, maxMessage: 'asset.validation.location_max_length')]
     private ?string $location = null;
 
     #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2, nullable: true)]
@@ -163,33 +174,29 @@ class Asset
 
     #[ORM\Column(type: Types::INTEGER)]
     #[Groups(['asset:read', 'asset:write'])]
-    #[Assert\NotNull(message: 'Confidentiality value is required')]
-    #[Assert\Range(notInRangeMessage: 'Confidentiality value must be between { min } and { max }', min: 1, max: 5)]
+    #[Assert\NotNull(message: 'asset.validation.confidentiality_required')]
+    #[Assert\Range(notInRangeMessage: 'asset.validation.confidentiality_range', min: 1, max: 5)]
     private ?int $confidentialityValue = null;
 
     #[ORM\Column(type: Types::INTEGER)]
     #[Groups(['asset:read', 'asset:write'])]
-    #[Assert\NotNull(message: 'Integrity value is required')]
-    #[Assert\Range(notInRangeMessage: 'Integrity value must be between { min } and { max }', min: 1, max: 5)]
+    #[Assert\NotNull(message: 'asset.validation.integrity_required')]
+    #[Assert\Range(notInRangeMessage: 'asset.validation.integrity_range', min: 1, max: 5)]
     private ?int $integrityValue = null;
 
     #[ORM\Column(type: Types::INTEGER)]
     #[Groups(['asset:read', 'asset:write'])]
-    #[Assert\NotNull(message: 'Availability value is required')]
-    #[Assert\Range(notInRangeMessage: 'Availability value must be between { min } and { max }', min: 1, max: 5)]
+    #[Assert\NotNull(message: 'asset.validation.availability_required')]
+    #[Assert\Range(notInRangeMessage: 'asset.validation.availability_range', min: 1, max: 5)]
     private ?int $availabilityValue = null;
 
     // Phase 6F: ISO 27001 Compliance Fields
-
-    /**
-     * Monetary value of the asset for risk impact calculation.
-     * ⚠️ SAFE GUARD: This field must ALWAYS be set manually by users.
-     * NEVER auto-calculate from vulnerabilityScore or other sources to prevent circular dependencies.
-     */
-    #[ORM\Column(type: Types::DECIMAL, precision: 15, scale: 2, nullable: true)]
-    #[Groups(['asset:read', 'asset:write'])]
-    #[Assert\PositiveOrZero(message: 'Monetary value must be positive or zero')]
-    private ?string $monetaryValue = null;
+    //
+    // Junior-ISB-Audit S14+ #15 (2026-05): the legacy `monetaryValue` /
+    // `monetary_value` column was removed. Asset valuation now lives in the
+    // canonical `acquisitionValue` + `currentValue` fields. Legacy column
+    // data was backfilled into `current_value` during
+    // Version20260612100000_DropAssetMonetaryValue.
 
     /**
      * Data classification level for the asset.
@@ -199,7 +206,7 @@ class Asset
     #[Groups(['asset:read', 'asset:write'])]
     #[Assert\Choice(
         choices: ['public', 'internal', 'confidential', 'restricted'],
-        message: 'Data classification must be one of: { choices }'
+        message: 'asset.validation.data_classification_invalid'
     )]
     private ?string $dataClassification = null;
 
@@ -213,7 +220,7 @@ class Asset
     #[Groups(['asset:read', 'asset:write'])]
     #[Assert\Choice(
         choices: ['public', 'internal', 'confidential', 'strictly_confidential', 'prototype'],
-        message: 'TISAX information classification must be one of: { choices }'
+        message: 'asset.validation.tisax_classification_invalid'
     )]
     private ?string $tisaxInformationClassification = null;
 
@@ -238,14 +245,34 @@ class Asset
     #[Groups(['asset:read', 'asset:write'])]
     private ?DateTimeInterface $returnDate = null;
 
+    /**
+     * DORA Art. 28 — Register of Information scope flag.
+     * When true, this ICT asset is included in the DORA RoI XBRL export
+     * as a DORA-scoped ICT asset (Art. 28 ICT-Asset).
+     */
+    #[ORM\Column(type: Types::BOOLEAN)]
+    #[Groups(['asset:read', 'asset:write'])]
+    private bool $isDoraRelevant = false;
+
     #[ORM\Column(length: 50)]
     #[Groups(['asset:read', 'asset:write'])]
-    #[Assert\NotBlank(message: 'Status is required')]
+    #[Assert\NotBlank(message: 'asset.validation.status_required')]
     #[Assert\Choice(
-        choices: ['active', 'inactive', 'in_use', 'returned', 'retired', 'disposed'],
-        message: 'Status must be one of: { choices }'
+        choices: ['draft', 'active', 'inactive', 'in_use', 'returned', 'retired', 'disposed'],
+        message: 'asset.validation.status_invalid'
     )]
     private ?string $status = 'active';
+
+    /**
+     * Optimistic locking version counter.
+     * Required by LifecycleService to detect concurrent transition conflicts (HTTP 409).
+     *
+     * @see LifecycleService::transition()
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    #[Groups(['asset:read'])]
+    private int $lockVersion = 0;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     #[Groups(['asset:read'])]
@@ -297,6 +324,23 @@ class Asset
     #[ORM\ManyToMany(targetEntity: self::class, mappedBy: 'dependsOn')]
     private Collection $dependentAssets;
 
+    /**
+     * V3 W2-Bug3: GDPR Art. 30 / DPIA-trigger feedback loop.
+     *
+     * Inverse side of the M:N relation between processing activities
+     * and the assets they touch. The owning side is on
+     * {@see ProcessingActivity::$assets}; we only declare the inverse
+     * here so that callers can navigate `Asset → ProcessingActivities`
+     * (used e.g. in the asset show view's "Privacy / DPIA-Triggers"
+     * section). The DPIA-Auto-Suggest listener reads the reverse
+     * direction on ProcessingActivity to detect linked confidential /
+     * restricted assets.
+     *
+     * @var Collection<int, ProcessingActivity>
+     */
+    #[ORM\ManyToMany(targetEntity: ProcessingActivity::class, mappedBy: 'assets')]
+    private Collection $processingActivities;
+
     public function __construct()
     {
         $this->risks = new ArrayCollection();
@@ -305,6 +349,7 @@ class Asset
         $this->dependsOn = new ArrayCollection();
         $this->dependentAssets = new ArrayCollection();
         $this->ownerDeputyPersons = new ArrayCollection();
+        $this->processingActivities = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
     }
 
@@ -329,7 +374,7 @@ class Asset
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -351,15 +396,52 @@ class Asset
         return $this->assetType;
     }
 
-    public function setAssetType(string $assetType): static
+    public function setAssetType(?string $assetType): static
     {
         $this->assetType = $assetType;
         return $this;
     }
 
+    public function getSubType(): ?AssetSubType
+    {
+        return $this->subType;
+    }
+
+    public function setSubType(?AssetSubType $subType): static
+    {
+        $this->subType = $subType;
+        return $this;
+    }
+
+    /**
+     * Convenience display: "[Top-Level] → Sub-Type" — falls back to plain top-level.
+     */
+    public function getTypeDisplay(): string
+    {
+        if ($this->subType !== null) {
+            return sprintf('%s → %s', (string) $this->assetType, $this->subType->getName());
+        }
+        return (string) $this->assetType;
+    }
+
     public function isAiAgent(): bool
     {
         return $this->assetType === 'ai_agent';
+    }
+
+    /**
+     * EU AI Act Art. 5: Prohibited AI systems must not be in active operational use.
+     * Inactive/retired/disposed status is allowed for Audit-Trail / Archive purposes.
+     * Status values: active | inactive | in_use | returned | retired | disposed
+     */
+    #[Assert\Callback]
+    public function validateAiAgentProhibitedStatus(ExecutionContextInterface $context): void
+    {
+        if ($this->aiAgentClassification === 'prohibited' && $this->status === 'active') {
+            $context->buildViolation('asset.validation.ai_prohibited_must_be_inactive')
+                ->atPath('status')
+                ->addViolation();
+        }
     }
 
     public function getAiAgentClassification(): ?string { return $this->aiAgentClassification; }
@@ -398,7 +480,7 @@ class Asset
         return $this->owner;
     }
 
-    public function setOwner(string $owner): static
+    public function setOwner(?string $owner): static
     {
         $this->owner = $owner;
         return $this;
@@ -442,7 +524,7 @@ class Asset
         return $this->confidentialityValue;
     }
 
-    public function setConfidentialityValue(int $confidentialityValue): static
+    public function setConfidentialityValue(?int $confidentialityValue): static
     {
         $this->confidentialityValue = $confidentialityValue;
         return $this;
@@ -453,7 +535,7 @@ class Asset
         return $this->integrityValue;
     }
 
-    public function setIntegrityValue(int $integrityValue): static
+    public function setIntegrityValue(?int $integrityValue): static
     {
         $this->integrityValue = $integrityValue;
         return $this;
@@ -464,9 +546,20 @@ class Asset
         return $this->availabilityValue;
     }
 
-    public function setAvailabilityValue(int $availabilityValue): static
+    public function setAvailabilityValue(?int $availabilityValue): static
     {
         $this->availabilityValue = $availabilityValue;
+        return $this;
+    }
+
+    public function isDoraRelevant(): bool
+    {
+        return $this->isDoraRelevant;
+    }
+
+    public function setIsDoraRelevant(bool $isDoraRelevant): static
+    {
+        $this->isDoraRelevant = $isDoraRelevant;
         return $this;
     }
 
@@ -475,10 +568,23 @@ class Asset
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(AssetStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?AssetStatus
+    {
+        return $this->status === null ? null : AssetStatus::tryFrom($this->status);
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 
     /**
@@ -496,7 +602,7 @@ class Asset
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -620,17 +726,8 @@ class Asset
     }
 
     // Getter/Setter for Phase 6F ISO 27001 Compliance Fields
-
-    public function getMonetaryValue(): ?string
-    {
-        return $this->monetaryValue;
-    }
-
-    public function setMonetaryValue(?string $monetaryValue): static
-    {
-        $this->monetaryValue = $monetaryValue;
-        return $this;
-    }
+    // (Junior-ISB-Audit S14+ #15: getMonetaryValue/setMonetaryValue removed —
+    // see Asset valuation block above.)
 
     public function getDataClassification(): ?string
     {
@@ -837,5 +934,33 @@ class Asset
     public function getDependentAssets(): Collection
     {
         return $this->dependentAssets;
+    }
+
+    /**
+     * V3 W2-Bug3 — Linked processing activities (inverse side).
+     *
+     * @return Collection<int, ProcessingActivity>
+     */
+    public function getProcessingActivities(): Collection
+    {
+        return $this->processingActivities;
+    }
+
+    public function addProcessingActivity(ProcessingActivity $activity): static
+    {
+        if (!$this->processingActivities->contains($activity)) {
+            $this->processingActivities->add($activity);
+            // Keep the owning side in sync without recursing back.
+            $activity->addAsset($this);
+        }
+        return $this;
+    }
+
+    public function removeProcessingActivity(ProcessingActivity $activity): static
+    {
+        if ($this->processingActivities->removeElement($activity)) {
+            $activity->removeAsset($this);
+        }
+        return $this;
     }
 }

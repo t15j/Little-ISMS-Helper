@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Controller\Trait\LocalizedFlashTrait;
 use Exception;
 use Symfony\Component\Security\Core\User\UserInterface;
 use DateTimeImmutable;
@@ -19,29 +20,43 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 #[IsGranted('ROLE_USER')]
 class MappingQualityController extends AbstractController
 {
+    use LocalizedFlashTrait;
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly ComplianceMappingRepository $complianceMappingRepository,
         private readonly MappingGapItemRepository $mappingGapItemRepository,
         private readonly MappingQualityAnalysisService $mappingQualityAnalysisService,
-        private readonly AutomatedGapAnalysisService $automatedGapAnalysisService
+        private readonly AutomatedGapAnalysisService $automatedGapAnalysisService,
+        private readonly TranslatorInterface $translator,
     ) {}
+
+    protected function getFlashDomain(): string
+    {
+        return 'compliance';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
+    }
 
     /**
      * Dashboard showing mapping quality overview
      */
-    #[Route('/compliance/mapping-quality/', name: 'app_mapping_quality_dashboard')]
+    #[Route('/compliance/mapping-quality', name: 'app_mapping_quality_dashboard', methods: ['GET'])]
     public function dashboard(): Response
     {
         try {
             // Check if any mappings exist
             $totalMappings = $this->complianceMappingRepository->count([]);
             if ($totalMappings === 0) {
-                $this->addFlash('warning', 'Keine Mappings gefunden. Bitte erstellen Sie zuerst Compliance-Mappings.');
+                $this->flashWarning('compliance.mapping.quality.no_mappings');
                 return $this->redirectToRoute('app_compliance_index');
             }
 
@@ -51,9 +66,9 @@ class MappingQualityController extends AbstractController
             $gapStats = $this->mappingGapItemRepository->getGapStatisticsByPriority();
             $frameworkComparison = $this->complianceMappingRepository->getFrameworkQualityComparison();
 
-            // Check if analysis has been run
-            if ($qualityStats['analyzed_mappings'] === 0) {
-                $this->addFlash('info', 'Noch keine Analyse durchgeführt. Führen Sie zuerst "php bin/console app:analyze-mapping-quality" aus.');
+            // Check if anything has been scored yet (heuristic OR MQS).
+            if (($qualityStats['scored_mappings'] ?? $qualityStats['analyzed_mappings']) === 0) {
+                $this->flashInfo('compliance.mapping.quality.no_analysis');
             }
 
             return $this->render('compliance/mapping_quality/dashboard.html.twig', [
@@ -64,7 +79,7 @@ class MappingQualityController extends AbstractController
                 'framework_comparison' => $frameworkComparison,
             ]);
         } catch (Exception $e) {
-            $this->addFlash('error', 'Fehler beim Laden des Dashboards: ' . $e->getMessage());
+            $this->addFlash('error', $this->translator->trans('compliance.mapping.quality.dashboard_load_error', ['%message%' => $e->getMessage()], 'compliance'));
             return $this->redirectToRoute('app_compliance_index');
         }
     }
@@ -72,7 +87,7 @@ class MappingQualityController extends AbstractController
     /**
      * List mappings requiring review
      */
-    #[Route('/compliance/mapping-quality/review-queue', name: 'app_mapping_quality_review_queue')]
+    #[Route('/compliance/mapping-quality/review-queue', name: 'app_mapping_quality_review_queue', methods: ['GET'])]
     public function reviewQueue(): Response
     {
         try {
@@ -86,7 +101,7 @@ class MappingQualityController extends AbstractController
                 'discrepancies' => $discrepancies,
             ]);
         } catch (Exception $e) {
-            $this->addFlash('error', 'Fehler beim Laden der Review Queue: ' . $e->getMessage());
+            $this->addFlash('error', $this->translator->trans('compliance.mapping.quality.review_queue_load_error', ['%message%' => $e->getMessage()], 'compliance'));
             return $this->redirectToRoute('app_mapping_quality_dashboard');
         }
     }
@@ -94,7 +109,7 @@ class MappingQualityController extends AbstractController
     /**
      * Review a specific mapping
      */
-    #[Route('/compliance/mapping-quality/review/{id}', name: 'app_mapping_quality_review', requirements: ['id' => '\d+'])]
+    #[Route('/compliance/mapping-quality/review/{id}', name: 'app_mapping_quality_review', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function review(int $id): Response
     {
         $mapping = $this->complianceMappingRepository->find($id);
@@ -264,7 +279,7 @@ class MappingQualityController extends AbstractController
     /**
      * List all gaps
      */
-    #[Route('/compliance/mapping-quality/gaps', name: 'app_mapping_quality_gaps')]
+    #[Route('/compliance/mapping-quality/gaps', name: 'app_mapping_quality_gaps', methods: ['GET'])]
     public function gaps(): Response
     {
         try {
@@ -282,7 +297,7 @@ class MappingQualityController extends AbstractController
                 'remediation_effort' => $remediationEffort,
             ]);
         } catch (Exception $e) {
-            $this->addFlash('error', 'Fehler beim Laden der Gap-Übersicht: ' . $e->getMessage());
+            $this->addFlash('error', $this->translator->trans('compliance.mapping.quality.gap_load_error', ['%message%' => $e->getMessage()], 'compliance'));
             return $this->redirectToRoute('app_mapping_quality_dashboard');
         }
     }
@@ -402,9 +417,12 @@ class MappingQualityController extends AbstractController
             $qb->select('cm.id')
                 ->from(ComplianceMapping::class, 'cm');
 
-            // Filter by analysis status
+            // Filter by analysis status. The text-similarity heuristic only
+            // targets genuinely metadata-poor rows (no MQS qualityScore AND no
+            // calculatedPercentage) — metadata-rich decomposition mappings are
+            // scored by MQS instead and must not flood this slow backlog.
             if (!$reanalyze) {
-                $qb->where('cm.calculatedPercentage IS NULL OR cm.analysisConfidence IS NULL');
+                $this->complianceMappingRepository->applyMetadataPoorFilter($qb, 'cm');
             }
 
             // Order by priority
@@ -493,16 +511,15 @@ class MappingQualityController extends AbstractController
             $this->entityManager->flush();
             $this->entityManager->clear();
 
-            // Get remaining count
-            $remainingQb = $this->entityManager->createQueryBuilder();
-            $remainingQb->select('COUNT(cm.id)')
-                ->from(ComplianceMapping::class, 'cm');
-
-            if (!$reanalyze) {
-                $remainingQb->where('cm.calculatedPercentage IS NULL OR cm.analysisConfidence IS NULL');
+            // Get remaining count (genuinely metadata-poor rows only).
+            if ($reanalyze) {
+                $remainingQb = $this->entityManager->createQueryBuilder();
+                $remainingQb->select('COUNT(cm.id)')
+                    ->from(ComplianceMapping::class, 'cm');
+                $remaining = (int) $remainingQb->getQuery()->getSingleScalarResult();
+            } else {
+                $remaining = $this->complianceMappingRepository->countMetadataPoorUnscored();
             }
-
-            $remaining = (int) $remainingQb->getQuery()->getSingleScalarResult();
 
             return $this->json([
                 'success' => true,
@@ -535,18 +552,22 @@ class MappingQualityController extends AbstractController
 
             $total = (int) $qb->getQuery()->getSingleScalarResult();
 
+            // "Scored" = has EITHER a heuristic percentage OR an MQS quality
+            // score. "Remaining" is only the genuinely metadata-poor backlog
+            // for the text-similarity heuristic.
             $qb2 = $this->entityManager->createQueryBuilder();
             $qb2->select('COUNT(cm.id)')
                 ->from(ComplianceMapping::class, 'cm')
-                ->where('cm.calculatedPercentage IS NOT NULL AND cm.analysisConfidence IS NOT NULL');
+                ->where('cm.calculatedPercentage IS NOT NULL OR cm.qualityScore IS NOT NULL');
 
             $analyzed = (int) $qb2->getQuery()->getSingleScalarResult();
+            $remaining = $this->complianceMappingRepository->countMetadataPoorUnscored();
 
             return $this->json([
                 'success' => true,
                 'total' => $total,
                 'analyzed' => $analyzed,
-                'remaining' => $total - $analyzed,
+                'remaining' => $remaining,
                 'percentage' => $total > 0 ? round(($analyzed / $total) * 100, 1) : 0,
             ]);
 
@@ -561,7 +582,7 @@ class MappingQualityController extends AbstractController
     /**
      * Export quality report
      */
-    #[Route('/compliance/mapping-quality/export', name: 'app_mapping_quality_export')]
+    #[Route('/compliance/mapping-quality/export', name: 'app_mapping_quality_export', methods: ['GET'])]
     public function export(): Response
     {
         $qualityStats = $this->complianceMappingRepository->getQualityStatistics();

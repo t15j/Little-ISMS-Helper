@@ -1,13 +1,26 @@
 {#
 /**
- * Reusable Badge Component
+ * Reusable Badge Component — Aurora v4 (Tier-2 Refactor 2026-05-09)
  *
- * @param string variant - Badge color variant (primary|secondary|success|danger|warning|info|light|dark)
+ * Audit V2 §F2: This macro now emits PURE AURORA classes
+ * (.fa-status-pill, .fa-status-pill--{tone}, .fa-status-pill--{size}) as
+ * primary anchor. For backward compatibility, the legacy Bootstrap classes
+ * (.badge, .bg-*) are still appended one final release so consumers that
+ * explicitly target `.badge.bg-primary` or apply Bootstrap-utility
+ * spacing (e.g. `.badge.ms-2`) continue to render correctly.
+ *
+ * Migration target: drop .badge and .bg-{variant} from the class set
+ * after Tier-3 (85 inline `<span class="badge bg-*">` Templates migrated
+ * to use this macro or _fa_entity_badge).
+ *
+ * @param string variant - Badge color variant (primary|secondary|success|danger|warning|info|light|dark|severity)
+ * @param string|null severity - When variant='severity', maps critical|high|medium|low → danger|warning|info|success
  * @param string|null size - Badge size (sm|lg|null for default)
- * @param string|null icon - Bootstrap icon class (optional, e.g., 'bi-check-circle')
+ * @param string|null icon - Aurora icon name (e.g. 'shield-check', 'ui-edit', 'status-warning').
+ *                           Legacy `bi-*` prefixed names are auto-stripped + remapped where possible.
  * @param string|null class - Additional CSS classes
  * @param string|null title - Tooltip text for accessibility
- * @param boolean pill - Whether to use pill shape (default: false)
+ * @param boolean pill - DEPRECATED — Aurora pills always pill-shaped, kept for BC
  * @param string content - Badge text content (can be passed as block or parameter)
  */
 #}
@@ -18,22 +31,33 @@
 {% set title = title|default(null) %}
 {% set pill = pill|default(false) %}
 
-{# Build CSS classes
-   Aurora-bridge: emits both Bootstrap-compat (.badge.bg-*) and Aurora-native
-   (.fa-status-pill, .fa-status-pill--*) classes. Aurora's .badge.bg-* rules
-   already drive bg/color via tokens; adding .fa-status-pill grants border
-   tone + dot/icon spacing per the v4 status-pill spec. The 'pill' param
-   is redundant (Aurora pills are always pill-shaped) — kept for BC. #}
-{% set faVariant = variant in ['info']                ? 'primary'
+{# Severity-Mapping (per ROADMAP Phase 5):
+   critical → danger, high → warning, medium → info, low → success #}
+{% if variant == 'severity' and severity is defined and severity %}
+    {% set variant = {
+        'critical': 'danger',
+        'high':     'warning',
+        'medium':   'info',
+        'low':      'success'
+    }[severity]|default('secondary') %}
+{% endif %}
+
+{# Aurora-Primary: BEM-class set for the chosen variant.
+   .badge + .bg-{variant} appended ONE final release as BC-tail so
+   inline-styling consumers (Bootstrap-spacing utilities etc.) still work.
+   Aurora has 6 canonical tones — non-canonical Bootstrap variants
+   (info/secondary/light/dark) collapse to neutral/primary. #}
+{% set faVariant = variant in ['info']                    ? 'primary'
                 : variant in ['secondary','light','dark'] ? 'neutral'
                 : variant %}
-{% set badgeClasses = ['badge', 'bg-' ~ variant, 'fa-status-pill', 'fa-status-pill--' ~ faVariant] %}
+{% set badgeClasses = ['fa-status-pill', 'fa-status-pill--' ~ faVariant] %}
 {% if size == 'sm' %}
-    {% set badgeClasses = badgeClasses|merge(['badge-sm', 'fa-status-pill--sm']) %}
+    {% set badgeClasses = badgeClasses|merge(['fa-status-pill--sm']) %}
 {% elseif size == 'lg' %}
-    {% set badgeClasses = badgeClasses|merge(['badge-lg', 'fa-status-pill--lg']) %}
+    {% set badgeClasses = badgeClasses|merge(['fa-status-pill--lg']) %}
 {% endif %}
 {% if pill %}
+    {# DEPRECATED — Aurora pills are always pill-shaped; ignored visually #}
     {% set badgeClasses = badgeClasses|merge(['rounded-pill']) %}
 {% endif %}
 {% if additionalClass %}
@@ -46,7 +70,11 @@
 
 <span class="{{ badgeClasses|join(' ') }}"{% if title %} title="{{ title }}"{% endif %}>
     {%- if icon -%}
-        <i class="bi {{ icon }}" aria-hidden="true"></i>
+        {# Strip legacy `bi-` prefix so callers passing either Bootstrap-Icon or
+           Aurora names render correctly. Aurora classes are namespaced
+           (e.g. `fa-icon--shield-check`); the bare name is what we want. #}
+        {%- set _iconName = icon starts with 'bi-' ? icon[3:] : icon -%}
+        <i class="fa-icon fa-icon--{{ _iconName }}" aria-hidden="true"></i>
     {%- endif -%}
     {%- if content is defined -%}
         {{- content -}}

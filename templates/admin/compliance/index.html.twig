@@ -1,62 +1,60 @@
 {% extends 'admin/layout.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_kpi_card.html.twig' as _fa_kpi_card %}
 
 {% block title %}{{ 'compliance.manage_frameworks'|trans({}, 'compliance') }}{% endblock %}
 
-{% block admin_title %}📦 {{ 'compliance.manage_frameworks'|trans({}, 'compliance') }}{% endblock %}
+{% block admin_title %}{{ 'compliance.manage_frameworks'|trans({}, 'compliance') }}{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item active" aria-current="page">{{ 'compliance.manage_frameworks'|trans({}, 'compliance') }}</li>
+{% endblock %}
 
 {% block admin_content %}
-<div class="container">
-    {% include '_components/_breadcrumb.html.twig' with {
-        breadcrumbs: [
-            { label: 'nav.admin'|trans({}, 'nav'), url: path('admin_dashboard') },
-            { label: 'compliance.manage_frameworks'|trans({}, 'compliance') }
+    {{ _fa_page_header.render({
+        badge: { icon: 'shield-check', label: 'Compliance' },
+        title: 'compliance.manage_frameworks'|trans({}, 'compliance'),
+        subtitle: 'compliance.manage_frameworks_subtitle'|trans({}, 'compliance'),
+        actions: [
+            { label: 'common.back'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('admin_compliance_index') }
         ]
-    } %}
+    }) }}
 
-    <div class="page-header">
-        <div>
-            <p class="text-muted">{{ 'compliance.manage_frameworks_subtitle'|trans({}, 'compliance') }}</p>
+    {# Statistics #}
+    <section class="fa-section mb-4">
+        <div class="fa-section__header">
+            <h2 class="fa-section__title">{{ 'compliance.framework_statistics'|trans({}, 'compliance') }}</h2>
         </div>
-        <div class="button-group">
-            <a href="{{ path('admin_compliance_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <span class="icon">←</span> {{ 'common.back'|trans({}, 'messages') }}
-            </a>
-        </div>
-    </div>
-
-    {# Statistics Card #}
-    {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
-        {% block card_header %}
-            <div class="card-header">
-                <h2>📊 {{ 'compliance.framework_statistics'|trans({}, 'compliance') }}</h2>
-            </div>
-        {% endblock %}
-        {% block card_body %}
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <div class="stat-icon">📦</div>
-                    <div class="stat-number">{{ statistics.total_available }}</div>
-                    <div class="stat-text">{{ 'compliance.total_available'|trans({}, 'compliance') }}</div>
+        <div class="fa-section__body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    {{ _fa_kpi_card.render({
+                        value: statistics.total_available,
+                        label: 'compliance.total_available'|trans({}, 'compliance')
+                    }) }}
                 </div>
-                <div class="stat-box">
-                    <div class="stat-icon"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i></div>
-                    <div class="stat-number">{{ statistics.total_loaded }}</div>
-                    <div class="stat-text">{{ 'compliance.loaded'|trans({}, 'compliance') }}</div>
+                <div class="col-md-3">
+                    {{ _fa_kpi_card.render({
+                        value: statistics.total_loaded,
+                        label: 'compliance.loaded'|trans({}, 'compliance')
+                    }) }}
                 </div>
-                <div class="stat-box">
-                    <div class="stat-icon"><i class="fa-icon fa-icon--status-pending" aria-hidden="true"></i></div>
-                    <div class="stat-number">{{ statistics.total_not_loaded }}</div>
-                    <div class="stat-text">{{ 'compliance.not_loaded'|trans({}, 'compliance') }}</div>
+                <div class="col-md-3">
+                    {{ _fa_kpi_card.render({
+                        value: statistics.total_not_loaded,
+                        label: 'compliance.not_loaded'|trans({}, 'compliance')
+                    }) }}
                 </div>
-                <div class="stat-box">
-                    <div class="stat-icon"><i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i></div>
-                    <div class="stat-number">{{ statistics.mandatory_not_loaded }}</div>
-                    <div class="stat-text">{{ 'compliance.mandatory_missing'|trans({}, 'compliance') }}</div>
+                <div class="col-md-3">
+                    {{ _fa_kpi_card.render({
+                        value: statistics.mandatory_not_loaded,
+                        label: 'compliance.mandatory_missing'|trans({}, 'compliance')
+                    }) }}
                 </div>
             </div>
-        {% endblock %}
-    {% endembed %}
+        </div>
+    </section>
 
     {# Available Frameworks #}
     <div class="frameworks-container">
@@ -73,9 +71,9 @@
                             <p>{{ framework.name }}</p>
                         </div>
                         {% if framework.loaded %}
-                            {% include '_components/_badge.html.twig' with { variant: 'success', content: 'compliance.loaded'|trans({}, 'compliance') } %}
+                            <span class="fa-status-pill fa-status-pill--success">{{ 'compliance.loaded'|trans({}, 'compliance') }}</span>
                         {% else %}
-                            {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'compliance.not_loaded'|trans({}, 'compliance') } %}
+                            <span class="fa-status-pill fa-status-pill--warning">{{ 'compliance.not_loaded'|trans({}, 'compliance') }}</span>
                         {% endif %}
                     </div>
 
@@ -97,11 +95,11 @@
                                 <span class="label">{{ 'admin.compliance.applicability.label'|trans({}, 'compliance') }}:</span>
                                 <span class="value">
                                     {% if _applicability == 'universal' %}
-                                        {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'admin.compliance.applicability.universal'|trans({}, 'compliance') } %}
+                                        <span class="fa-status-pill fa-status-pill--danger">{{ 'admin.compliance.applicability.universal'|trans({}, 'compliance') }}</span>
                                     {% elseif _applicability == 'conditional' %}
-                                        {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'admin.compliance.applicability.conditional'|trans({}, 'compliance') } %}
+                                        <span class="fa-status-pill fa-status-pill--warning">{{ 'admin.compliance.applicability.conditional'|trans({}, 'compliance') }}</span>
                                     {% else %}
-                                        {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'admin.compliance.applicability.voluntary'|trans({}, 'compliance') } %}
+                                        <span class="fa-status-pill fa-status-pill--neutral">{{ 'admin.compliance.applicability.voluntary'|trans({}, 'compliance') }}</span>
                                     {% endif %}
                                 </span>
                             </div>
@@ -164,12 +162,14 @@
             {% endfor %}
         </div>
     </div>
-</div>
 
 {# framework-card styles live in assets/styles/fairy-aurora-components.css #}
 
 <script>
-{# TODO(aurora-migration): bi-check-circle icons in JS strings below — migrate separately #}
+// Turbo re-eval guard: wrap in IIFE so top-level symbols are not re-declared on body-swap
+(function () {
+{# Aurora migration complete: JS template-literals below use `fa-icon fa-icon--*` markup
+   (status-ok / status-critical / nav-download / ui-refresh) — no bi-* remnants. #}
 function initializeFrameworkButtons() {
     const loadButtons = document.querySelectorAll('.load-framework-btn');
     const csrfToken = '{{ csrf_token('load_framework') }}';
@@ -185,7 +185,7 @@ function initializeFrameworkButtons() {
             const code = this.dataset.frameworkCode;
             const name = this.dataset.frameworkName;
 
-            if (!confirm('{{ 'compliance.confirm_load'|trans({}, 'compliance') }}' + '\n\n' + name)) {
+            if (!await window.faConfirm('{{ 'compliance.confirm_load'|trans({}, 'compliance') }}' + '\n\n' + name, { tone: 'warn' })) {
                 return;
             }
 
@@ -248,7 +248,7 @@ function initializeFrameworkButtons() {
                     this.innerHTML = '<span class="icon"><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i></span> {{ 'compliance.load_failed'|trans({}, 'compliance') }}';
                     this.classList.add('fa-cyber-btn--danger');
 
-                    alert('{{ 'compliance.error'|trans({}, 'compliance') }}: ' + result.message);
+                    window.faToast('{{ 'compliance.error'|trans({}, 'compliance') }}: ' + result.message, 'danger');
 
                     // Re-enable after 3 seconds
                     setTimeout(() => {
@@ -263,7 +263,7 @@ function initializeFrameworkButtons() {
                 this.innerHTML = '<span class="icon"><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i></span> {{ 'compliance.load_failed'|trans({}, 'compliance') }}';
                 this.classList.add('fa-cyber-btn--danger');
 
-                alert('{{ 'compliance.error'|trans({}, 'compliance') }}: ' + error.message);
+                window.faToast('{{ 'compliance.error'|trans({}, 'compliance') }}: ' + error.message, 'danger');
 
                 setTimeout(() => {
                     this.disabled = false;
@@ -301,12 +301,12 @@ function initializeDeleteButtons() {
                 `{{ 'compliance.confirm_delete.cannot_undo'|trans({}, 'compliance') }}\n\n` +
                 `{{ 'compliance.confirm_delete.confirm_question'|trans({}, 'compliance') }}`;
 
-            if (!confirm(confirmMessage)) {
+            if (!await window.faConfirm(confirmMessage, { tone: 'danger' })) {
                 return;
             }
 
             // Second confirmation for safety
-            if (!confirm(`{{ 'compliance.confirm_delete.second_confirm'|trans({}, 'compliance') }}`)) {
+            if (!await window.faConfirm(`{{ 'compliance.confirm_delete.second_confirm'|trans({}, 'compliance') }}`, { tone: 'danger' })) {
                 return;
             }
 
@@ -346,7 +346,7 @@ function initializeDeleteButtons() {
                 } else {
                     this.innerHTML = '<span class="icon"><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i></span> {{ 'compliance.delete_failed'|trans({}, 'compliance') }}';
 
-                    alert('{{ 'compliance.error'|trans({}, 'compliance') }}: ' + result.message);
+                    window.faToast('{{ 'compliance.error'|trans({}, 'compliance') }}: ' + result.message, 'danger');
 
                     // Re-enable after 3 seconds
                     setTimeout(() => {
@@ -358,7 +358,7 @@ function initializeDeleteButtons() {
                 console.error('Error deleting framework:', error);
                 this.innerHTML = '<span class="icon"><i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i></span> {{ 'compliance.delete_failed'|trans({}, 'compliance') }}';
 
-                alert('{{ 'compliance.error'|trans({}, 'compliance') }}: ' + error.message);
+                window.faToast('{{ 'compliance.error'|trans({}, 'compliance') }}: ' + error.message, 'danger');
 
                 setTimeout(() => {
                     this.disabled = false;
@@ -396,5 +396,6 @@ setTimeout(function() {
         initializeDeleteButtons();
     }
 }, 100);
+})();
 </script>
 {% endblock admin_content %}

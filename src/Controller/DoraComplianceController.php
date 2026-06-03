@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Enum\BCExerciseStatus;
 use App\Enum\IncidentSeverity;
 use App\Enum\IncidentStatus;
 use App\Enum\TreatmentStrategy;
@@ -21,6 +22,7 @@ use App\Repository\RiskTreatmentPlanRepository;
 use App\Repository\SupplierRepository;
 use App\Repository\TrainingRepository;
 use App\Service\PdfExportService;
+use App\Service\TenantContext;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Response;
@@ -60,13 +62,25 @@ class DoraComplianceController extends AbstractController
         private readonly TrainingRepository $trainingRepository,
         private readonly PdfExportService $pdfExportService,
         private readonly Security $security,
-        private readonly TranslatorInterface $translator
+        private readonly TranslatorInterface $translator,
+        private readonly TenantContext $tenantContext,
     ) {
     }
 
-    #[Route('/dora-compliance', name: 'app_dora_compliance_dashboard')]
+    #[Route('/dora-compliance', name: 'app_dora_compliance_dashboard', methods: ['GET'])]
     public function dashboard(): Response
     {
+        // Tenant-level DORA gate: redirect non-DORA-obligated tenants away.
+        $tenant = $this->tenantContext->getCurrentTenant();
+        if ($tenant !== null && !$tenant->isDoraObligated()) {
+            $this->addFlash('info', $this->translator->trans(
+                'dora.not_applicable_to_tenant',
+                [],
+                'dora'
+            ));
+            return $this->redirectToRoute('app_dashboard');
+        }
+
         // Check if DORA framework exists and is active
         $doraFramework = $this->complianceFrameworkRepository->findOneBy(['code' => 'DORA']);
 
@@ -136,7 +150,7 @@ class DoraComplianceController extends AbstractController
         // ICT-related risks (filter by category or name containing ICT/IT/Cyber)
         $ictRisks = array_filter($allRisks, function ($risk) {
             $category = strtolower($risk->getCategory() ?? '');
-            $name = strtolower($risk->getName() ?? '');
+            $name = strtolower($risk->getTitle() ?? '');
             $description = strtolower($risk->getDescription() ?? '');
             $keywords = ['ict', 'it ', 'cyber', 'digital', 'system', 'network', 'data', 'software', 'hardware'];
 
@@ -158,12 +172,12 @@ class DoraComplianceController extends AbstractController
         $tenant = $this->getUser()?->getTenant();
         $allAssets = $tenant ? $this->assetRepository->findActiveAssets($tenant) : [];
         $ictAssets = array_filter($allAssets, function ($asset) {
-            $type = strtolower($asset->getType() ?? '');
-            $category = strtolower($asset->getCategory() ?? '');
+            $type = strtolower($asset->getAssetType() ?? '');
+            $name = strtolower($asset->getName() ?? '');
             $keywords = ['hardware', 'software', 'network', 'server', 'database', 'application', 'system', 'ict'];
 
             foreach ($keywords as $keyword) {
-                if (str_contains($type, $keyword) || str_contains($category, $keyword)) {
+                if (str_contains($type, $keyword) || str_contains($name, $keyword)) {
                     return true;
                 }
             }
@@ -217,11 +231,11 @@ class DoraComplianceController extends AbstractController
         // Filter for ICT-related incidents
         $ictIncidents = array_filter($allIncidents, function ($incident) {
             $category = strtolower($incident->getCategory() ?? '');
-            $type = strtolower($incident->getType() ?? '');
+            $title = strtolower($incident->getTitle() ?? '');
             $keywords = ['ict', 'cyber', 'system', 'network', 'data', 'security', 'malware', 'breach', 'outage'];
 
             foreach ($keywords as $keyword) {
-                if (str_contains($category, $keyword) || str_contains($type, $keyword)) {
+                if (str_contains($category, $keyword) || str_contains($title, $keyword)) {
                     return true;
                 }
             }
@@ -248,8 +262,8 @@ class DoraComplianceController extends AbstractController
             if ($i->getDetectedAt() === null) {
                 return false;
             }
-            // Check if reported within 4 hours (simplified check)
-            $reportedAt = $i->getReportedAt() ?? $i->getCreatedAt();
+            // Check if reported within 4 hours (DORA Art. 19 — early warning deadline)
+            $reportedAt = $i->getEarlyWarningReportedAt() ?? $i->getCreatedAt();
             if ($reportedAt === null) {
                 return false;
             }
@@ -298,29 +312,31 @@ class DoraComplianceController extends AbstractController
 
         // BC Exercises / Resilience Tests
         $allExercises = $this->bcExerciseRepository->findAll();
-        $exercisesThisYear = array_filter($allExercises, fn($e) => $e->getScheduledDate() !== null && $e->getScheduledDate()->format('Y') === $thisYear
+        $exercisesThisYear = array_filter($allExercises, fn($e) => $e->getExerciseDate() !== null && $e->getExerciseDate()->format('Y') === $thisYear
         );
-        $completedExercises = array_filter($exercisesThisYear, fn($e) => $e->getStatus() === 'completed');
+        $completedExercises = array_filter($exercisesThisYear, fn($e) => $e->getStatus() === BCExerciseStatus::Completed->value);
 
         // BC Plans coverage
         $allPlans = $this->bcPlanRepository->findAll();
         $activePlans = array_filter($allPlans, fn($p) => $p->getStatus() === 'approved' || $p->getStatus() === 'active');
-        $testedPlans = array_filter($activePlans, fn($p) => method_exists($p, 'getLastTestDate') && $p->getLastTestDate() !== null
+        $testedPlans = array_filter($activePlans, fn($p) => $p->getLastTested() !== null
         );
 
         // Critical processes with BC plans
         $criticalProcesses = array_filter($this->businessProcessRepository->findAll(), fn($p) => $p->getCriticality() === 'critical');
-        $processesWithBcPlan = array_filter($criticalProcesses, fn($p) => $p->getBusinessContinuityPlan() !== null);
+        // BusinessProcess has no getBusinessContinuityPlan() — the relation is owned by
+        // BusinessContinuityPlan (ManyToOne → BusinessProcess). Query the BC plan repo instead.
+        $processesWithBcPlan = array_filter($criticalProcesses, fn($p) => $this->bcPlanRepository->findOneBy(['businessProcess' => $p]) !== null);
         $bcPlanCoverage = count($criticalProcesses) > 0 ? round((count($processesWithBcPlan) / count($criticalProcesses)) * 100) : 100;
 
         // Training / awareness for resilience
         $allTrainings = $this->trainingRepository->findAll();
         $resilienceTrainings = array_filter($allTrainings, function ($t) {
-            $topic = strtolower($t->getTopic() ?? '');
+            $searchText = strtolower(($t->getTitle() ?? '') . ' ' . ($t->getDescription() ?? '') . ' ' . ($t->getTrainingType() ?? ''));
             $keywords = ['resilience', 'continuity', 'disaster', 'recovery', 'backup', 'incident'];
 
             foreach ($keywords as $keyword) {
-                if (str_contains($topic, $keyword)) {
+                if (str_contains($searchText, $keyword)) {
                     return true;
                 }
             }
@@ -348,10 +364,10 @@ class DoraComplianceController extends AbstractController
     {
         $allSuppliers = $this->supplierRepository->findAll();
 
-        // ICT third-party providers
+        // ICT third-party providers (Supplier has no generic "type"; use ictFunctionType + serviceProvided)
         $ictProviders = array_filter($allSuppliers, function ($supplier) {
-            $type = strtolower($supplier->getType() ?? '');
-            $services = strtolower($supplier->getServicesProvided() ?? '');
+            $type = strtolower($supplier->getIctFunctionType() ?? '');
+            $services = strtolower($supplier->getServiceProvided() ?? '');
             $keywords = ['ict', 'it ', 'cloud', 'software', 'hosting', 'data', 'network', 'saas', 'iaas', 'paas'];
 
             foreach ($keywords as $keyword) {
@@ -368,19 +384,19 @@ class DoraComplianceController extends AbstractController
         $criticalProviders = array_filter($ictProviders, fn($s) => $s->getCriticality() === 'critical' || $s->getCriticality() === 'high');
         $totalCriticalProviders = count($criticalProviders);
 
-        // Assessed providers
-        $assessedProviders = array_filter($criticalProviders, fn($s) => $s->getLastAssessmentDate() !== null);
+        // Assessed providers (Supplier uses getLastSecurityAssessment())
+        $assessedProviders = array_filter($criticalProviders, fn($s) => $s->getLastSecurityAssessment() !== null);
         $assessmentRate = $totalCriticalProviders > 0 ? round((count($assessedProviders) / $totalCriticalProviders) * 100) : 100;
 
         // Overdue assessments (> 12 months)
-        $overdueAssessments = count(array_filter($criticalProviders, fn($s) => $s->getLastAssessmentDate() === null || $s->getLastAssessmentDate()->diff(new DateTime())->days > 365
+        $overdueAssessments = count(array_filter($criticalProviders, fn($s) => $s->getLastSecurityAssessment() === null || $s->getLastSecurityAssessment()->diff(new DateTime())->days > 365
         ));
 
-        // Concentration risk - providers with high dependency
-        $highDependencyProviders = array_filter($ictProviders, fn($s) => $s->getDependencyLevel() === 'critical' || $s->getDependencyLevel() === 'high');
+        // Concentration risk — use getIctCriticality() or getCriticality(); no getDependencyLevel() on Supplier
+        $highDependencyProviders = array_filter($ictProviders, fn($s) => $s->getIctCriticality() === 'critical' || $s->getIctCriticality() === 'important');
 
-        // Exit strategies
-        $providersWithExitStrategy = array_filter($criticalProviders, fn($s) => method_exists($s, 'getExitStrategy') && $s->getExitStrategy() !== null && $s->getExitStrategy() !== ''
+        // Exit strategies (Supplier has hasExitStrategy() bool; no getExitStrategy() string getter)
+        $providersWithExitStrategy = array_filter($criticalProviders, fn($s) => $s->hasExitStrategy()
         );
         $exitStrategyRate = $totalCriticalProviders > 0 ? round((count($providersWithExitStrategy) / $totalCriticalProviders) * 100) : 100;
 
@@ -436,7 +452,7 @@ class DoraComplianceController extends AbstractController
      * - Details: description, timeline, affected services, financial impact
      * - DORA reporting timeline: Detection -> Initial (4h) -> Intermediate (72h) -> Final (1 month)
      */
-    #[Route('/dora/ict-incident-report/{id}/pdf', name: 'app_dora_ict_incident_report_pdf')]
+    #[Route('/dora/ict-incident-report/{id}/pdf', name: 'app_dora_ict_incident_report_pdf', methods: ['GET'])]
     #[IsGranted('ROLE_MANAGER')]
     public function ictIncidentReportPdf(Incident $incident): Response
     {

@@ -10,6 +10,7 @@ use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\Vote;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
+use Symfony\Component\Security\Core\Role\RoleHierarchyInterface;
 
 /**
  * Generic tenant-isolation voter for API Platform entities.
@@ -31,13 +32,19 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  *   API_DELETE — remove entity
  *   API_CREATE — create entity (tenant set by TenantAwareStateProcessor)
  */
-class ApiTenantVoter extends Voter
+final class ApiTenantVoter extends Voter
 {
     use HoldingTreeAccessTrait;
 
     public function __construct(
         private readonly Security $security,
+        private readonly RoleHierarchyInterface $roleHierarchy,
     ) {
+    }
+
+    protected function getRoleHierarchy(): RoleHierarchyInterface
+    {
+        return $this->roleHierarchy;
     }
 
     public const string API_VIEW = 'API_VIEW';

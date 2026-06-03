@@ -23,7 +23,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * guard against meaningless freeze names like "Q1" that later auditors
  * cannot map to a specific audit.
  */
-class AuditFreezeType extends AbstractType
+final class AuditFreezeType extends AbstractType
 {
     public const PURPOSE_CHOICES = [
         'audit_freeze.purpose.certification' => AuditFreeze::PURPOSE_CERTIFICATION,
@@ -52,7 +52,7 @@ class AuditFreezeType extends AbstractType
             ->add('freezeName', TextType::class, [
                 'label' => 'audit_freeze.form.name',
                 'required' => true,
-                'attr' => ['maxlength' => 200, 'class' => 'form-control'],
+                'attr' => ['maxlength' => 200],
                 'constraints' => [
                     new Assert\NotBlank(),
                     new Assert\Length(min: 5, max: 200),
@@ -65,7 +65,6 @@ class AuditFreezeType extends AbstractType
                 'input' => 'datetime_immutable',
                 'attr' => [
                     'max' => $today->format('Y-m-d'),
-                    'class' => 'form-control',
                 ],
                 'constraints' => [
                     new Assert\NotBlank(),
@@ -92,12 +91,11 @@ class AuditFreezeType extends AbstractType
                 'label' => 'audit_freeze.form.purpose',
                 'choices' => self::PURPOSE_CHOICES,
                 'required' => true,
-                'attr' => ['class' => 'form-select'],
             ])
             ->add('notes', TextareaType::class, [
                 'label' => 'audit_freeze.form.notes',
                 'required' => false,
-                'attr' => ['rows' => 4, 'class' => 'form-control'],
+                'attr' => ['rows' => 4],
             ]);
     }
 

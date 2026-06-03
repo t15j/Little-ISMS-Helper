@@ -54,6 +54,12 @@ final class GuidedTourService
      * zur Auto-Detect-Rollentour angeboten (ROLE_USER, nicht ROLE_AUDITOR).
      */
     public const TOUR_MRIS = 'mris';
+    /**
+     * Topic-Tour MAPPING — themenbezogen, nicht rollenbezogen. Erklärt
+     * Junior-ISBs (IT-/9001-Hintergrund) das Mapping-Konzept: Brücke,
+     * Data-Reuse/Vererbung, Coverage, Confidence/MQS, Lifecycle.
+     */
+    public const TOUR_MAPPING = 'mapping';
 
     /** @var list<string> */
     public const ALL_TOURS = [
@@ -64,6 +70,7 @@ final class GuidedTourService
         self::TOUR_RISK_OWNER,
         self::TOUR_AUDITOR,
         self::TOUR_MRIS,
+        self::TOUR_MAPPING,
     ];
 
     public function __construct(
@@ -168,6 +175,7 @@ final class GuidedTourService
             self::TOUR_RISK_OWNER => $this->riskOwnerSteps(),
             self::TOUR_AUDITOR => $this->auditorSteps(),
             self::TOUR_MRIS => $this->mrisSteps(),
+            self::TOUR_MAPPING => $this->mappingSteps(),
             default => [],
         };
 
@@ -175,6 +183,19 @@ final class GuidedTourService
         // (operative Rollen, die mit den Domain-Modulen arbeiten).
         if (in_array($tourId, [self::TOUR_JUNIOR, self::TOUR_ISB], true)) {
             $base = array_merge($base, $this->moduleAddonSteps());
+        }
+
+        // Concern C fix (2026-05-27): Filter out steps that require a module
+        // which is not active for this tenant.  Steps declare an optional
+        // `module` key — if the module key is present and the module is NOT
+        // active, the step is silently dropped.  This prevents the tour from
+        // pointing at empty-state pages or "access denied" screens.
+        if ($this->moduleConfig !== null) {
+            $base = array_values(array_filter(
+                $base,
+                fn(array $step): bool =>
+                    !isset($step['module']) || $this->moduleConfig->isModuleActive($step['module'])
+            ));
         }
 
         return $base;
@@ -193,25 +214,16 @@ final class GuidedTourService
         }
 
         $addons = [];
-        if ($this->moduleConfig->isModuleActive('bsi_grundschutz')) {
+        if ($this->moduleConfig->isModuleActive('privacy')) {
             $addons[] = [
-                'id' => 'module-bsi', 'icon' => 'bi-building-shield', 'target' => null,
-                'title_key' => 'guided_tour.modules.bsi.title', 'body_key' => 'guided_tour.modules.bsi.body',
-                'url' => null, 'placement' => 'center',
-            ];
-        }
-        if ($this->moduleConfig->isModuleActive('privacy')
-            || $this->moduleConfig->isModuleActive('gdpr')
-        ) {
-            $addons[] = [
-                'id' => 'module-gdpr', 'icon' => 'bi-person-badge', 'target' => null,
+                'id' => 'module-gdpr', 'icon' => 'nav-people', 'target' => null,
                 'title_key' => 'guided_tour.modules.gdpr.title', 'body_key' => 'guided_tour.modules.gdpr.body',
                 'url' => null, 'placement' => 'center',
             ];
         }
         if ($this->moduleConfig->isModuleActive('bcm')) {
             $addons[] = [
-                'id' => 'module-bcm', 'icon' => 'bi-life-preserver', 'target' => null,
+                'id' => 'module-bcm', 'icon' => 'recovery', 'target' => null,
                 'title_key' => 'guided_tour.modules.bcm.title', 'body_key' => 'guided_tour.modules.bcm.body',
                 'url' => null, 'placement' => 'center',
             ];
@@ -225,13 +237,13 @@ final class GuidedTourService
         $dashboard = $this->urlFor('app_dashboard');
         $assets = $this->urlFor('app_asset_index');
         return [
-            ['id' => 'welcome', 'icon' => 'bi-stars', 'target' => null, 'title_key' => 'guided_tour.junior.step.welcome.title', 'body_key' => 'guided_tour.junior.step.welcome.body', 'url' => $dashboard, 'placement' => 'center'],
-            ['id' => 'mega-menu', 'icon' => 'bi-grid-3x3-gap', 'target' => '[data-mega-menu-target="trigger"]', 'title_key' => 'guided_tour.junior.step.mega_menu.title', 'body_key' => 'guided_tour.junior.step.mega_menu.body', 'url' => $dashboard, 'placement' => 'bottom'],
-            ['id' => 'kpis', 'icon' => 'bi-speedometer2', 'target' => '.management-kpis-widget, .dashboard-stats, [data-role="kpi-grid"]', 'title_key' => 'guided_tour.junior.step.kpis.title', 'body_key' => 'guided_tour.junior.step.kpis.body', 'url' => $dashboard, 'placement' => 'top'],
-            ['id' => 'iso9001-bridge', 'icon' => 'bi-bridge', 'target' => null, 'title_key' => 'guided_tour.junior.step.iso9001_bridge.title', 'body_key' => 'guided_tour.junior.step.iso9001_bridge.body', 'url' => $dashboard, 'placement' => 'center'],
-            ['id' => 'command-palette', 'icon' => 'bi-command', 'target' => null, 'title_key' => 'guided_tour.junior.step.command_palette.title', 'body_key' => 'guided_tour.junior.step.command_palette.body', 'url' => $dashboard, 'placement' => 'center'],
-            ['id' => 'first-asset', 'icon' => 'bi-box-seam', 'target' => null, 'title_key' => 'guided_tour.junior.step.first_asset.title', 'body_key' => 'guided_tour.junior.step.first_asset.body', 'url' => $assets, 'placement' => 'center'],
-            ['id' => 'shortcuts-hint', 'icon' => 'bi-keyboard', 'target' => null, 'title_key' => 'guided_tour.junior.step.shortcuts.title', 'body_key' => 'guided_tour.junior.step.shortcuts.body', 'url' => $dashboard, 'placement' => 'center'],
+            ['id' => 'welcome', 'icon' => 'ui-stars', 'target' => null, 'title_key' => 'guided_tour.junior.step.welcome.title', 'body_key' => 'guided_tour.junior.step.welcome.body', 'url' => $dashboard, 'placement' => 'center'],
+            ['id' => 'mega-menu', 'icon' => 'nav-grid', 'target' => '[data-mega-menu-target="trigger"]', 'title_key' => 'guided_tour.junior.step.mega_menu.title', 'body_key' => 'guided_tour.junior.step.mega_menu.body', 'url' => $dashboard, 'placement' => 'bottom'],
+            ['id' => 'kpis', 'icon' => 'nav-dashboard', 'target' => '.management-kpis-widget, .dashboard-stats, [data-role="kpi-grid"]', 'title_key' => 'guided_tour.junior.step.kpis.title', 'body_key' => 'guided_tour.junior.step.kpis.body', 'url' => $dashboard, 'placement' => 'top'],
+            ['id' => 'iso9001-bridge', 'icon' => 'nav-link', 'target' => null, 'title_key' => 'guided_tour.junior.step.iso9001_bridge.title', 'body_key' => 'guided_tour.junior.step.iso9001_bridge.body', 'url' => $dashboard, 'placement' => 'center'],
+            ['id' => 'command-palette', 'icon' => 'ui-magic', 'target' => null, 'title_key' => 'guided_tour.junior.step.command_palette.title', 'body_key' => 'guided_tour.junior.step.command_palette.body', 'url' => $dashboard, 'placement' => 'center'],
+            ['id' => 'first-asset', 'icon' => 'nav-boxes', 'target' => null, 'title_key' => 'guided_tour.junior.step.first_asset.title', 'body_key' => 'guided_tour.junior.step.first_asset.body', 'url' => $assets, 'placement' => 'center'],
+            ['id' => 'shortcuts-hint', 'icon' => 'cpu', 'target' => null, 'title_key' => 'guided_tour.junior.step.shortcuts.title', 'body_key' => 'guided_tour.junior.step.shortcuts.body', 'url' => $dashboard, 'placement' => 'center'],
         ];
     }
 
@@ -242,11 +254,14 @@ final class GuidedTourService
         $mapping = $this->urlFor('app_compliance_mapping_hub');
         $reuse = $this->urlFor('app_data_reuse_hub');
         return [
-            ['id' => 'welcome', 'icon' => 'bi-stars', 'target' => null, 'title_key' => 'guided_tour.cm.step.welcome.title', 'body_key' => 'guided_tour.cm.step.welcome.body', 'url' => $dashboard, 'placement' => 'center'],
-            ['id' => 'framework-dashboard', 'icon' => 'bi-speedometer2', 'target' => null, 'title_key' => 'guided_tour.cm.step.framework_dashboard.title', 'body_key' => 'guided_tour.cm.step.framework_dashboard.body', 'url' => $dashboard, 'placement' => 'center'],
-            ['id' => 'mapping-hub', 'icon' => 'bi-diagram-3', 'target' => null, 'title_key' => 'guided_tour.cm.step.mapping_hub.title', 'body_key' => 'guided_tour.cm.step.mapping_hub.body', 'url' => $mapping, 'placement' => 'center'],
-            ['id' => 'reuse-hub', 'icon' => 'bi-recycle', 'target' => null, 'title_key' => 'guided_tour.cm.step.reuse_hub.title', 'body_key' => 'guided_tour.cm.step.reuse_hub.body', 'url' => $reuse, 'placement' => 'center'],
-            ['id' => 'seed-review', 'icon' => 'bi-check2-circle', 'target' => null, 'title_key' => 'guided_tour.cm.step.seed_review.title', 'body_key' => 'guided_tour.cm.step.seed_review.body', 'url' => $dashboard, 'placement' => 'center'],
+            ['id' => 'welcome', 'icon' => 'ui-stars', 'target' => null, 'title_key' => 'guided_tour.cm.step.welcome.title', 'body_key' => 'guided_tour.cm.step.welcome.body', 'url' => $dashboard, 'placement' => 'center'],
+            // module: compliance — framework-dashboard only meaningful when compliance module active
+            ['id' => 'framework-dashboard', 'module' => 'compliance', 'icon' => 'nav-dashboard', 'target' => null, 'title_key' => 'guided_tour.cm.step.framework_dashboard.title', 'body_key' => 'guided_tour.cm.step.framework_dashboard.body', 'url' => $dashboard, 'placement' => 'center'],
+            // module: compliance — mapping-hub requires compliance module
+            ['id' => 'mapping-hub', 'module' => 'compliance', 'icon' => 'nav-process', 'target' => null, 'title_key' => 'guided_tour.cm.step.mapping_hub.title', 'body_key' => 'guided_tour.cm.step.mapping_hub.body', 'url' => $mapping, 'placement' => 'center'],
+            // module: compliance — data-reuse-hub requires compliance module
+            ['id' => 'reuse-hub', 'module' => 'compliance', 'icon' => 'util-refresh', 'target' => null, 'title_key' => 'guided_tour.cm.step.reuse_hub.title', 'body_key' => 'guided_tour.cm.step.reuse_hub.body', 'url' => $reuse, 'placement' => 'center'],
+            ['id' => 'seed-review', 'icon' => 'status-ok', 'target' => null, 'title_key' => 'guided_tour.cm.step.seed_review.title', 'body_key' => 'guided_tour.cm.step.seed_review.body', 'url' => $dashboard, 'placement' => 'center'],
         ];
     }
 
@@ -257,10 +272,11 @@ final class GuidedTourService
         $managementReports = $this->urlFor('app_management_reports');
         $frameworks = $this->urlFor('app_analytics_compliance_frameworks');
         return [
-            ['id' => 'welcome', 'icon' => 'bi-shield-lock', 'target' => null, 'title_key' => 'guided_tour.ciso.step.welcome.title', 'body_key' => 'guided_tour.ciso.step.welcome.body', 'url' => $cisoDash, 'placement' => 'center'],
-            ['id' => 'board-export', 'icon' => 'bi-file-earmark-slides', 'target' => null, 'title_key' => 'guided_tour.ciso.step.board_export.title', 'body_key' => 'guided_tour.ciso.step.board_export.body', 'url' => $managementReports, 'placement' => 'center'],
-            ['id' => 'health-score', 'icon' => 'bi-heart-pulse', 'target' => null, 'title_key' => 'guided_tour.ciso.step.health_score.title', 'body_key' => 'guided_tour.ciso.step.health_score.body', 'url' => $cisoDash, 'placement' => 'center'],
-            ['id' => 'framework-matrix', 'icon' => 'bi-grid-3x3', 'target' => null, 'title_key' => 'guided_tour.ciso.step.framework_matrix.title', 'body_key' => 'guided_tour.ciso.step.framework_matrix.body', 'url' => $frameworks, 'placement' => 'center'],
+            ['id' => 'welcome', 'icon' => 'nav-shield-lock', 'target' => null, 'title_key' => 'guided_tour.ciso.step.welcome.title', 'body_key' => 'guided_tour.ciso.step.welcome.body', 'url' => $cisoDash, 'placement' => 'center'],
+            ['id' => 'board-export', 'icon' => 'nav-file-earmark-text', 'target' => null, 'title_key' => 'guided_tour.ciso.step.board_export.title', 'body_key' => 'guided_tour.ciso.step.board_export.body', 'url' => $managementReports, 'placement' => 'center'],
+            ['id' => 'health-score', 'icon' => 'nav-heart-pulse', 'target' => null, 'title_key' => 'guided_tour.ciso.step.health_score.title', 'body_key' => 'guided_tour.ciso.step.health_score.body', 'url' => $cisoDash, 'placement' => 'center'],
+            // module: analytics — framework matrix is gated behind the analytics module
+            ['id' => 'framework-matrix', 'module' => 'analytics', 'icon' => 'nav-grid', 'target' => null, 'title_key' => 'guided_tour.ciso.step.framework_matrix.title', 'body_key' => 'guided_tour.ciso.step.framework_matrix.body', 'url' => $frameworks, 'placement' => 'center'],
         ];
     }
 
@@ -269,15 +285,22 @@ final class GuidedTourService
     {
         $dashboard = $this->urlFor('app_dashboard');
         $soa = $this->urlFor('app_soa_index');
+        $risks = $this->urlFor('app_risk_index');
         $incidents = $this->urlFor('app_incident_index');
         $workflows = $this->urlFor('app_workflow_index');
         $auditLog = $this->urlFor('app_audit_log_index');
         return [
-            ['id' => 'welcome', 'icon' => 'bi-stars', 'target' => null, 'title_key' => 'guided_tour.isb.step.welcome.title', 'body_key' => 'guided_tour.isb.step.welcome.body', 'url' => $dashboard, 'placement' => 'center'],
-            ['id' => 'soa', 'icon' => 'bi-clipboard-check', 'target' => null, 'title_key' => 'guided_tour.isb.step.soa.title', 'body_key' => 'guided_tour.isb.step.soa.body', 'url' => $soa, 'placement' => 'center'],
-            ['id' => 'incidents', 'icon' => 'bi-exclamation-triangle', 'target' => null, 'title_key' => 'guided_tour.isb.step.incidents.title', 'body_key' => 'guided_tour.isb.step.incidents.body', 'url' => $incidents, 'placement' => 'center'],
-            ['id' => 'workflows', 'icon' => 'bi-diagram-2', 'target' => null, 'title_key' => 'guided_tour.isb.step.workflows.title', 'body_key' => 'guided_tour.isb.step.workflows.body', 'url' => $workflows, 'placement' => 'center'],
-            ['id' => 'audit-log', 'icon' => 'bi-journal-text', 'target' => null, 'title_key' => 'guided_tour.isb.step.audit_log.title', 'body_key' => 'guided_tour.isb.step.audit_log.body', 'url' => $auditLog, 'placement' => 'center'],
+            ['id' => 'welcome', 'icon' => 'ui-stars', 'target' => null, 'title_key' => 'guided_tour.isb.step.welcome.title', 'body_key' => 'guided_tour.isb.step.welcome.body', 'url' => $dashboard, 'placement' => 'center'],
+            // module: controls — SoA requires the controls module
+            ['id' => 'soa', 'module' => 'controls', 'icon' => 'nav-clipboard-check', 'target' => null, 'title_key' => 'guided_tour.isb.step.soa.title', 'body_key' => 'guided_tour.isb.step.soa.body', 'url' => $soa, 'placement' => 'center'],
+            // module: risks — the risk register is the ISB's daily core artefact (ISO 27001 Cl. 6.1.2)
+            ['id' => 'risk', 'module' => 'risks', 'icon' => 'status-warning', 'target' => null, 'title_key' => 'guided_tour.isb.step.risk.title', 'body_key' => 'guided_tour.isb.step.risk.body', 'url' => $risks, 'placement' => 'center'],
+            // module: incidents — incident management requires the incidents module
+            ['id' => 'incidents', 'module' => 'incidents', 'icon' => 'status-warning', 'target' => null, 'title_key' => 'guided_tour.isb.step.incidents.title', 'body_key' => 'guided_tour.isb.step.incidents.body', 'url' => $incidents, 'placement' => 'center'],
+            // workflows module: core (workflows are always available with core)
+            ['id' => 'workflows', 'module' => 'core', 'icon' => 'nav-process', 'target' => null, 'title_key' => 'guided_tour.isb.step.workflows.title', 'body_key' => 'guided_tour.isb.step.workflows.body', 'url' => $workflows, 'placement' => 'center'],
+            // audit-log: no module gate (access is role-gated ROLE_AUDITOR/ROLE_ADMIN, not module-gated)
+            ['id' => 'audit-log', 'icon' => 'nav-journal-text', 'target' => null, 'title_key' => 'guided_tour.isb.step.audit_log.title', 'body_key' => 'guided_tour.isb.step.audit_log.body', 'url' => $auditLog, 'placement' => 'center'],
         ];
     }
 
@@ -287,8 +310,8 @@ final class GuidedTourService
         $dashboard = $this->urlFor('app_dashboard');
         $risks = $this->urlFor('app_risk_index');
         return [
-            ['id' => 'welcome', 'icon' => 'bi-stars', 'target' => null, 'title_key' => 'guided_tour.risk_owner.step.welcome.title', 'body_key' => 'guided_tour.risk_owner.step.welcome.body', 'url' => $dashboard, 'placement' => 'center'],
-            ['id' => 'my-risks', 'icon' => 'bi-exclamation-diamond', 'target' => null, 'title_key' => 'guided_tour.risk_owner.step.my_risks.title', 'body_key' => 'guided_tour.risk_owner.step.my_risks.body', 'url' => $risks, 'placement' => 'center'],
+            ['id' => 'welcome', 'icon' => 'ui-stars', 'target' => null, 'title_key' => 'guided_tour.risk_owner.step.welcome.title', 'body_key' => 'guided_tour.risk_owner.step.welcome.body', 'url' => $dashboard, 'placement' => 'center'],
+            ['id' => 'my-risks', 'icon' => 'status-warning', 'target' => null, 'title_key' => 'guided_tour.risk_owner.step.my_risks.title', 'body_key' => 'guided_tour.risk_owner.step.my_risks.body', 'url' => $risks, 'placement' => 'center'],
         ];
     }
 
@@ -299,9 +322,9 @@ final class GuidedTourService
         $documents = $this->urlFor('app_document_index');
         $auditLog = $this->urlFor('app_audit_log_index');
         return [
-            ['id' => 'welcome', 'icon' => 'bi-search', 'target' => null, 'title_key' => 'guided_tour.auditor.step.welcome.title', 'body_key' => 'guided_tour.auditor.step.welcome.body', 'url' => $auditorDash, 'placement' => 'center'],
-            ['id' => 'documents', 'icon' => 'bi-file-earmark-text', 'target' => null, 'title_key' => 'guided_tour.auditor.step.documents.title', 'body_key' => 'guided_tour.auditor.step.documents.body', 'url' => $documents, 'placement' => 'center'],
-            ['id' => 'audit-log', 'icon' => 'bi-journal-text', 'target' => null, 'title_key' => 'guided_tour.auditor.step.audit_log.title', 'body_key' => 'guided_tour.auditor.step.audit_log.body', 'url' => $auditLog, 'placement' => 'center'],
+            ['id' => 'welcome', 'icon' => 'ui-search', 'target' => null, 'title_key' => 'guided_tour.auditor.step.welcome.title', 'body_key' => 'guided_tour.auditor.step.welcome.body', 'url' => $auditorDash, 'placement' => 'center'],
+            ['id' => 'documents', 'icon' => 'nav-file-earmark-text', 'target' => null, 'title_key' => 'guided_tour.auditor.step.documents.title', 'body_key' => 'guided_tour.auditor.step.documents.body', 'url' => $documents, 'placement' => 'center'],
+            ['id' => 'audit-log', 'icon' => 'nav-journal-text', 'target' => null, 'title_key' => 'guided_tour.auditor.step.audit_log.title', 'body_key' => 'guided_tour.auditor.step.audit_log.body', 'url' => $auditLog, 'placement' => 'center'],
         ];
     }
 
@@ -324,62 +347,128 @@ final class GuidedTourService
         $aiAgents = $this->urlFor('app_ai_agents_index');
         $glossar = $this->urlFor('app_mris_glossar');
 
+        // All MRIS steps are gated behind the 'mris' module (off by default).
+        // The stepsFor() filter will drop these when mris module is inactive.
         return [
             [
-                'id' => 'soa-mris-column', 'icon' => 'bi-table',
+                'id' => 'soa-mris-column', 'module' => 'mris', 'icon' => 'nav-grid',
                 'target' => '#mris-filter, [data-tour="mris-soa-column"]',
                 'title_key' => 'guided_tour.mris.step.soa_column.title',
                 'body_key' => 'guided_tour.mris.step.soa_column.body',
                 'url' => $soaIndex, 'placement' => 'bottom',
             ],
             [
-                'id' => 'reibung-warning', 'icon' => 'bi-shield-exclamation',
+                'id' => 'reibung-warning', 'icon' => 'nav-shield-alert',
                 'target' => '[data-tour="mris-reibung-warning"]',
                 'title_key' => 'guided_tour.mris.step.reibung_warning.title',
                 'body_key' => 'guided_tour.mris.step.reibung_warning.body',
                 'url' => $soaIndex, 'placement' => 'center',
             ],
             [
-                'id' => 'mhc-maturity', 'icon' => 'bi-graph-up-arrow',
+                'id' => 'mhc-maturity', 'icon' => 'nav-bar-chart',
                 'target' => '[data-tour="mris-maturity-table"]',
                 'title_key' => 'guided_tour.mris.step.mhc_maturity.title',
                 'body_key' => 'guided_tour.mris.step.mhc_maturity.body',
                 'url' => $soaIndex, 'placement' => 'center',
             ],
             [
-                'id' => 'kpi-score-card', 'icon' => 'bi-speedometer2',
+                'id' => 'kpi-score-card', 'icon' => 'nav-dashboard',
                 'target' => '[data-tour="mris-score-card"]',
                 'title_key' => 'guided_tour.mris.step.kpi_score.title',
                 'body_key' => 'guided_tour.mris.step.kpi_score.body',
                 'url' => $kpis, 'placement' => 'center',
             ],
             [
-                'id' => 'mri-disclaimer', 'icon' => 'bi-exclamation-triangle',
+                'id' => 'mri-disclaimer', 'icon' => 'status-warning',
                 'target' => '[data-tour="mris-disclaimer"]',
                 'title_key' => 'guided_tour.mris.step.mri_disclaimer.title',
                 'body_key' => 'guided_tour.mris.step.mri_disclaimer.body',
                 'url' => $kpis, 'placement' => 'top',
             ],
             [
-                'id' => 'ai-agents', 'icon' => 'bi-robot',
+                'id' => 'ai-agents', 'icon' => 'nav-robot',
                 'target' => '[data-tour="mris-ai-inventory"]',
                 'title_key' => 'guided_tour.mris.step.ai_agents.title',
                 'body_key' => 'guided_tour.mris.step.ai_agents.body',
                 'url' => $aiAgents, 'placement' => 'center',
             ],
             [
-                'id' => 'wizards', 'icon' => 'bi-magic',
+                'id' => 'wizards', 'icon' => 'nav-magic',
                 'target' => '[data-tour="mris-wizards"]',
                 'title_key' => 'guided_tour.mris.step.wizards.title',
                 'body_key' => 'guided_tour.mris.step.wizards.body',
                 'url' => $kpis, 'placement' => 'bottom',
             ],
             [
-                'id' => 'glossar', 'icon' => 'bi-book',
+                'id' => 'glossar', 'icon' => 'nav-book',
                 'target' => '[data-tour="mris-glossar"]',
                 'title_key' => 'guided_tour.mris.step.glossar.title',
                 'body_key' => 'guided_tour.mris.step.glossar.body',
                 'url' => $glossar, 'placement' => 'center',
+            ],
+        ];
+    }
+
+    /**
+     * MAPPING-Topic-Tour — themenbezogen, nicht rollenbezogen.
+     * 6 Stopps, die das Mapping-Konzept für Junior-ISBs (IT-/9001-Hintergrund)
+     * von Grund auf erklären: Was ist ein Mapping → Data-Reuse/Vererbung →
+     * Coverage lesen → Confidence vs. MQS → Lifecycle (draft→published) →
+     * Wo nutze ich es. Alle Stopps sind hinter dem `compliance`-Modul gegated.
+     *
+     * Selektoren zeigen auf `data-tour`-Anker in den Mapping-Templates; bei
+     * fehlendem Anker fällt der Controller auf zentriertes Popover zurück.
+     *
+     * @return list<array{id: string, module?: string, icon: string|null, target: string|null, title_key: string, body_key: string, url: string|null, placement: string}>
+     */
+    private function mappingSteps(): array
+    {
+        $hub = $this->urlFor('app_compliance_mapping_hub');
+        $transitive = $this->urlFor('app_compliance_transitive');
+        $quality = $this->urlFor('app_mapping_quality_dashboard');
+
+        return [
+            [
+                'id' => 'what-is-mapping', 'module' => 'compliance', 'icon' => 'nav-process',
+                'target' => '[data-tour="mapping-intro"]',
+                'title_key' => 'guided_tour.mapping.step.what_is_mapping.title',
+                'body_key' => 'guided_tour.mapping.step.what_is_mapping.body',
+                'url' => $hub, 'placement' => 'bottom',
+            ],
+            [
+                'id' => 'why-reuse', 'module' => 'compliance', 'icon' => 'util-refresh',
+                'target' => '[data-tour="mapping-reuse"]',
+                'title_key' => 'guided_tour.mapping.step.why_reuse.title',
+                'body_key' => 'guided_tour.mapping.step.why_reuse.body',
+                'url' => $hub, 'placement' => 'center',
+            ],
+            [
+                'id' => 'read-coverage', 'module' => 'compliance', 'icon' => 'nav-grid',
+                'target' => '[data-tour="mapping-coverage"]',
+                'title_key' => 'guided_tour.mapping.step.read_coverage.title',
+                'body_key' => 'guided_tour.mapping.step.read_coverage.body',
+                'url' => $transitive, 'placement' => 'top',
+            ],
+            [
+                'id' => 'quality', 'module' => 'compliance', 'icon' => 'ui-check',
+                'target' => '[data-tour="mapping-quality"]',
+                'title_key' => 'guided_tour.mapping.step.quality.title',
+                'body_key' => 'guided_tour.mapping.step.quality.body',
+                'url' => $quality, 'placement' => 'center',
+            ],
+            [
+                'id' => 'lifecycle', 'module' => 'compliance', 'icon' => 'nav-workflow',
+                'target' => '[data-tour="mapping-lifecycle"]',
+                'title_key' => 'guided_tour.mapping.step.lifecycle.title',
+                'body_key' => 'guided_tour.mapping.step.lifecycle.body',
+                'url' => $quality, 'placement' => 'center',
+            ],
+            [
+                'id' => 'where-used', 'module' => 'compliance', 'icon' => 'nav-book',
+                'target' => '[data-tour="mapping-where-used"]',
+                'title_key' => 'guided_tour.mapping.step.where_used.title',
+                'body_key' => 'guided_tour.mapping.step.where_used.body',
+                'url' => $hub, 'placement' => 'center',
             ],
         ];
     }
@@ -419,6 +508,7 @@ final class GuidedTourService
                 self::TOUR_RISK_OWNER => 1,
                 self::TOUR_AUDITOR => 2,
                 self::TOUR_MRIS => 6,
+                self::TOUR_MAPPING => 4,
                 default => 3,
             },
         ];

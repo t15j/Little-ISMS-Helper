@@ -1,7 +1,14 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_deadline_counter.html.twig' as _fa_deadline_counter %}
+{% import '_components/_fa_status_chip.html.twig' as _fa_status_chip %}
+{% import '_components/_fa_icon.html.twig' as _fa_icon %}
+{% import '_components/_lifecycle_actions.html.twig' as _lifecycle_actions %}
+{% import '_components/_lifecycle_history_tab.html.twig' as _lifecycle_history %}
 {% trans_default_domain 'incident' %}
 {% import '_macros/workflow.html.twig' as workflow_macros %}
+{% import '_components/_status_pill.html.twig' as pill %}
 
 {% block title %}{{ incident.title }}{% endblock %}
 
@@ -14,16 +21,58 @@
         ]
     } %}
 
-    <div class="page-header">
-        <h1>{{ incident.title }}</h1>
-        <div class="actions">
-            <a href="{{ path('app_incident_edit', {id: incident.id}) }}" class="fa-cyber-btn fa-cyber-btn--primary"><i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'incident.action.edit'|trans({}, 'incident') }}</a>
+    {% set _show_actions = [
+        { label: 'incident.action.edit'|trans({}, 'incident'), variant: 'primary', icon: 'ui-edit', href: path('app_incident_edit', {id: incident.id}) }
+    ] %}
+    {% if is_nis2_active() and incident.requiresNis2Reporting %}
+        {% set _show_actions = _show_actions|merge([{ label: 'incident.action.download_nis2_report'|trans({}, 'incident'), variant: 'accent', icon: 'nav-file-pdf', href: path('app_incident_nis2_report', {id: incident.id}), attrs: { 'data-turbo': 'false' } }]) %}
+    {% endif %}
+    {% set _show_actions = _show_actions|merge([{ label: 'incident.action.back_to_list'|trans({}, 'incident'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_incident_index') }]) %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'status-critical', label: 'nav.incidents'|trans({}, 'nav') },
+        title: incident.title,
+        actions: _show_actions
+    }) }}
+
+    {# Sprint-2 P-7 — DSGVO Art. 33 72h-deadline counter surfaced prominently — M-4 gated by privacy module #}
+    {% if is_module_active('privacy') and incident.dataBreachOccurred and incident.detectedAt %}
+        {% set sla72h = incident.detectedAt|date_modify('+72 hours') %}
+        <div class="d-flex flex-wrap gap-3 align-items-center mb-3">
+            {{ _fa_deadline_counter.render({
+                deadline_at: sla72h,
+                label: 'incident.deadline.gdpr_art33'|trans({}, 'incident')
+            }) }}
+        </div>
+        {% set _hint = alva_hint(incident) %}
+        {% if _hint %}
+            {% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
+            {{ _fa_alva_hint.render(_hint) }}
+        {% endif %}
+    {% endif %}
+
+    {# Lifecycle X.3b — status chip + transition dropdown #}
+    <div class="d-flex align-items-center gap-2 mb-3" data-testid="lifecycle-toolbar">
+        {{ _fa_status_chip.render({ entity_class: 'App\\Entity\\Incident', status_key: incident.status.value|default(incident.status) }) }}
+        {{ _lifecycle_actions.dropdown(incident, 'incident', 'incident_lifecycle') }}
+    </div>
+
+    {# NIS2 MUS-export dropdown + POST-delete kept below header (cannot be expressed via _fa_page_header GET-only actions) #}
+    {% if (is_nis2_active() and incident.requiresNis2Reporting) or is_granted('ROLE_ADMIN') %}
+        <div class="d-flex justify-content-end gap-2 mb-3 flex-wrap">
             {% if is_nis2_active() and incident.requiresNis2Reporting %}
-                <a href="{{ path('app_incident_nis2_report', {id: incident.id}) }}" class="fa-cyber-btn fa-cyber-btn--success" data-turbo="false" title="{{ 'incident.action.download_nis2_report'|trans({}, 'incident') }}">
-                    <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i> {{ 'incident.action.download_nis2_report'|trans({}, 'incident') }}
-                </a>
+                <div class="btn-group" role="group" aria-label="{{ 'incident.action.mus_export_group'|trans({}, 'incident') }}">
+                    <button type="button" class="fa-cyber-btn fa-cyber-btn--info dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" data-turbo="false">
+                        <i class="fa-icon fa-icon--asset-cloud" aria-hidden="true"></i> {{ 'incident.action.mus_export'|trans({}, 'incident') }}
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{{ path('app_nis2_mus_export_early_warning', {id: incident.id}) }}" data-turbo="false">{{ 'incident.action.mus_early_warning'|trans({}, 'incident') }}</a></li>
+                        <li><a class="dropdown-item" href="{{ path('app_nis2_mus_export_detailed_notification', {id: incident.id}) }}" data-turbo="false">{{ 'incident.action.mus_detailed_notification'|trans({}, 'incident') }}</a></li>
+                        <li><a class="dropdown-item" href="{{ path('app_nis2_mus_export_final_report', {id: incident.id}) }}" data-turbo="false">{{ 'incident.action.mus_final_report'|trans({}, 'incident') }}</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ path('app_nis2_mus_export_bundle', {id: incident.id}) }}" data-turbo="false">{{ 'incident.action.mus_bundle'|trans({}, 'incident') }}</a></li>
+                    </ul>
+                </div>
             {% endif %}
-            <a href="{{ path('app_incident_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">{{ 'incident.action.back_to_list'|trans({}, 'incident') }}</a>
             {% if is_granted('ROLE_ADMIN') %}
                 <form method="post" action="{{ path('app_incident_delete', {id: incident.id}) }}" class="d-inline"
                       data-controller="ui-actions"
@@ -34,7 +83,7 @@
                 </form>
             {% endif %}
         </div>
-    </div>
+    {% endif %}
 
     {# Workflow Status Section #}
     {% if workflowStatus.has_active_workflow %}
@@ -53,8 +102,8 @@
         <div class="fa-alert fa-alert--{{ alertClass }} workflow-status-alert" role="alert">
             <div class="workflow-status-header">
                 <div class="workflow-status-title">
-                    {# TODO(aurora-v4-icons): dynamic icon switch — isDataBreach ? exclamation-triangle-fill : gear-fill #}
-                    <i class="{% if isDataBreach %}fa-icon fa-icon--status-warning{% else %}bi bi-gear-fill{% endif %}" aria-hidden="true"></i>
+                    {# Dynamic workflow-state icon — Aurora mask (status-warning for data breach, nav-gear for default). #}
+                    {{ _fa_icon.render(isDataBreach ? 'status-warning' : 'nav-gear') }}
                     <strong>
                         {% if isDataBreach %}
                             {{ 'incident.workflow.data_breach_active'|trans({}, 'incident') }}
@@ -86,7 +135,8 @@
                     {% endif %}
                 </div>
 
-                {% if isDataBreach and workflowStatus.due_date %}
+                {# M-4 — module-gating: GDPR 72h deadline only when privacy module is active #}
+                {% if is_module_active('privacy') and isDataBreach and workflowStatus.due_date %}
                     <div class="gdpr-deadline-warning">
                         <i class="fa-icon fa-icon--status-pending" aria-hidden="true"></i>
                         <strong>{{ 'incident.workflow.gdpr_72h_deadline'|trans({}, 'incident') }}</strong>
@@ -115,17 +165,15 @@
 
     {% embed '_components/_card.html.twig' %}
         {% block card_header %}
+            {% import '_components/_status_pill.html.twig' as pill %}
             <div class="card-header">
                 <h2 class="h5">Incident #{{ incident.incidentNumber }}</h2>
                 <div class="badges">
-                    <span class="{{ badge_severity(incident.severity) }}">{{ incident.severity.value|upper }}</span>
-                    <span class="{{ badge_status(incident.status) }}">{{ incident.status.value|upper|replace({'_': ' '}) }}</span>
+                    {{ pill.render(incident.severity.value|upper, pill_tone_severity(incident.severity)) }}
+                    {{ pill.render(incident.status.value|upper|replace({'_': ' '}), pill_tone_status(incident.status)) }}
                     {% if is_nis2_active() and incident.requiresNis2Reporting %}
                         {% set nis2Status = incident.nis2ComplianceStatus %}
-                        <span class="{{ badge_nis2(nis2Status) }}">
-                            <i class="fa-icon fa-icon--certificate" aria-hidden="true"></i>
-                            {{ ('incident.nis2_compliance.' ~ nis2Status)|trans({}, 'incident') }}
-                        </span>
+                        {{ pill.render(('incident.nis2_compliance.' ~ nis2Status)|trans({}, 'incident'), pill_tone_nis2(nis2Status), { icon: 'certificate' }) }}
                     {% endif %}
                 </div>
             </div>
@@ -135,7 +183,8 @@
             {% set incidentItems = [
                 { label: 'incident.field.category'|trans({}, 'incident'), value: incident.category|upper|replace({'_': ' '}) },
                 { label: 'incident.field.detected'|trans({}, 'incident'), value: incident.detectedAt ? incident.detectedAt|date('d.m.Y H:i') : 'N/A' },
-                { label: 'incident.field.reported_by'|trans({}, 'incident'), value: incident.reportedBy ?? 'N/A' }
+                { label: 'incident.field.reported_by'|trans({}, 'incident'), value: incident.effectiveReportedBy ?? incident.reportedBy ?? 'N/A' },
+                { label: 'incident.field.responsible_person'|trans({}, 'incident'), value: incident.effectiveResponsiblePersonName ?? 'N/A' }
             ] %}
             {% if incident.occurredAt %}
                 {% set incidentItems = incidentItems|merge([{ label: 'incident.field.occurred'|trans({}, 'incident'), value: incident.occurredAt|date('d.m.Y H:i') }]) %}
@@ -320,10 +369,18 @@
                 </div>
             {% endif %}
 
+            {# Junior-ISB-Audit-2026-05-22 C2-01: Doppelpflege-Deprecation —
+               render freetext affectedSystems read-only as "Legacy" alert
+               ONLY when non-empty. Hidden for all new incidents (use the
+               structured "Affected Assets" section below instead). #}
             {% if incident.affectedSystems %}
                 <div class="detail-section">
-                    <h3 class="h5">{{ 'incident.field.affected_systems'|trans({}, 'incident') }}</h3>
-                    <p>{{ incident.affectedSystems }}</p>
+                    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-info', title: 'incident.section.affected_systems_legacy'|trans({}, 'incident') } } %}
+                        {% block alert_body %}
+                            <p class="mb-1">{{ incident.affectedSystems }}</p>
+                            <small class="text-muted">{{ 'incident.section.affected_systems_legacy_hint'|trans({}, 'incident') }}</small>
+                        {% endblock %}
+                    {% endembed %}
                 </div>
             {% endif %}
 
@@ -334,10 +391,33 @@
                 </div>
             {% endif %}
 
+            {# Junior-ISB-Audit-2026-05-22 M-07 Phase-1 — structured CAPA card (preferred display). #}
+            {% if linkedCorrectiveActions is defined and linkedCorrectiveActions|length > 0 %}
+                <div class="detail-section">
+                    <h3 class="h5">{{ 'incident.section.linked_corrective_actions'|trans({}, 'incident') }}</h3>
+                    <ul class="list-unstyled mb-0">
+                        {% for ca in linkedCorrectiveActions %}
+                            <li class="mb-2">
+                                <a href="{{ path('app_corrective_action_show', { id: ca.id }) }}">
+                                    <i class="fa-icon fa-icon--util-arrow-right me-1" aria-hidden="true"></i>
+                                    {{ ca.title }}
+                                </a>
+                                <span class="badge bg-light text-dark ms-1">{{ ('corrective_action.status.' ~ ca.status)|trans({}, 'audits') }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+
+            {# Junior-ISB-Audit-2026-05-22 M-07 Phase-1 — freetext shown only as legacy alert (ADR 2026-05-23). #}
             {% if incident.correctiveActions %}
                 <div class="detail-section">
-                    <h3 class="h5">{{ 'incident.field.corrective_actions'|trans({}, 'incident') }}</h3>
-                    <p>{{ incident.correctiveActions }}</p>
+                    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-info', title: 'incident.section.corrective_actions_legacy'|trans({}, 'incident') } } %}
+                        {% block alert_body %}
+                            <p class="mb-1">{{ incident.correctiveActions }}</p>
+                            <small class="text-muted">{{ 'incident.section.corrective_actions_legacy_hint'|trans({}, 'incident') }}</small>
+                        {% endblock %}
+                    {% endembed %}
                 </div>
             {% endif %}
 
@@ -359,36 +439,15 @@
             {% if auditLogs is defined and auditLogs|length > 0 %}
                 <div class="detail-section">
                     <h3 class="h5"><i class="fa-icon fa-icon--nav-calendar-check" aria-hidden="true"></i> {{ 'incident.section.history'|trans({}, 'incident') }} ({{ totalAuditLogs }} {{ 'audit_log.entries'|trans({}, 'audit_log') }})</h3>
-                    <div class="audit-log-list">
+                    <div class="fa-audit-feed">
                         {% for log in auditLogs %}
-                        <div class="audit-log-entry">
-                            <div class="audit-log-header">
-                                <span class="{{ badge_action(log.action) }}">
-                                    {{ log.action|upper }}
-                                </span>
-                                <span class="text-muted">
-                                    {{ log.userName|default('System') }}
-                                    &bull; {{ log.createdAt|date('d.m.Y H:i:s') }}
-                                </span>
-                            </div>
-                            {% if log.action == 'update' %}
-                                {% set oldValues = log.oldValuesArray %}
-                                {% set newValues = log.newValuesArray %}
-                                {% if oldValues and newValues %}
-                                    <div class="audit-log-changes">
-                                        {% for field, newValue in newValues %}
-                                            {% if oldValues[field] is defined and oldValues[field] != newValue %}
-                                                <div class="change-item">
-                                                    <strong>{{ field }}:</strong>
-                                                    <span class="text-danger">{{ oldValues[field] }}</span>
-                                                    &rarr;
-                                                    <span class="text-success">{{ newValue }}</span>
-                                                </div>
-                                            {% endif %}
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            {% endif %}
+                        <div class="fa-audit-row{% if log.isSealed is defined and log.isSealed %} fa-audit-row--sealed{% endif %}">
+                            <span class="fa-audit-row__ts">{{ log.createdAt|date('Y-m-d H:i:s') }}</span>
+                            <span class="fa-audit-row__sev fa-audit-row__sev--{% if log.action in ['create', 'read'] %}info{% elseif log.action == 'update' %}warning{% elseif log.action in ['error', 'failed'] %}danger{% else %}critical{% endif %}"></span>
+                            <span class="fa-audit-row__actor">{{ log.userName|default('System') }}</span>
+                            <span class="fa-audit-row__action">{{ log.action|upper }}</span>
+                            <span class="fa-audit-row__target">{{ log.entityType|default('Incident') }}#{{ log.entityId|default('') }}</span>
+                            <span class="fa-audit-row__hash">{{ log.hash is defined ? log.hash|slice(0,12) : '' }}</span>
                         </div>
                         {% endfor %}
                     </div>
@@ -410,8 +469,10 @@
                                 <strong>{{ asset.name }}</strong>
                                 {% include '_components/_badge.html.twig' with { variant: 'info', content: asset.assetType } %}
                                 <small>CIA: {{ asset.confidentialityValue }}/{{ asset.integrityValue }}/{{ asset.availabilityValue }}</small>
-                                {% if asset.monetaryValue %}
-                                    <small class="text-danger">{{ 'incident.bcm.value'|trans({}, 'incident') }}: €{{ asset.monetaryValue }}</small>
+                                {# Junior-ISB-Audit S14+ #15: legacy monetaryValue column dropped — currentValue is canonical. Pre-migration rows were backfilled in Version20260612100000_DropAssetMonetaryValue. #}
+                                {% set assetVal = asset.currentValue %}
+                                {% if assetVal %}
+                                    <small class="text-danger">{{ 'incident.bcm.value'|trans({}, 'incident') }}: €{{ assetVal }}</small>
                                 {% endif %}
                             </div>
                         {% endfor %}
@@ -518,10 +579,31 @@
                     <div class="data-reuse-list">
                         {% for risk in incident.realizedRisks %}
                             <div class="data-reuse-item">
-                                <strong>{{ risk.title }}</strong>
-                                {% set riskClass = risk.inherentRiskLevel >= 16 ? 'danger' : (risk.inherentRiskLevel >= 9 ? 'warning' : 'success') %}
-                                {% include '_components/_badge.html.twig' with { variant: riskClass, content: 'incident.reuse.risk_level'|trans({'%level%': risk.inherentRiskLevel}, 'incident') } %}
-                                <small>{{ 'incident.reuse.probability'|trans({'%value%': risk.probability}, 'incident') }}</small>
+                                <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                    <div>
+                                        <strong>{{ risk.title }}</strong>
+                                        {% set riskClass = risk.inherentRiskLevel >= 16 ? 'danger' : (risk.inherentRiskLevel >= 9 ? 'warning' : 'success') %}
+                                        {% include '_components/_badge.html.twig' with { variant: riskClass, content: 'incident.reuse.risk_level'|trans({'%level%': risk.inherentRiskLevel}, 'incident') } %}
+                                        <small>{{ 'incident.reuse.probability'|trans({'%value%': risk.probability}, 'incident') }}</small>
+                                        {# V3 W2-FV-5 — show audit-trail of last incident-driven reassessment #}
+                                        {% if risk.lastIncidentReassessmentAt %}
+                                            <small class="text-muted d-block">
+                                                <i class="fa-icon fa-icon--util-clock" aria-hidden="true"></i>
+                                                {{ 'incident.fv5.last_reassessed'|trans({'%date%': risk.lastIncidentReassessmentAt|date('Y-m-d H:i')}, 'incident') }}
+                                            </small>
+                                        {% endif %}
+                                    </div>
+                                    {# V3 W2-FV-5 — Update Risk-Assessment button #}
+                                    <form method="post" action="{{ path('app_incident_risk_reassess', {id: incident.id, riskId: risk.id}) }}" class="m-0">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('incident-risk-reassess-' ~ incident.id ~ '-' ~ risk.id) }}">
+                                        <button type="submit"
+                                                class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm"
+                                                title="{{ 'incident.fv5.reassess_help'|trans({}, 'incident') }}">
+                                            <i class="fa-icon fa-icon--util-refresh" aria-hidden="true"></i>
+                                            {{ 'incident.fv5.reassess_button'|trans({}, 'incident') }}
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         {% endfor %}
                     </div>
@@ -548,6 +630,25 @@
             {% endif %}
         {% endblock %}
     {% endembed %}
+
+    {# F16: Incident-Risk cross-links #}
+    {% include 'incident/_linked_risks.html.twig' with {
+        incident: incident,
+        riskIncidentLinks: riskIncidentLinks|default([])
+    } only %}
+
+    {# V3 W3-Aurora: Comment-Thread adoption (C7 macro). #}
+    {% include '_components/_isms_comment_thread.html.twig' with {
+        comments: comments|default([]),
+        entityType: 'Incident',
+        entityId: incident.id,
+        showForm: true,
+        formAction: path('app_comment_post', {entityType: 'Incident', entityId: incident.id}),
+        csrfToken: csrf_token('isms-comment')
+    } only %}
+
+    {# Lifecycle X.3b — transition history tab #}
+    {{ _lifecycle_history.history('incident', incident.id) }}
 </div>
 
 <style>
@@ -797,44 +898,7 @@
 /* .alert and .alert-* — handled centrally in fairy-aurora-components.css */
 /* .badge-risk-* removed: dead code, never referenced in markup */
 
-/* Audit Log Styles */
-.audit-log-list {
-    margin-top: 1rem;
-}
-
-.audit-log-entry {
-    border-left: 3px solid var(--bs-border-color);
-    padding-left: 1rem;
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--bs-border-color);
-}
-
-.audit-log-entry:last-child {
-    border-bottom: none;
-}
-
-.audit-log-header {
-    margin-bottom: 0.5rem;
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.audit-log-changes {
-    font-size: 0.875rem;
-    margin-top: 0.5rem;
-    padding-left: 1rem;
-}
-
-.change-item {
-    margin-bottom: 0.25rem;
-}
-
-.change-item strong {
-    color: var(--fg);
-}
+/* Audit log styles: .fa-audit-feed / .fa-audit-row — handled centrally in fairy-aurora-components.css */
 
 .text-danger {
     color: var(--danger);

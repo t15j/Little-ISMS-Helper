@@ -6,8 +6,10 @@ namespace App\Entity;
 
 use DateTimeInterface;
 use DateTimeImmutable;
+use App\Entity\Document;
 use App\Entity\Person;
 use App\Entity\Tenant;
+use App\Enum\ManagementReviewStatus;
 use App\Repository\ManagementReviewRepository;
 use App\Service\OwnerResolver;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -32,6 +34,21 @@ class ManagementReview
 
     #[ORM\ManyToMany(targetEntity: User::class)]
     private Collection $participants;
+
+    /**
+     * Person-Rollout Phase B1 — typed Person participants twin of the
+     * Collection<User> `participants`. External board members /
+     * auditors / consultants attend without an app login; surfacing
+     * them here keeps the attendance roster complete without licence
+     * inflation on User accounts.
+     *
+     * @var Collection<int, Person>
+     */
+    #[ORM\ManyToMany(targetEntity: Person::class)]
+    #[ORM\JoinTable(name: 'management_review_person_participants')]
+    #[ORM\JoinColumn(name: 'management_review_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'person_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    private Collection $personParticipants;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $changesRelevantToISMS = null;
@@ -69,6 +86,15 @@ class ManagementReview
 
     #[ORM\Column(length: 50)]
     private ?string $status = 'planned';
+
+    /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on
+     * management_review_lifecycle (ISO 27001 Cl. 9.3 audit-trail integrity).
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private ?DateTimeInterface $createdAt = null;
@@ -121,11 +147,43 @@ class ManagementReview
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $resourcesNeeded = null;
 
+    // ── ISO 27001 §9.3 norm fields (T31.2.5) ──────────────────────────────
+
+    /** ISO 27001 §9.3 — Top-management attendance is mandatory */
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $topManagementAttended = false;
+
+    /** Periodic review date — ≥1× per year required by §9.3 */
+    #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $nextReviewDate = null;
+
+    /** Formal meeting-minutes document reference (§7.5.3) */
+    #[ORM\ManyToOne(targetEntity: Document::class)]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
+    private ?Document $meetingMinutesDocument = null;
+
+    /** Treatment effectiveness — separate from risksReview; evaluates ROI of controls */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $riskTreatmentEffectiveness = null;
+
+    /** InfoSec-Policy review outcome (§5.2) */
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $policyReviewOutcome = null;
+
+    /** Snapshot of framework compliance status (DORA/NIS2/ISO/BaFin) — gated on 'compliance' module */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    private ?array $frameworkComplianceStatus = null;
+
+    /** Structured action items: [{action: string, owner: string, deadline: ISO-date, status: 'open'|'in_progress'|'done'}] */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    private ?array $actionItemsWithDeadlines = null;
+
 public function __construct()
     {
         $this->createdAt = new DateTimeImmutable();
         $this->participants = new ArrayCollection();
         $this->reviewedByDeputyPersons = new ArrayCollection();
+        $this->personParticipants = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -138,7 +196,7 @@ public function __construct()
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -149,7 +207,7 @@ public function __construct()
         return $this->reviewDate;
     }
 
-    public function setReviewDate(DateTimeInterface $reviewDate): static
+    public function setReviewDate(?DateTimeInterface $reviewDate): static
     {
         $this->reviewDate = $reviewDate;
         return $this;
@@ -189,6 +247,62 @@ public function __construct()
     {
         $this->participants->removeElement($user);
         return $this;
+    }
+
+    /**
+     * @return Collection<int, Person>
+     */
+    public function getPersonParticipants(): Collection
+    {
+        return $this->personParticipants;
+    }
+
+    public function addPersonParticipant(Person $person): static
+    {
+        if (!$this->personParticipants->contains($person)) {
+            $this->personParticipants->add($person);
+        }
+        return $this;
+    }
+
+    public function removePersonParticipant(Person $person): static
+    {
+        $this->personParticipants->removeElement($person);
+        return $this;
+    }
+
+    /**
+     * Combined attendance count — application Users plus typed
+     * Persons. Useful for ISMS audit reports where the total roster
+     * matters more than the User/Person split.
+     */
+    public function getEffectiveParticipantCount(): int
+    {
+        return $this->participants->count() + $this->personParticipants->count();
+    }
+
+    /**
+     * Combined attendance display: User full names then Person full
+     * names. Empty list if neither slot is populated.
+     *
+     * @return list<string>
+     */
+    public function getEffectiveParticipantNames(): array
+    {
+        $names = [];
+        foreach ($this->participants as $user) {
+            $name = trim(($user->getFirstName() ?? '') . ' ' . ($user->getLastName() ?? ''));
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+        foreach ($this->personParticipants as $person) {
+            $fullName = $person->getFullName();
+            if ($fullName !== null && $fullName !== '') {
+                $names[] = $fullName;
+            }
+        }
+        return $names;
     }
 
     public function getChangesRelevantToISMS(): ?string
@@ -317,10 +431,18 @@ public function __construct()
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(ManagementReviewStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?ManagementReviewStatus
+    {
+        return $this->status !== null ? ManagementReviewStatus::tryFrom($this->status) : null;
     }
 
     public function getCreatedAt(): ?DateTimeInterface
@@ -328,7 +450,7 @@ public function __construct()
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -495,5 +617,89 @@ public function __construct()
     {
         $this->resourcesNeeded = $resourcesNeeded;
         return $this;
+    }
+
+    // ── ISO 27001 §9.3 norm fields (T31.2.5) ──────────────────────────────
+
+    public function isTopManagementAttended(): bool
+    {
+        return $this->topManagementAttended;
+    }
+
+    public function setTopManagementAttended(bool $topManagementAttended): static
+    {
+        $this->topManagementAttended = $topManagementAttended;
+        return $this;
+    }
+
+    public function getNextReviewDate(): ?\DateTimeImmutable
+    {
+        return $this->nextReviewDate;
+    }
+
+    public function setNextReviewDate(?\DateTimeImmutable $nextReviewDate): static
+    {
+        $this->nextReviewDate = $nextReviewDate;
+        return $this;
+    }
+
+    public function getMeetingMinutesDocument(): ?Document
+    {
+        return $this->meetingMinutesDocument;
+    }
+
+    public function setMeetingMinutesDocument(?Document $meetingMinutesDocument): static
+    {
+        $this->meetingMinutesDocument = $meetingMinutesDocument;
+        return $this;
+    }
+
+    public function getRiskTreatmentEffectiveness(): ?string
+    {
+        return $this->riskTreatmentEffectiveness;
+    }
+
+    public function setRiskTreatmentEffectiveness(?string $riskTreatmentEffectiveness): static
+    {
+        $this->riskTreatmentEffectiveness = $riskTreatmentEffectiveness;
+        return $this;
+    }
+
+    public function getPolicyReviewOutcome(): ?string
+    {
+        return $this->policyReviewOutcome;
+    }
+
+    public function setPolicyReviewOutcome(?string $policyReviewOutcome): static
+    {
+        $this->policyReviewOutcome = $policyReviewOutcome;
+        return $this;
+    }
+
+    public function getFrameworkComplianceStatus(): ?array
+    {
+        return $this->frameworkComplianceStatus;
+    }
+
+    public function setFrameworkComplianceStatus(?array $frameworkComplianceStatus): static
+    {
+        $this->frameworkComplianceStatus = $frameworkComplianceStatus;
+        return $this;
+    }
+
+    public function getActionItemsWithDeadlines(): ?array
+    {
+        return $this->actionItemsWithDeadlines;
+    }
+
+    public function setActionItemsWithDeadlines(?array $actionItemsWithDeadlines): static
+    {
+        $this->actionItemsWithDeadlines = $actionItemsWithDeadlines;
+        return $this;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

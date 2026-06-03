@@ -17,7 +17,7 @@
  #   {% import '_components/_fa_alert.html.twig' as _fa_alert %}
  #   {{ _fa_alert.render({ variant: 'warning', title: 'Achtung', body: '3 Kontrollen sind fällig.' }) }}
  #   {{ _fa_alert.render({ variant: 'info', icon: 'status-info', body: 'Hinweis-Text' }) }}
- #   {{ _fa_alert.render({ variant: 'danger', icon: 'bi-exclamation-triangle', dismissible: true, body: 'Fehler aufgetreten.' }) }}
+ #   {{ _fa_alert.render({ variant: 'danger', icon: 'status-warning', dismissible: true, body: 'Fehler aufgetreten.' }) }}
  #
  # Block-Form (für komplexes HTML im Body):
  #   {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'success' } } %}
@@ -28,8 +28,8 @@
  #   variant     - 'info' | 'success' | 'warning' | 'danger' (default: 'info')
  #   title       - Bold-Headline (optional, rendered in .fa-alert__title)
  #   body        - HTML-String (optional, rendered in .fa-alert__message, alternativ via Block)
- #   icon        - fa-icon name ohne Prefix (default: status-{variant}) ODER bi-* für Bootstrap-Icon
- #                 Beispiele: 'status-info', 'status-warning', 'bi-shield-exclamation'
+ #   icon        - fa-icon name ohne Prefix (default: status-{variant})
+ #                 Beispiele: 'status-info', 'status-warning', 'nav-shield-alert'
  #   dismissible - boolean (default: false)
  #   class       - zusätzliche CSS-Klassen für das Root-Element
  #
@@ -39,6 +39,45 @@
  #   warning → status-warning
  #   danger  → status-critical
  #}
+
+{# ─── Top-level rendering for {% embed %} pattern ──────────────────────
+ # The embed-form passes its props in via `with { props: {...} }` and
+ # supplies extra HTML through the `alert_body` block. Without this
+ # top-level body the macro file would render nothing under {% embed %}
+ # because Twig's template inheritance cannot reach blocks defined
+ # inside macros. Both code paths (embed + macro.render) emit identical
+ # markup. #}
+{% if props is defined %}
+    {%- set _variant = props.variant|default('info') -%}
+    {%- set _defaultIcons = {
+        'info':    'status-info',
+        'success': 'status-ok',
+        'warning': 'status-warning',
+        'danger':  'status-critical'
+    } -%}
+    {%- set _icon = props.icon|default(_defaultIcons[_variant]|default('status-info')) -%}
+
+    <div class="fa-alert fa-alert--{{ _variant }}{% if props.class is defined and props.class %} {{ props.class }}{% endif %}" role="alert">
+        {%- if _icon -%}
+            {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+            <i class="fa-icon fa-icon--{{ (_icon starts with 'bi-') ? _icon[3:] : _icon }} fa-alert__icon" aria-hidden="true"></i>
+        {%- endif -%}
+        <div class="fa-alert__body">
+            {%- if props.title is defined and props.title -%}
+                <div class="fa-alert__title">{{ props.title }}</div>
+            {%- endif -%}
+            {%- if props.body is defined and props.body -%}
+                <p class="fa-alert__message">{{ props.body|raw }}</p>
+            {%- endif -%}
+            {% block alert_body %}{% endblock %}
+        </div>
+        {%- if props.dismissible is defined and props.dismissible -%}
+            <button type="button" class="fa-alert__close" data-bs-dismiss="alert" aria-label="Close">
+                <i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i>
+            </button>
+        {%- endif -%}
+    </div>
+{% endif %}
 
 {% macro render(props = {}) %}
     {%- set variant = props.variant|default('info') -%}
@@ -52,11 +91,8 @@
 
     <div class="fa-alert fa-alert--{{ variant }}{% if props.class is defined and props.class %} {{ props.class }}{% endif %}" role="alert">
         {%- if icon -%}
-            {%- if icon starts with 'bi-' -%}
-                <i class="bi {{ icon }} fa-alert__icon" aria-hidden="true"></i>
-            {%- else -%}
-                <i class="fa-icon fa-icon--{{ icon }} fa-alert__icon" aria-hidden="true"></i>
-            {%- endif -%}
+            {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+            <i class="fa-icon fa-icon--{{ (icon starts with 'bi-') ? icon[3:] : icon }} fa-alert__icon" aria-hidden="true"></i>
         {%- endif -%}
         <div class="fa-alert__body">
             {%- if props.title is defined and props.title -%}
@@ -65,7 +101,6 @@
             {%- if props.body is defined and props.body -%}
                 <p class="fa-alert__message">{{ props.body|raw }}</p>
             {%- endif -%}
-            {% block alert_body %}{% endblock %}
         </div>
         {%- if props.dismissible is defined and props.dismissible -%}
             <button type="button" class="fa-alert__close" data-bs-dismiss="alert" aria-label="Close">

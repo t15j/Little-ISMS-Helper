@@ -6,6 +6,7 @@ bcm:
         asset_insights: Asset-Einblicke
         bcm_insights: BCM-Einblicke
         critical: 'Kritische Geschäftskontinuität'
+        data_reuse_insights: 'Daten-Wiederverwendungs-Insights'
     level:
         very_high: 'Sehr hoch'
         high: 'Hoch'
@@ -13,6 +14,7 @@ bcm:
         low: 'Niedrig'
     description:
         critical: 'Übersicht über kritische Assets und Prozesse inklusive RTO/RPO und Handlungsbedarf'
+        data_reuse_insights: 'Wie BCM-Daten die Asset-Schutzbedarfsanforderungen verbessern'
         critical_level: 'Sofortiger Geschäftsausfall bei Verlust oder Ausfall. Höchste Priorität für Notfallmaßnahmen.'
         high_level: 'Erhebliche Geschäftsbeeinträchtigung innerhalb kurzer Zeit. Schnelle Wiederanlaufplanung erforderlich.'
         medium_level: 'Spürbare Beeinträchtigung, jedoch mit Puffer. Mittelfristige Maßnahmen ausreichend.'
@@ -21,6 +23,15 @@ bcm:
         add_process: 'Prozess hinzufügen'
         data_reuse: 'Daten wiederverwenden'
         view_insights: 'Insights anzeigen'
+        view_bia: 'BIA anzeigen'
+    insights_col:
+        business_process: 'Geschäftsprozess'
+        supporting_asset: 'Unterstützendes Asset'
+        rto_mtpd: 'RTO/MTPD'
+        current_availability: 'Aktuelle Verfügbarkeit'
+        suggested_availability: 'Empfohlene Verfügbarkeit'
+        recommendation: 'Empfehlung'
+        confidence: 'Konfidenz'
         view_bia: 'BIA anzeigen'
         export: Exportieren
         plan: Wiederherstellungsplan
@@ -93,6 +104,10 @@ bcm:
         standard: Standard
         flexible: Flexibel
 business_process:
+    bia:
+        rto_long: 'Recovery Time Objective'
+        rpo_long: 'Recovery Point Objective'
+        mtpd_long: 'Maximum Tolerable Period of Disruption'
     confirm:
         delete: 'Möchten Sie diesen Geschäftsprozess wirklich löschen?'
     action:

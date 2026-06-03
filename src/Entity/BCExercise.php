@@ -13,9 +13,13 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\Metadata\Delete;
 
+use App\Enum\BCExerciseStatus;
 use App\Repository\BCExerciseRepository;
+use App\Service\OwnerResolver;
 use App\State\TenantAwareStateProcessor;
+use App\Entity\Person;
 use App\Entity\Tenant;
+use App\Entity\User;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
@@ -59,7 +63,7 @@ class BCExercise
     private ?Tenant $tenant = null;
 
     #[ORM\Column(length: 255)]
-    #[Assert\NotBlank(message: 'Exercise name is required')]
+    #[Assert\NotBlank(message: 'bc_exercise.validation.name_required')]
     #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
     private ?string $name = null;
 
@@ -93,12 +97,12 @@ class BCExercise
      * Scope and objectives
      */
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Scope must be defined')]
+    #[Assert\NotBlank(message: 'bc_exercise.validation.scope_required')]
     #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
     private ?string $scope = null;
 
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Objectives must be defined')]
+    #[Assert\NotBlank(message: 'bc_exercise.validation.objectives_required')]
     #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
     private ?string $objectives = null;
 
@@ -126,27 +130,98 @@ class BCExercise
     private ?int $durationHours = null;
 
     /**
-     * Participants
+     * @deprecated since 2026-05-25 — use participantPersons (typed M2M collection).
+     *             Junior-ISB-Audit RAW_FINDINGS_2026-05-24 [MAJOR]: free-text
+     *             participant lists had no referential integrity, no link to
+     *             Person stammdaten, no audit trail. Kept as legacy fallback
+     *             during transition; will be dropped once data is backfilled.
+     *             No longer NotBlank — the form validator enforces that at
+     *             least one of legacy/typed is provided.
      */
-    #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Participants must be documented')]
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
     private ?string $participants = null;
 
     /**
-     * Exercise facilitator/lead
+     * P-15 DataReuse: typed exercise participants as a Collection<Person>.
+     * Replaces the legacy free-text `participants` textarea.
+     *
+     * @var Collection<int, Person>
      */
-    #[ORM\Column(length: 100)]
-    #[Assert\NotBlank]
+    #[ORM\ManyToMany(targetEntity: Person::class)]
+    #[ORM\JoinTable(name: 'bc_exercise_participant_person')]
+    #[ORM\JoinColumn(name: 'bc_exercise_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'person_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?Collection $participantPersons = null;
+
+    /**
+     * Exercise facilitator/lead — legacy free-text field. P-15 DataReuse:
+     * Pattern A dual-state with `facilitatorUser` and `facilitatorPerson`
+     * (NB: existing `exerciseLeaderUser` / `exerciseLeaderPerson` from
+     * Phase B1 are kept untouched, the new `facilitatorUser/Person` mirror
+     * the Pattern-A naming used across other entities).
+     */
+    #[ORM\Column(length: 100, nullable: true)]
     #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
     private ?string $facilitator = null;
 
     /**
-     * Observers
+     * P-15 DataReuse Pattern A: typed facilitator as application User.
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'facilitator_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?User $facilitatorUser = null;
+
+    /**
+     * P-15 DataReuse Pattern A: typed facilitator as Stammdaten Person.
+     */
+    #[ORM\ManyToOne(targetEntity: Person::class)]
+    #[ORM\JoinColumn(name: 'facilitator_person_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?Person $facilitatorPerson = null;
+
+    /**
+     * Person-Rollout Phase B1 — typed exercise leader. Application
+     * User (employee with login). Backward-compat optional slot —
+     * `facilitator` string remains canonical for Migration legacy data.
+     */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'exercise_leader_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?User $exerciseLeaderUser = null;
+
+    /**
+     * Person-Rollout Phase B1 — typed exercise leader as Person
+     * (external BC consultant without app login is the typical case).
+     */
+    #[ORM\ManyToOne(targetEntity: Person::class)]
+    #[ORM\JoinColumn(name: 'exercise_leader_person_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?Person $exerciseLeaderPerson = null;
+
+    /**
+     * @deprecated since 2026-05-25 — use observerPersons (typed M2M collection).
+     *             See $participants docblock for rationale. Kept as legacy
+     *             fallback during transition; will be dropped once data is
+     *             backfilled.
      */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
     private ?string $observers = null;
+
+    /**
+     * P-15 DataReuse: typed observers as a Collection<Person>.
+     *
+     * @var Collection<int, Person>
+     */
+    #[ORM\ManyToMany(targetEntity: Person::class)]
+    #[ORM\JoinTable(name: 'bc_exercise_observer_person')]
+    #[ORM\JoinColumn(name: 'bc_exercise_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[ORM\InverseJoinColumn(name: 'person_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?Collection $observerPersons = null;
 
     /**
      * Status: planned, in_progress, completed, cancelled
@@ -155,6 +230,15 @@ class BCExercise
     #[Assert\Choice(choices: ['planned', 'in_progress', 'completed', 'cancelled'])]
     #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
     private ?string $status = 'planned';
+
+    /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on bc_exercise_lifecycle
+     * (ISO 22301 Cl. 8.5 — BC-Übung als Audit-Evidenz).
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /**
      * Results and observations
@@ -206,12 +290,39 @@ class BCExercise
     private ?string $planUpdatesRequired = null;
 
     /**
-     * Success criteria met (JSON)
+     * Plans specifically tested in this exercise (alias: bcPlansTested) — ISO 22301 §8.6 a
+     * (testedPlans is the canonical M2M; bcPlansTested references same collection for BCM-Specialist naming)
+     */
+
+    /**
+     * Actual RTO achieved during exercise — ISO 22301 §8.6 d (hours)
+     */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?string $actualRtoAchieved = null;
+
+    /**
+     * Actual RPO achieved during exercise — ISO 22301 §8.6 d (hours)
+     */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?string $actualRpoAchieved = null;
+
+    /**
+     * Evidence artifacts for audit — array of document references / filenames
+     * [{type: 'photo'|'log'|'report'|'screenshot', reference: string, description: string}, ...]
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    #[Groups(['bc_exercise:read', 'bc_exercise:write'])]
+    private ?array $evidenceArtifacts = null;
+
+    /**
+     * Success criteria met (JSON) — ISO 22301 §8.6 c
      * {
-     *   "RTO_met": true,
-     *   "RPO_met": true,
-     *   "communication_effective": true,
-     *   "team_prepared": false
+     *   "rtoMet": true,
+     *   "rpoMet": true,
+     *   "communicationEffective": true,
+     *   "teamPrepared": false
      * }
      */
     #[ORM\Column(type: Types::JSON, nullable: true)]
@@ -253,10 +364,19 @@ class BCExercise
     #[Groups(['bc_exercise:read'])]
     private ?DateTimeInterface $updatedAt = null;
 
+    /**
+     * BSI-Standard 200-4 Übungs-Logbuch — F27
+     * Nullable: a BCExercise can exist without a log entry yet.
+     */
+    #[ORM\OneToOne(targetEntity: Bsi2004ExerciseLog::class, mappedBy: 'bcExercise', cascade: ['persist', 'remove'])]
+    private ?Bsi2004ExerciseLog $exerciseLog = null;
+
     public function __construct()
     {
         $this->testedPlans = new ArrayCollection();
         $this->documents = new ArrayCollection();
+        $this->participantPersons = new ArrayCollection();
+        $this->observerPersons = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
     }
 
@@ -291,7 +411,7 @@ class BCExercise
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -302,7 +422,7 @@ class BCExercise
         return $this->exerciseType;
     }
 
-    public function setExerciseType(string $exerciseType): static
+    public function setExerciseType(?string $exerciseType): static
     {
         $this->exerciseType = $exerciseType;
         return $this;
@@ -346,7 +466,7 @@ class BCExercise
         return $this->scope;
     }
 
-    public function setScope(string $scope): static
+    public function setScope(?string $scope): static
     {
         $this->scope = $scope;
         return $this;
@@ -357,7 +477,7 @@ class BCExercise
         return $this->objectives;
     }
 
-    public function setObjectives(string $objectives): static
+    public function setObjectives(?string $objectives): static
     {
         $this->objectives = $objectives;
         return $this;
@@ -379,7 +499,7 @@ class BCExercise
         return $this->exerciseDate;
     }
 
-    public function setExerciseDate(DateTimeInterface $exerciseDate): static
+    public function setExerciseDate(?DateTimeInterface $exerciseDate): static
     {
         $this->exerciseDate = $exerciseDate;
         return $this;
@@ -396,14 +516,36 @@ class BCExercise
         return $this;
     }
 
+    /** @deprecated since 2026-05-25 — use getParticipantPersons() */
     public function getParticipants(): ?string
     {
         return $this->participants;
     }
 
-    public function setParticipants(string $participants): static
+    /** @deprecated since 2026-05-25 — use addParticipantPerson() / removeParticipantPerson() */
+    public function setParticipants(?string $participants): static
     {
         $this->participants = $participants;
+        return $this;
+    }
+
+    /** @return Collection<int, Person> */
+    public function getParticipantPersons(): Collection
+    {
+        return $this->participantPersons ??= new ArrayCollection();
+    }
+
+    public function addParticipantPerson(Person $person): static
+    {
+        if (!$this->getParticipantPersons()->contains($person)) {
+            $this->getParticipantPersons()->add($person);
+        }
+        return $this;
+    }
+
+    public function removeParticipantPerson(Person $person): static
+    {
+        $this->getParticipantPersons()->removeElement($person);
         return $this;
     }
 
@@ -412,20 +554,113 @@ class BCExercise
         return $this->facilitator;
     }
 
-    public function setFacilitator(string $facilitator): static
+    public function setFacilitator(?string $facilitator): static
     {
         $this->facilitator = $facilitator;
         return $this;
     }
 
+    public function getFacilitatorUser(): ?User
+    {
+        return $this->facilitatorUser;
+    }
+
+    public function setFacilitatorUser(?User $facilitatorUser): static
+    {
+        $this->facilitatorUser = $facilitatorUser;
+        return $this;
+    }
+
+    public function getFacilitatorPerson(): ?Person
+    {
+        return $this->facilitatorPerson;
+    }
+
+    public function setFacilitatorPerson(?Person $facilitatorPerson): static
+    {
+        $this->facilitatorPerson = $facilitatorPerson;
+        return $this;
+    }
+
+    /**
+     * P-15 DataReuse Tri-State resolver — prefer structured User name, then
+     * Person, fall back to legacy `facilitator` free-text.
+     */
+    public function getEffectiveFacilitatorName(): ?string
+    {
+        return OwnerResolver::resolveEffective(
+            $this->facilitatorUser,
+            $this->facilitatorPerson,
+            $this->facilitator,
+        );
+    }
+
+    public function getExerciseLeaderUser(): ?User
+    {
+        return $this->exerciseLeaderUser;
+    }
+
+    public function setExerciseLeaderUser(?User $exerciseLeaderUser): static
+    {
+        $this->exerciseLeaderUser = $exerciseLeaderUser;
+        return $this;
+    }
+
+    public function getExerciseLeaderPerson(): ?Person
+    {
+        return $this->exerciseLeaderPerson;
+    }
+
+    public function setExerciseLeaderPerson(?Person $exerciseLeaderPerson): static
+    {
+        $this->exerciseLeaderPerson = $exerciseLeaderPerson;
+        return $this;
+    }
+
+    /**
+     * Effective exercise leader name — Tri-State chain User → Person →
+     * legacy `facilitator` string. Templates prefer this over reading
+     * the raw fields so the migration window stays UI-transparent.
+     */
+    public function getEffectiveExerciseLeaderName(): ?string
+    {
+        return OwnerResolver::resolveEffective(
+            $this->exerciseLeaderUser,
+            $this->exerciseLeaderPerson,
+            $this->facilitator,
+        );
+    }
+
+    /** @deprecated since 2026-05-25 — use getObserverPersons() */
     public function getObservers(): ?string
     {
         return $this->observers;
     }
 
+    /** @deprecated since 2026-05-25 — use addObserverPerson() / removeObserverPerson() */
     public function setObservers(?string $observers): static
     {
         $this->observers = $observers;
+        return $this;
+    }
+
+    /** @return Collection<int, Person> */
+    public function getObserverPersons(): Collection
+    {
+        return $this->observerPersons ??= new ArrayCollection();
+    }
+
+    public function addObserverPerson(Person $person): static
+    {
+        if (!$this->getObserverPersons()->contains($person)) {
+            $this->getObserverPersons()->add($person);
+        }
+        return $this;
+    }
+
+    public function removeObserverPerson(Person $person): static
+    {
+        $this->getObserverPersons()->removeElement($person);
         return $this;
     }
 
@@ -434,10 +669,18 @@ class BCExercise
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(BCExerciseStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?BCExerciseStatus
+    {
+        return $this->status !== null ? BCExerciseStatus::tryFrom($this->status) : null;
     }
 
     public function getResults(): ?string
@@ -588,7 +831,7 @@ class BCExercise
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -613,6 +856,49 @@ class BCExercise
         return $this->status === 'completed' && $this->reportCompleted;
     }
 
+    public function getActualRtoAchieved(): ?string
+    {
+        return $this->actualRtoAchieved;
+    }
+
+    public function setActualRtoAchieved(?string $actualRtoAchieved): static
+    {
+        $this->actualRtoAchieved = $actualRtoAchieved;
+        return $this;
+    }
+
+    public function getActualRpoAchieved(): ?string
+    {
+        return $this->actualRpoAchieved;
+    }
+
+    public function setActualRpoAchieved(?string $actualRpoAchieved): static
+    {
+        $this->actualRpoAchieved = $actualRpoAchieved;
+        return $this;
+    }
+
+    public function getEvidenceArtifacts(): ?array
+    {
+        return $this->evidenceArtifacts;
+    }
+
+    public function setEvidenceArtifacts(?array $evidenceArtifacts): static
+    {
+        $this->evidenceArtifacts = $evidenceArtifacts;
+        return $this;
+    }
+
+    /**
+     * Alias for testedPlans — ISO 22301 §8.6 a naming
+     *
+     * @return Collection<int, BusinessContinuityPlan>
+     */
+    public function getBcPlansTested(): Collection
+    {
+        return $this->testedPlans;
+    }
+
     /**
      * Calculate success percentage from success criteria
      */
@@ -625,7 +911,7 @@ class BCExercise
         $total = count($this->successCriteria);
         $met = count(array_filter($this->successCriteria, fn($value): bool => $value === true));
 
-        return $total > 0 ? (int)(($met / $total) * 100) : 0;
+        return (int)(($met / $total) * 100);
     }
 
     /**
@@ -658,17 +944,39 @@ class BCExercise
     }
 
     /**
-     * Get exercise type description
+     * Get exercise type translation key (i18n).
+     *
+     * Junior-ISB-Audit-2026-05-22 S14: previously hardcoded EN strings — now
+     * returns a translation key. Callers must run `|trans({}, 'bc_exercises')`.
+     * No live callers in templates/services; kept for backward-compat API.
      */
     public function getExerciseTypeDescription(): string
     {
-        return match($this->exerciseType) {
-            'tabletop' => 'Tabletop Exercise (Discussion-based)',
-            'walkthrough' => 'Walkthrough (Step-by-step review)',
-            'simulation' => 'Simulation (Simulated incident)',
-            'full_test' => 'Full Test (Complete activation)',
-            'component_test' => 'Component Test (Specific component)',
-            default => 'Unknown'
-        };
+        return 'bc_exercises.exercise_type.' . ($this->exerciseType ?? 'unknown');
+    }
+
+    public function getExerciseLog(): ?Bsi2004ExerciseLog
+    {
+        return $this->exerciseLog;
+    }
+
+    public function setExerciseLog(?Bsi2004ExerciseLog $exerciseLog): static
+    {
+        // Sync the owning side
+        if ($exerciseLog !== null && $exerciseLog->getBcExercise() !== $this) {
+            $exerciseLog->setBcExercise($this);
+        }
+        $this->exerciseLog = $exerciseLog;
+        return $this;
+    }
+
+    public function hasExerciseLog(): bool
+    {
+        return $this->exerciseLog !== null;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

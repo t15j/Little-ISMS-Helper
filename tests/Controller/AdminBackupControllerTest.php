@@ -31,8 +31,10 @@ class AdminBackupControllerTest extends WebTestCase
     private KernelBrowser $client;
     private EntityManagerInterface $entityManager;
     private ?Tenant $testTenant = null;
+    private ?Tenant $foreignTenant = null;
     private ?User $testUser = null;
     private ?User $adminUser = null;
+    private ?User $tenantAdminUser = null;
 
     protected function setUp(): void
     {
@@ -67,9 +69,31 @@ class AdminBackupControllerTest extends WebTestCase
             }
         }
 
+        if ($this->tenantAdminUser) {
+            try {
+                $user = $this->entityManager->find(User::class, $this->tenantAdminUser->getId());
+                if ($user) {
+                    $this->entityManager->remove($user);
+                }
+            } catch (\Exception $e) {
+                // Ignore
+            }
+        }
+
         if ($this->testTenant) {
             try {
                 $tenant = $this->entityManager->find(Tenant::class, $this->testTenant->getId());
+                if ($tenant) {
+                    $this->entityManager->remove($tenant);
+                }
+            } catch (\Exception $e) {
+                // Ignore
+            }
+        }
+
+        if ($this->foreignTenant) {
+            try {
+                $tenant = $this->entityManager->find(Tenant::class, $this->foreignTenant->getId());
                 if ($tenant) {
                     $this->entityManager->remove($tenant);
                 }
@@ -96,6 +120,13 @@ class AdminBackupControllerTest extends WebTestCase
         $this->testTenant->setCode('test_tenant_' . $uniqueId);
         $this->entityManager->persist($this->testTenant);
 
+        // Sibling tenant outside testTenant's tree — used by the Role-Scope
+        // cross-tenant tests (Phase 3 of the role-scope architecture rollout).
+        $this->foreignTenant = new Tenant();
+        $this->foreignTenant->setName('Foreign Tenant ' . $uniqueId);
+        $this->foreignTenant->setCode('foreign_tenant_' . $uniqueId);
+        $this->entityManager->persist($this->foreignTenant);
+
         $this->testUser = new User();
         $this->testUser->setEmail('testuser_' . $uniqueId . '@example.com');
         $this->testUser->setFirstName('Test');
@@ -110,13 +141,26 @@ class AdminBackupControllerTest extends WebTestCase
         $this->adminUser->setEmail('admin_' . $uniqueId . '@example.com');
         $this->adminUser->setFirstName('Admin');
         $this->adminUser->setLastName('User');
-        // SUPER_ADMIN needed because backup index/download/upload/validate/preview/delete
-        // all require ROLE_SUPER_ADMIN (global-data operations per 04bae7acf + Prio-C).
+        // SUPER_ADMIN baseline — backup index, export, import etc. still rely
+        // on the class-level fence. Phase 3 (role-scope) widens the per-tenant
+        // backup endpoints to ROLE_ADMIN (see TenantScopedAdminVoter).
         $this->adminUser->setRoles(['ROLE_SUPER_ADMIN']);
         $this->adminUser->setPassword('hashed_password');
         $this->adminUser->setTenant($this->testTenant);
         $this->adminUser->setIsActive(true);
         $this->entityManager->persist($this->adminUser);
+
+        // Tenant-level admin (NOT SUPER_ADMIN) — exercises the
+        // ADMIN_OWN_TENANT voter path on backup endpoints.
+        $this->tenantAdminUser = new User();
+        $this->tenantAdminUser->setEmail('tenantadmin_' . $uniqueId . '@example.com');
+        $this->tenantAdminUser->setFirstName('Tenant');
+        $this->tenantAdminUser->setLastName('Admin');
+        $this->tenantAdminUser->setRoles(['ROLE_ADMIN']);
+        $this->tenantAdminUser->setPassword('hashed_password');
+        $this->tenantAdminUser->setTenant($this->testTenant);
+        $this->tenantAdminUser->setIsActive(true);
+        $this->entityManager->persist($this->tenantAdminUser);
 
         $this->entityManager->flush();
     }
@@ -127,24 +171,54 @@ class AdminBackupControllerTest extends WebTestCase
     }
 
     /**
-     * Execute a same-origin JSON request. The SameOriginCsrfTokenManager
-     * accepts any token value when both `Sec-Fetch-Site: same-origin` and a
-     * token parameter are present (cf. config/packages/csrf.yaml).
+     * Seed a session-stateful CSRF token for the backup/export/import endpoints
+     * and return its value. Those endpoints validate the body "_token" against
+     * the session (config/packages/csrf.yaml — they are NOT stateless). The
+     * caller has already logged in, so warm that SAME session via an
+     * authenticated GET, write the token under every relevant '_csrf/<id>'
+     * key, and save it so the next POST (reusing the login cookie) carries both
+     * auth and a valid token. A late set() after the response would stay
+     * in-memory only, so the explicit save() is required.
+     */
+    private function seedBackupCsrfToken(): string
+    {
+        $this->client->request('GET', '/en/admin/data/backup');
+        $session = $this->client->getRequest()->getSession();
+        $tokenValue = (new \Symfony\Component\Security\Csrf\TokenGenerator\UriSafeTokenGenerator())->generateToken();
+        foreach ([
+            'data_backup_create', 'data_backup_upload', 'data_backup_validate',
+            'data_backup_restore', 'data_backup_delete',
+            'data_export', 'data_import', 'data_import_execute',
+        ] as $id) {
+            $session->set('_csrf/' . $id, $tokenValue);
+        }
+        $session->save();
+
+        return $tokenValue;
+    }
+
+    /**
+     * Execute a same-origin AJAX JSON request with a valid session CSRF token.
      *
-     * @param array<string, mixed> $params Post parameters (will carry `_token=same-origin`)
+     * Sends `X-Requested-With: XMLHttpRequest` to match the JS fetch() call's
+     * headers — AdminBackupController distinguishes the AJAX path (JsonResponse)
+     * from the JS-failed form-submit fallback path (server-side redirect to the
+     * progress page) via this header.
+     *
+     * @param array<string, mixed> $params Post parameters (will carry `_token`)
      */
     private function sameOriginRequest(string $method, string $uri, array $params = [], array $files = []): void
     {
-        // 'csrf-token' matches Symfony's default cookie name, which the
-        // SameOriginCsrfTokenManager accepts regardless of length (the
-        // `$token->getValue() !== $this->cookieName` branch in isTokenValid).
-        $params['_token'] = 'csrf-token';
+        $params['_token'] = $this->seedBackupCsrfToken();
         $this->client->request(
             $method,
             $uri,
             $params,
             $files,
-            ['HTTP_SEC_FETCH_SITE' => 'same-origin']
+            [
+                'HTTP_SEC_FETCH_SITE'   => 'same-origin',
+                'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+            ]
         );
     }
 
@@ -205,6 +279,62 @@ class AdminBackupControllerTest extends WebTestCase
         $this->sameOriginRequest('POST', '/en/admin/data/backup/create');
         $this->assertResponseIsSuccessful();
         $this->assertResponseHeaderSame('content-type', 'application/json');
+    }
+
+    #[Test]
+    public function testCreateBackupRedirectsToProgressPageWhenNotXhr(): void
+    {
+        // Safety net: when the page's inline JS fails (e.g. transient parse
+        // error in a third-party module), the browser submits the form via
+        // the explicit form `action`. Without `X-Requested-With`, the
+        // controller must redirect to the progress page server-side instead
+        // of returning a JsonResponse the browser would render as raw text.
+        $this->loginAsUser($this->adminUser);
+        // Valid session CSRF token, but NO X-Requested-With — exercises the
+        // server-side redirect (form-submit fallback) path, not the AJAX path.
+        $this->client->request(
+            'POST',
+            '/en/admin/data/backup/create',
+            ['_token' => $this->seedBackupCsrfToken()],
+            [],
+            ['HTTP_SEC_FETCH_SITE' => 'same-origin'],
+        );
+        $this->assertResponseRedirects();
+        $location = $this->client->getResponse()->headers->get('Location');
+        $this->assertNotNull($location);
+        // Turbo PRG fix: redirect now goes to the shared progress page at
+        // /admin/jobs/{id}/progress (was /admin/data/backup/progress/{id}).
+        $this->assertStringContainsString('/admin/jobs/', (string) $location);
+        $this->assertStringContainsString('/progress', (string) $location);
+    }
+
+    // ========== ROLE-SCOPE PHASE 3 — TENANT-SCOPED BACKUP TESTS ==========
+
+    #[Test]
+    public function testCreateBackupSucceedsForRoleAdminOnOwnTenant(): void
+    {
+        // ROLE_ADMIN (non-SUPER) creating a backup for their own tenant —
+        // canonical "happy path" for the new TenantScopedAdminVoter +
+        // TenantContext::resolveAdminScope() pairing.
+        $this->loginAsUser($this->tenantAdminUser);
+        $this->sameOriginRequest('POST', '/en/admin/data/backup/create', [
+            'tenant_id' => (string) $this->testTenant->getId(),
+        ]);
+        $this->assertResponseIsSuccessful();
+        $this->assertResponseHeaderSame('content-type', 'application/json');
+    }
+
+    #[Test]
+    public function testCreateBackupForbiddenForRoleAdminOnForeignTenant(): void
+    {
+        // ROLE_ADMIN trying to backup a sibling tenant they don't own —
+        // resolveAdminScope() must throw AccessDeniedException, which
+        // Symfony maps to 403.
+        $this->loginAsUser($this->tenantAdminUser);
+        $this->sameOriginRequest('POST', '/en/admin/data/backup/create', [
+            'tenant_id' => (string) $this->foreignTenant->getId(),
+        ]);
+        $this->assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
     }
 
     // ========== UPLOAD BACKUP TESTS ==========

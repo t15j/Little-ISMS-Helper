@@ -14,7 +14,7 @@ use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints as Assert;
 
-class WorkflowType extends AbstractType
+final class WorkflowType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -22,7 +22,6 @@ class WorkflowType extends AbstractType
             ->add('name', TextType::class, [
                 'label' => 'workflow.field.name',
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'workflow.placeholder.name'
                 ],
                 'constraints' => [
@@ -34,7 +33,6 @@ class WorkflowType extends AbstractType
                 'label' => 'workflow.field.description',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                     'placeholder' => 'workflow.placeholder.description'
                 ]
@@ -50,10 +48,7 @@ class WorkflowType extends AbstractType
                     'workflow.entity_type.document' => 'Document',
                     'workflow.entity_type.audit' => 'InternalAudit',
                 ],
-                'attr' => [
-                    'class' => 'form-select'
-                ],
-                'constraints' => [
+                                'constraints' => [
                     new Assert\NotBlank(message: 'workflow.validation.entity_type_required')
                 ],
                 'help' => 'workflow.help.entity_type',

@@ -1,0 +1,115 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controller\Admin;
+
+use App\Entity\Tenant;
+use App\Form\Admin\TenantComplianceSettingsType;
+use App\Repository\SystemSettingsRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
+use App\Service\TenantContext;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+
+/**
+ * Tier-1 Compliance Settings UI — combines tenant-specific fields
+ * (locale, TZ, financial year, DPO contact, TLP) and global security
+ * defaults (MFA, password, session) on a single admin page.
+ *
+ * Phase 4c role-scope migration (spec
+ * `docs/superpowers/specs/2026-05-18-role-scope-architecture.md`):
+ * class-level `ADMIN_OWN_TENANT` enforces "ROLE_ADMIN configures own
+ * tenant; SUPER_ADMIN configures any". The edit action resolves the
+ * `tenantId` path param via {@see TenantContext::resolveAdminScope()}
+ * so cross-tenant attempts surface as a standard 403 instead of
+ * inline duplication of the SUPER-vs-ADMIN branch.
+ */
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
+final class TenantComplianceSettingsController extends AbstractController
+{
+    public function __construct(
+        private readonly EntityManagerInterface $em,
+        private readonly SystemSettingsRepository $systemSettings,
+        private readonly TenantContext $tenantContext,
+    ) {
+    }
+
+    /**
+     * Redirect-Route ohne tenantId — picks current user's tenant.
+     * Used by Admin-Hub-Card (no id available there).
+     */
+    #[Route(
+        path: '/admin/tenant-compliance-settings',
+        name: 'admin_tenant_compliance_settings_current',
+        methods: ['GET'],
+    )]
+    public function currentTenant(): Response
+    {
+        $tenant = $this->tenantContext->getCurrentTenant();
+        if (!$tenant instanceof Tenant) {
+            $this->addFlash('warning', 'admin.tenant_settings.no_tenant_in_context');
+            return $this->redirectToRoute('tenant_management_index');
+        }
+        return $this->redirectToRoute('admin_tenant_compliance_settings_edit', [
+            'tenantId' => $tenant->getId(),
+        ]);
+    }
+
+    #[Route(
+        path: '/admin/tenant/{tenantId}/compliance-settings',
+        name: 'admin_tenant_compliance_settings_edit',
+        requirements: ['tenantId' => '\d+'],
+        methods: ['GET', 'POST'],
+    )]
+    public function edit(int $tenantId, Request $request): Response
+    {
+        // Resolves cross-tenant attempts to AccessDeniedException; SUPER_ADMIN
+        // gets the requested tenant, ROLE_ADMIN only when it's within their
+        // accessible tenant tree.
+        $tenant = $this->tenantContext->resolveAdminScope($tenantId);
+        if (!$tenant instanceof Tenant) {
+            throw $this->createNotFoundException();
+        }
+
+        $form = $this->createForm(TenantComplianceSettingsType::class, $tenant);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            $this->em->flush();
+            $this->addFlash('success', 'admin.tenant_settings.saved');
+            return $this->redirectToRoute('admin_tenant_compliance_settings_edit', [
+                '_locale' => $request->getLocale(),
+                'tenantId' => $tenant->getId(),
+            ]);
+        }
+
+        // Globals (read-only display + edit-via SystemSettings page)
+        $globals = [
+            'mfa_required_roles' => $this->systemSettings->getSetting('security', 'mfa_required_roles', '[]'),
+            'password_min_length' => (int) $this->systemSettings->getSetting('security', 'password_min_length', 12),
+            'password_require_complexity' => $this->systemSettings->getSetting('security', 'password_require_complexity', 'true') === 'true',
+            'password_rotation_days' => (int) $this->systemSettings->getSetting('security', 'password_rotation_days', 0),
+            'session_timeout_minutes' => (int) $this->systemSettings->getSetting('security', 'session_timeout_minutes', 60),
+            // Tier-3 globals
+            'backup_schedule' => trim((string) $this->systemSettings->getSetting('backup', 'schedule_cron', '0 2 * * *'), '"'),
+            'backup_retention_days' => (int) $this->systemSettings->getSetting('backup', 'retention_days', 90),
+            'environment_label' => trim((string) $this->systemSettings->getSetting('deployment', 'environment_label', 'production'), '"'),
+            'telemetry_opt_in' => $this->systemSettings->getSetting('telemetry', 'opt_in', 'false') === 'true',
+        ];
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
+        return $this->render('admin/tenant_compliance_settings/edit.html.twig', [
+            'tenant' => $tenant,
+            'form' => $form,
+            'globals' => $globals,
+        ], new Response(status: $status));
+    }
+}

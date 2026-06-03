@@ -6,10 +6,12 @@ namespace App\Service;
 
 use App\Entity\FourEyesApprovalRequest;
 use App\Entity\User;
+use App\Enum\FourEyesApprovalRequestStatus;
+use App\Exception\Tenant\TenantOrphanException;
+use App\Exception\Workflow\InvalidStatusTransitionException;
 use App\Repository\FourEyesApprovalRequestRepository;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
-use InvalidArgumentException;
 use LogicException;
 
 /**
@@ -44,12 +46,12 @@ class FourEyesApprovalService
         ?User $specificApprover = null,
     ): FourEyesApprovalRequest {
         if ($specificApprover !== null && $specificApprover->getId() === $requester->getId()) {
-            throw new InvalidArgumentException('Approver must differ from requester (segregation of duties).');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Approver must differ from requester (segregation of duties).', 'self_approval');
         }
 
         $tenant = $this->tenantContext->getCurrentTenant();
         if ($tenant === null) {
-            throw new LogicException('No tenant context when requesting four-eyes approval.');
+            throw new TenantOrphanException(null, 'No tenant context when requesting four-eyes approval.');
         }
 
         $request = (new FourEyesApprovalRequest())
@@ -59,7 +61,7 @@ class FourEyesApprovalService
             ->setRequestedBy($requester)
             ->setRequestedApprover($specificApprover)
             ->setExpiresAt((new \DateTimeImmutable())->modify(sprintf('+%d days', max(1, $this->expiryDays()))))
-            ->setStatus(FourEyesApprovalRequest::STATUS_PENDING);
+            ->setStatus(FourEyesApprovalRequestStatus::Pending);
 
         $this->entityManager->persist($request);
         $this->entityManager->flush();
@@ -83,17 +85,22 @@ class FourEyesApprovalService
     public function approve(FourEyesApprovalRequest $request, User $approver): void
     {
         if (!$request->isPending()) {
-            throw new LogicException('Approval request is not pending (status: ' . $request->getStatus() . ').');
+            throw new InvalidStatusTransitionException(
+                (string) $request->getStatus(),
+                'approved',
+                FourEyesApprovalRequest::class,
+                'Approval request is not pending (status: ' . $request->getStatus() . ').',
+            );
         }
         if ($request->getRequestedBy()?->getId() === $approver->getId()) {
-            throw new InvalidArgumentException('Approver must differ from requester.');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Approver must differ from requester.', 'self_approval');
         }
         if ($request->getRequestedApprover() !== null
             && $request->getRequestedApprover()->getId() !== $approver->getId()) {
-            throw new InvalidArgumentException('Only the designated approver can approve this request.');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('Only the designated approver can approve this request.', 'wrong_approver');
         }
 
-        $request->setStatus(FourEyesApprovalRequest::STATUS_APPROVED)
+        $request->setStatus(FourEyesApprovalRequestStatus::Approved)
             ->setApprovedBy($approver)
             ->setApprovedAt(new DateTimeImmutable());
 
@@ -115,14 +122,19 @@ class FourEyesApprovalService
     public function reject(FourEyesApprovalRequest $request, User $approver, string $reason): void
     {
         if (!$request->isPending()) {
-            throw new LogicException('Approval request is not pending.');
+            throw new InvalidStatusTransitionException(
+                (string) $request->getStatus(),
+                'rejected',
+                FourEyesApprovalRequest::class,
+                'Approval request is not pending.',
+            );
         }
         $minLen = $this->rejectionMinLength();
         if (mb_strlen(trim($reason)) < $minLen) {
-            throw new InvalidArgumentException(sprintf('Rejection reason requires at least %d characters.', $minLen));
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException(sprintf('Rejection reason requires at least %d characters.', $minLen), 'reason');
         }
 
-        $request->setStatus(FourEyesApprovalRequest::STATUS_REJECTED)
+        $request->setStatus(FourEyesApprovalRequestStatus::Rejected)
             ->setApprovedBy($approver)
             ->setApprovedAt(new DateTimeImmutable())
             ->setRejectionReason($reason);

@@ -1,0 +1,55 @@
+imports:
+    - { resource: '../workflows/workflow_instance.yaml' }
+    - { resource: '../workflows/document.yaml' }
+    - { resource: '../workflows/processing_activity.yaml' }
+    - { resource: '../workflows/isms_objective.yaml' }
+    - { resource: '../workflows/policy_template.yaml' }
+    - { resource: '../workflows/asset.yaml' }
+    - { resource: '../workflows/audit_finding.yaml' }
+    - { resource: '../workflows/audit_program.yaml' }
+    - { resource: '../workflows/consent.yaml' }
+    - { resource: '../workflows/corrective_action.yaml' }
+    - { resource: '../workflows/data_breach.yaml' }
+    - { resource: '../workflows/data_subject_request.yaml' }
+    - { resource: '../workflows/dpia.yaml' }
+    - { resource: '../workflows/incident.yaml' }
+    - { resource: '../workflows/internal_audit.yaml' }
+    - { resource: '../workflows/risk.yaml' }
+    - { resource: '../workflows/vulnerability.yaml' }
+    # Sprint Y.5 — 10 additional entity lifecycles (close FormType-bypass surface)
+    - { resource: '../workflows/training.yaml' }
+    - { resource: '../workflows/risk_treatment_plan.yaml' }
+    - { resource: '../workflows/supplier.yaml' }
+    - { resource: '../workflows/prototype_protection_assessment.yaml' }
+    - { resource: '../workflows/business_continuity_plan.yaml' }
+    - { resource: '../workflows/patch.yaml' }
+    - { resource: '../workflows/management_review.yaml' }
+    - { resource: '../workflows/change_request.yaml' }
+    - { resource: '../workflows/threat_intelligence.yaml' }
+    - { resource: '../workflows/bc_exercise.yaml' }
+    # Junior-ISB-Audit-2026-05-22 S-01 — Sprint S13 InterestedParty lifecycle
+    - { resource: '../workflows/interested_party.yaml' }
+    # Junior-ISB-Audit Phase-2 Lifecycle — NotificationDelivery 6-stage pipeline
+    # (ISO 27001 Cl. 7.4 + DORA Art. 19 end-to-end notification traceability).
+    - { resource: '../workflows/notification_delivery.yaml' }
+    # Junior-ISB-Audit Phase-2 Lifecycle — RBAC core entities (Permission + Role)
+    - { resource: '../workflows/permission.yaml' }
+    - { resource: '../workflows/role.yaml' }
+    # Junior-ISB-Audit Phase-2 Lifecycle — Tenant (security-critical, 30+ isActive callsites preserved via wrapper)
+    - { resource: '../workflows/tenant.yaml' }
+    # Sprint Y.2 — Regulatory approval-chain workflows (WorkflowInstance-based)
+    - { resource: '../workflows/regulatory/gdpr_data_breach.yaml' }
+    - { resource: '../workflows/regulatory/incident_high_severity.yaml' }
+    - { resource: '../workflows/regulatory/incident_low_severity.yaml' }
+    - { resource: '../workflows/regulatory/risk_treatment.yaml' }
+    - { resource: '../workflows/regulatory/dpia.yaml' }
+    - { resource: '../workflows/regulatory/dsr.yaml' }
+    - { resource: '../workflows/regulatory/capa.yaml' }
+    - { resource: '../workflows/regulatory/change_request.yaml' }
+    - { resource: '../workflows/regulatory/management_review.yaml' }
+    - { resource: '../workflows/regulatory/control_verification.yaml' }
+    - { resource: '../workflows/regulatory/supplier_assessment.yaml' }
+    - { resource: '../workflows/regulatory/training_verification.yaml' }
+    - { resource: '../workflows/regulatory/bc_plan_activation.yaml' }
+    - { resource: '../workflows/regulatory/document_review.yaml' }
+    - { resource: '../workflows/regulatory/incident_post_mortem.yaml' }

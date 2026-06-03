@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Controller\Admin;
 
 use App\Form\Admin\GstoolImportUploadType;
+use App\Security\Voter\TenantScopedAdminVoter;
+use App\Service\FileUploadSecurityService;
 use App\Service\Import\GstoolXmlImporter;
 use App\Service\TenantContext;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -25,8 +28,17 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  * The actual parsing and persistence is delegated to GstoolXmlImporter.
  * See docs/features/GSTOOL_IMPORT.md for the supported schema and the
  * roadmap to Phase 3+ (Bausteine, Maßnahmen, Risikoanalyse).
+ *
+ * Authorization (Phase 4b of Role-Scope Architecture, spec
+ * `docs/superpowers/specs/2026-05-18-role-scope-architecture.md`):
+ *  - Class-level {@see TenantScopedAdminVoter::ADMIN_OWN_TENANT} —
+ *    ROLE_ADMIN imports into their own tenant; ROLE_SUPER_ADMIN passes
+ *    transparently for any tenant.
+ *  - The actual tenant is taken from {@see TenantContext::getCurrentTenant()}
+ *    (no `tenant_id` form field exposed in the upload form).
  */
-#[IsGranted('ROLE_ADMIN')]
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route(
     path: '/admin/import/gstool',
     name: 'admin_gstool_import_',
@@ -36,6 +48,7 @@ final class GstoolImportController extends AbstractController
     public function __construct(
         private readonly GstoolXmlImporter $importer,
         private readonly TenantContext $tenantContext,
+        private readonly FileUploadSecurityService $fileUploadSecurityService,
         #[Autowire('%kernel.project_dir%')]
         private readonly string $projectDir,
     ) {
@@ -66,6 +79,14 @@ final class GstoolImportController extends AbstractController
                 return $this->redirectToRoute('admin_gstool_import_index');
             }
 
+            // Security: deep validation beyond Symfony form constraints (magic bytes, extension whitelist)
+            try {
+                $this->fileUploadSecurityService->validateUploadedFile($upload);
+            } catch (FileException $e) {
+                $this->addFlash('error', $e->getMessage());
+                return $this->redirectToRoute('admin_gstool_import_index');
+            }
+
             $stored = $this->storeUpload($upload);
             try {
                 $result = $isDryRun
@@ -88,11 +109,15 @@ final class GstoolImportController extends AbstractController
             }
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('admin/gstool_import/index.html.twig', [
             'form' => $form,
             'result' => $result,
             'isDryRun' => $isDryRun,
-        ]);
+        ], new Response(status: $status));
     }
 
     private function storeUpload(UploadedFile $upload): string

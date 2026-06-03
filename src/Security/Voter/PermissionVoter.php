@@ -8,6 +8,7 @@ use App\Entity\User;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\Vote;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
+use Symfony\Component\Security\Core\Role\RoleHierarchyInterface;
 
 /**
  * Permission Voter for granular access control
@@ -24,8 +25,13 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  *
  * ISO 27001: A.9.2.2 (User access provisioning)
  */
-class PermissionVoter extends Voter
+final class PermissionVoter extends Voter
 {
+    public function __construct(
+        private readonly RoleHierarchyInterface $roleHierarchy,
+    ) {
+    }
+
     // Admin permissions
     public const string ADMIN_ACCESS = 'ADMIN_ACCESS';
     public const string ADMIN_VIEW = 'ADMIN_VIEW';
@@ -135,7 +141,8 @@ class PermissionVoter extends Voter
         }
 
         // Super admins have all permissions
-        if (in_array('ROLE_SUPER_ADMIN', $user->getRoles(), true)) {
+        $reachableRoles = $this->roleHierarchy->getReachableRoleNames($user->getRoles());
+        if (in_array('ROLE_SUPER_ADMIN', $reachableRoles, true)) {
             return true;
         }
 
@@ -159,7 +166,8 @@ class PermissionVoter extends Voter
         }
 
         // Fallback: ROLE_ADMIN has broad permissions for backward compatibility
-        if (in_array('ROLE_ADMIN', $user->getRoles(), true)) {
+        $reachableRoles = $this->roleHierarchy->getReachableRoleNames($user->getRoles());
+        if (in_array('ROLE_ADMIN', $reachableRoles, true)) {
             // ROLE_ADMIN can access most things except sensitive operations
             $restrictedPermissions = [
                 self::BACKUP_RESTORE,  // Only super admin can restore

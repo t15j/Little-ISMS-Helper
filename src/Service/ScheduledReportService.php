@@ -6,6 +6,7 @@ namespace App\Service;
 
 use DateTime;
 use App\Entity\ScheduledReport;
+use App\Exception\Tenant\TenantOrphanException;
 use App\Repository\RiskRepository;
 use App\Repository\ScheduledReportRepository;
 use App\Repository\UserRepository;
@@ -26,7 +27,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * Phase 7A: Handles generation and delivery of scheduled reports.
  * Reports are generated based on configuration and sent via email.
  */
-class ScheduledReportService
+final class ScheduledReportService
 {
     public function __construct(
         private readonly ScheduledReportRepository $repository,
@@ -79,7 +80,7 @@ class ScheduledReportService
 
         foreach ($dueReports as $report) {
             try {
-                $this->tenantContext->setTenantId($report->getTenantId());
+                $this->tenantContext->setCurrentTenantById($report->getTenantId());
 
                 $this->processReport($report);
 
@@ -137,7 +138,7 @@ class ScheduledReportService
         }
 
         if ($filterResult['valid'] === []) {
-            throw new \RuntimeException('No qualifying recipients after role/tenant check.');
+            throw new \App\Exception\BusinessRule\BusinessRuleException('No qualifying recipients after role/tenant check.', 'no_recipients');
         }
 
         // Generate the report content
@@ -316,7 +317,7 @@ class ScheduledReportService
             ],
             ScheduledReport::TYPE_PORTFOLIO => $this->getPortfolioReportData(),
             ScheduledReport::TYPE_BOARD => $this->getBoardReportData(),
-            default => throw new \InvalidArgumentException("Unknown report type: {$type}"),
+            default => throw new \App\Exception\InvalidArgument\InvalidArgumentException("Unknown report type: {$type}", 'reportType'),
         };
     }
 
@@ -327,7 +328,7 @@ class ScheduledReportService
     {
         $tenant = $this->tenantContext->getCurrentTenant();
         if ($tenant === null) {
-            throw new \RuntimeException('Portfolio report requires a tenant context.');
+            throw new TenantOrphanException(null, 'Portfolio report requires a tenant context.');
         }
 
         $stichtag = new \DateTimeImmutable();
@@ -407,7 +408,7 @@ class ScheduledReportService
             ScheduledReport::TYPE_GDPR => 'management_reports/gdpr_pdf.html.twig',
             ScheduledReport::TYPE_PORTFOLIO => 'portfolio_report/pdf.html.twig',
             ScheduledReport::TYPE_BOARD => 'reports/board_one_pager.html.twig',
-            default => throw new \InvalidArgumentException("Unknown report type: {$type}"),
+            default => throw new \App\Exception\InvalidArgument\InvalidArgumentException("Unknown report type: {$type}", 'reportType'),
         };
     }
 
@@ -603,7 +604,7 @@ class ScheduledReportService
      */
     public function triggerReport(ScheduledReport $report): void
     {
-        $this->tenantContext->setTenantId($report->getTenantId());
+        $this->tenantContext->setCurrentTenantById($report->getTenantId());
         $this->processReport($report);
     }
 
@@ -612,7 +613,7 @@ class ScheduledReportService
      */
     public function previewReport(ScheduledReport $report): string
     {
-        $this->tenantContext->setTenantId($report->getTenantId());
+        $this->tenantContext->setCurrentTenantById($report->getTenantId());
         return $this->generateReportContent($report);
     }
 }

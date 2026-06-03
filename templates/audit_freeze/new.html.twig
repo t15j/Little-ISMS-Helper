@@ -1,5 +1,6 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'audit_freeze.new.title'|trans({}, 'audit_freeze') }}{% endblock %}
 
@@ -7,15 +8,15 @@
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'audit_freeze.title'|trans({}, 'audit_freeze'), path: 'app_audit_freeze_index' },
+            { label: 'audit_freeze.title'|trans({}, 'audit_freeze'), url: path('app_audit_freeze_index') },
             { label: 'audit_freeze.new.title'|trans({}, 'audit_freeze') }
         ]
     } %}
 
-    <h1 class="h2 mb-3">
-        <i class="bi bi-snow text-primary" aria-hidden="true"></i>
-        {{ 'audit_freeze.new.title'|trans({}, 'audit_freeze') }}
-    </h1>
+    {{ _fa_page_header.render({
+        title: 'audit_freeze.new.title'|trans({}, 'audit_freeze'),
+        badge: { icon: 'ui-lock', label: '' }
+    }) }}
 
     {{ _fa_alert.render({ variant: 'info', title: 'audit_freeze.new.hint_title'|trans({}, 'audit_freeze'), body: '<span class="small">' ~ 'audit_freeze.new.hint_body'|trans({}, 'audit_freeze') ~ '</span>' }) }}
 
@@ -45,7 +46,7 @@
                         {{ 'audit_freeze.action.cancel'|trans({}, 'audit_freeze') }}
                     </a>
                     <button type="submit" class="fa-cyber-btn fa-cyber-btn--primary">
-                        <i class="bi bi-snow" aria-hidden="true"></i>
+                        <i class="fa-icon fa-icon--audit-internal" aria-hidden="true"></i>
                         {{ 'audit_freeze.action.create'|trans({}, 'audit_freeze') }}
                     </button>
                 </div>

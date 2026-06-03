@@ -19,7 +19,7 @@ use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints as Assert;
 
-class WorkflowInstanceType extends AbstractType
+final class WorkflowInstanceType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -28,10 +28,7 @@ class WorkflowInstanceType extends AbstractType
                 'label' => 'workflow_instance.field.workflow',
                 'class' => Workflow::class,
                 'choice_label' => 'name',
-                'attr' => [
-                    'class' => 'form-select'
-                ],
-                'constraints' => [
+                                'constraints' => [
                     new Assert\NotBlank(message: 'workflow_instance.validation.workflow_required')
                 ],
                 'help' => 'workflow_instance.help.workflow'
@@ -39,7 +36,6 @@ class WorkflowInstanceType extends AbstractType
             ->add('entityType', TextType::class, [
                 'label' => 'workflow_instance.field.entity_type',
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'workflow_instance.placeholder.entity_type'
                 ],
                 'constraints' => [
@@ -51,7 +47,6 @@ class WorkflowInstanceType extends AbstractType
             ->add('entityId', IntegerType::class, [
                 'label' => 'workflow_instance.field.entity_id',
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'workflow_instance.placeholder.entity_id'
                 ],
                 'constraints' => [
@@ -60,8 +55,12 @@ class WorkflowInstanceType extends AbstractType
                 ],
                 'help' => 'workflow_instance.help.entity_id'
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix) ──────────────
+            // Owned by `workflow_instance_lifecycle`. YAML 4-eyes on `approve`.
+            // Transitions via LifecycleService::transition() only.
             ->add('status', ChoiceType::class, [
                 'label' => 'workflow_instance.field.status',
+                'help' => 'workflow_instance.help.status_readonly',
                 'choices' => [
                     'workflow_instance.status.pending' => 'pending',
                     'workflow_instance.status.in_progress' => 'in_progress',
@@ -69,12 +68,11 @@ class WorkflowInstanceType extends AbstractType
                     'workflow_instance.status.rejected' => 'rejected',
                     'workflow_instance.status.cancelled' => 'cancelled',
                 ],
-                'attr' => [
-                    'class' => 'form-select'
-                ],
-                'constraints' => [
-                    new Assert\NotBlank(message: 'workflow_instance.validation.status_required')
-                ],
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
                 'choice_translation_domain' => 'workflows',
             ])
             ->add('initiatedBy', EntityType::class, [
@@ -82,26 +80,19 @@ class WorkflowInstanceType extends AbstractType
                 'class' => User::class,
                 'choice_label' => 'email',
                 'required' => false,
-                'attr' => [
-                    'class' => 'form-select'
-                ],
-                'help' => 'workflow_instance.help.initiated_by'
+                                'help' => 'workflow_instance.help.initiated_by'
             ])
             ->add('currentStep', EntityType::class, [
                 'label' => 'workflow_instance.field.current_step',
                 'class' => WorkflowStep::class,
                 'choice_label' => 'name',
                 'required' => false,
-                'attr' => [
-                    'class' => 'form-select'
-                ],
-                'help' => 'workflow_instance.help.current_step'
+                                'help' => 'workflow_instance.help.current_step'
             ])
             ->add('comments', TextareaType::class, [
                 'label' => 'workflow_instance.field.comments',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                     'placeholder' => 'workflow_instance.placeholder.comments'
                 ]
@@ -111,10 +102,7 @@ class WorkflowInstanceType extends AbstractType
                 'widget' => 'single_text',
                 'input' => 'datetime_immutable',
                 'required' => false,
-                'attr' => [
-                    'class' => 'form-control',
-                ],
-                'help' => 'workflow_instance.help.due_date'
+                                'help' => 'workflow_instance.help.due_date'
             ])
         ;
     }

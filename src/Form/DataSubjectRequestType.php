@@ -23,7 +23,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 /**
  * Form type for Data Subject Request (GDPR Art. 15-22)
  */
-class DataSubjectRequestType extends AbstractType
+final class DataSubjectRequestType extends AbstractType
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -44,7 +44,6 @@ class DataSubjectRequestType extends AbstractType
                 ],
                 'placeholder' => 'dsr.form.placeholder.request_type',
                 'required' => true,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'dsr.form.help.request_type',
             ])
             ->add('receivedAt', DateTimeType::class, [
@@ -52,7 +51,6 @@ class DataSubjectRequestType extends AbstractType
                 'widget' => 'single_text',
                 'required' => true,
                 'input' => 'datetime_immutable',
-                'attr' => ['class' => 'form-control'],
                 'help' => 'dsr.form.help.received_at',
             ])
             ->add('description', TextareaType::class, [
@@ -60,7 +58,6 @@ class DataSubjectRequestType extends AbstractType
                 'required' => true,
                 'attr' => [
                     'rows' => 5,
-                    'class' => 'form-control',
                     'placeholder' => 'dsr.form.placeholder.description',
                 ],
             ])
@@ -72,7 +69,6 @@ class DataSubjectRequestType extends AbstractType
                 'label' => 'dsr.form.data_subject_name',
                 'required' => true,
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'dsr.form.placeholder.data_subject_name',
                 ],
             ])
@@ -80,7 +76,6 @@ class DataSubjectRequestType extends AbstractType
                 'label' => 'dsr.form.data_subject_email',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'dsr.form.placeholder.data_subject_email',
                 ],
             ])
@@ -88,7 +83,6 @@ class DataSubjectRequestType extends AbstractType
                 'label' => 'dsr.form.data_subject_identifier',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'dsr.form.placeholder.data_subject_identifier',
                 ],
                 'help' => 'dsr.form.help.data_subject_identifier',
@@ -113,7 +107,6 @@ class DataSubjectRequestType extends AbstractType
                 'placeholder' => 'dsr.form.placeholder.verification_method',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-depends-on' => 'data_subject_request_identityVerified',
                 ],
             ])
@@ -132,7 +125,7 @@ class DataSubjectRequestType extends AbstractType
                 ),
                 'placeholder' => 'dsr.form.placeholder.assigned_to',
                 'required' => false,
-                'attr' => ['class' => 'form-select select2'],
+                'attr' => ['data-controller' => 'tom-select'],
             ])
             ->add('assignedPerson', EntityType::class, [
                 'label' => 'dsr.form.assigned_person',
@@ -140,7 +133,6 @@ class DataSubjectRequestType extends AbstractType
                 'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
                 'placeholder' => 'dsr.form.placeholder.assigned_person',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'dsr.form.help.assigned_person',
             ])
             ->add('assignedDeputyPersons', EntityType::class, [
@@ -151,10 +143,20 @@ class DataSubjectRequestType extends AbstractType
                 'multiple' => true,
                 'expanded' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'dsr.form.help.assigned_deputy_persons',
+            ])
+            ->add('dpoPerson', EntityType::class, [
+                'label' => 'dsr.form.dpo_person',
+                'class' => Person::class,
+                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
+                'placeholder' => 'dsr.form.placeholder.dpo_person',
+                'required' => false,
+                'help' => 'dsr.form.help.dpo_person',
+                'attr' => [
+                    'data-controller' => 'tom-select',
+                ],
             ])
             ->add('processingActivity', EntityType::class, [
                 'label' => 'dsr.form.processing_activity',
@@ -162,19 +164,74 @@ class DataSubjectRequestType extends AbstractType
                 'choice_label' => 'name',
                 'placeholder' => 'dsr.form.placeholder.processing_activity',
                 'required' => false,
-                'attr' => ['class' => 'form-select select2'],
+                'attr' => ['data-controller' => 'tom-select'],
                 'help' => 'dsr.form.help.processing_activity',
             ])
 
             // ================================================================
-            // SECTION 5: Internal Notes
+            // SECTION 5: Response Tracking (GDPR Art. 12(3))
+            // ================================================================
+            ->add('responseAt', DateTimeType::class, [
+                'widget' => 'single_text',
+                'label' => 'dsr.form.response_at',
+                'required' => false,
+                'input' => 'datetime_immutable',
+                'help' => 'dsr.form.help.response_at',
+            ])
+            ->add('extendedDeadlineAt', DateTimeType::class, [
+                'widget' => 'single_text',
+                'label' => 'dsr.form.extended_deadline',
+                'required' => false,
+                'input' => 'datetime_immutable',
+                'help' => 'dsr.form.help.extended_deadline',
+            ])
+            ->add('extensionReason', TextareaType::class, [
+                'label' => 'dsr.form.extension_reason',
+                'required' => false,
+                'attr' => [
+                    'rows' => 2,
+                    'placeholder' => 'dsr.form.placeholder.extension_reason',
+                ],
+                'help' => 'dsr.form.help.extension_reason',
+            ])
+            ->add('responseDocument', TextType::class, [
+                'label' => 'dsr.form.response_document',
+                'required' => false,
+                'attr' => [
+                    'maxlength' => 255,
+                    'placeholder' => 'dsr.form.placeholder.response_document',
+                ],
+                'help' => 'dsr.form.help.response_document',
+            ])
+            ->add('responseMethod', ChoiceType::class, [
+                'label' => 'dsr.form.response_method',
+                'required' => false,
+                'placeholder' => 'dsr.form.placeholder.response_method',
+                'choices' => [
+                    'dsr.response_method.email' => 'email',
+                    'dsr.response_method.letter' => 'letter',
+                    'dsr.response_method.portal' => 'portal',
+                    'dsr.response_method.in_person' => 'in_person',
+                ],
+            ])
+            ->add('rejectionReason', TextareaType::class, [
+                'label' => 'dsr.form.rejection_reason',
+                'required' => false,
+                'attr' => [
+                    'rows' => 3,
+                    'placeholder' => 'dsr.form.placeholder.rejection_reason',
+                ],
+                'help' => 'dsr.form.help.rejection_reason',
+            ])
+
+            // ================================================================
+            // SECTION 6: Internal Notes
             // ================================================================
             ->add('notes', TextareaType::class, [
                 'label' => 'dsr.form.notes',
                 'required' => false,
                 'attr' => [
                     'rows' => 4,
-                    'class' => 'form-control',
                     'placeholder' => 'dsr.form.placeholder.notes',
                 ],
                 'help' => 'dsr.form.help.notes',

@@ -290,7 +290,7 @@ class ComplianceMapping
         return $this->mappingType;
     }
 
-    public function setMappingType(string $mappingType): static
+    public function setMappingType(?string $mappingType): static
     {
         $this->mappingType = $mappingType;
         return $this;
@@ -369,7 +369,7 @@ class ComplianceMapping
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -693,7 +693,7 @@ class ComplianceMapping
         return $this->validFrom;
     }
 
-    public function setValidFrom(DateTimeInterface $validFrom): static
+    public function setValidFrom(?DateTimeInterface $validFrom): static
     {
         $this->validFrom = $validFrom;
         return $this;
@@ -720,8 +720,28 @@ class ComplianceMapping
 
     // ── Mapping-Quality-Vision accessors ────────────────────────────────────
 
+    /**
+     * Lifecycle states whose mappings are operational, i.e. they have passed
+     * review and may drive coverage % and inheritance suggestions. Draft /
+     * review / deprecated mappings MUST NOT contribute to coverage or
+     * inheritance — they are still unreviewed (draft/review) or retired
+     * (deprecated).
+     *
+     * @var list<string>
+     */
+    public const OPERATIONAL_STATES = ['approved', 'published'];
+
     public function getLifecycleState(): string { return $this->lifecycleState; }
     public function setLifecycleState(string $state): static { $this->lifecycleState = $state; return $this; }
+
+    /**
+     * True when this mapping is in an operational lifecycle state and may
+     * therefore contribute to coverage % and inheritance suggestions.
+     */
+    public function isOperational(): bool
+    {
+        return in_array($this->lifecycleState, self::OPERATIONAL_STATES, true);
+    }
 
     public function getProvenanceSource(): ?string { return $this->provenanceSource; }
     public function setProvenanceSource(?string $v): static { $this->provenanceSource = $v; return $this; }

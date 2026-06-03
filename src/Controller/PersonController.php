@@ -28,7 +28,7 @@ class PersonController extends AbstractController
         private readonly TranslatorInterface $translator,
         private readonly Security $security
     ) {}
-    #[Route('/person/', name: 'app_person_index')]
+    #[Route('/person', name: 'app_person_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(): Response
     {
@@ -41,7 +41,7 @@ class PersonController extends AbstractController
             'statistics' => $statistics,
         ]);
     }
-    #[Route('/person/new', name: 'app_person_new')]
+    #[Route('/person/new', name: 'app_person_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
@@ -74,16 +74,20 @@ class PersonController extends AbstractController
             $this->entityManager->persist($person);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('person.success.created'));
+            $this->addFlash('success', $this->translator->trans('person.success.created', [], 'messages'));
             return $this->redirectToRoute('app_person_show', ['id' => $person->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('person/new.html.twig', [
             'person' => $person,
             'form' => $form,
             'available_users' => $this->personRepository->findUsersAvailableToLink($tenant),
             'prefilled_from_user' => $prefilledFromUser,
-        ]);
+        ], new Response(status: $status));
     }
 
     private function prefillPersonFromUser(Person $person, User $sourceUser): void
@@ -108,7 +112,7 @@ class PersonController extends AbstractController
             $person->setJobTitle($sourceUser->getJobTitle());
         }
     }
-    #[Route('/person/{id}', name: 'app_person_show', requirements: ['id' => '\d+'])]
+    #[Route('/person/{id}', name: 'app_person_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(Person $person): Response
     {
@@ -119,7 +123,7 @@ class PersonController extends AbstractController
             'access_logs' => $accessLogs,
         ]);
     }
-    #[Route('/person/{id}/edit', name: 'app_person_edit', requirements: ['id' => '\d+'])]
+    #[Route('/person/{id}/edit', name: 'app_person_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, Person $person): Response
     {
@@ -129,14 +133,18 @@ class PersonController extends AbstractController
         if ($form->isSubmitted() && $form->isValid()) {
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('person.success.updated'));
+            $this->addFlash('success', $this->translator->trans('person.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_person_show', ['id' => $person->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('person/edit.html.twig', [
             'person' => $person,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     #[Route('/person/{id}/delete', name: 'app_person_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
@@ -146,7 +154,7 @@ class PersonController extends AbstractController
             $this->entityManager->remove($person);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('person.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('person.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_person_index');

@@ -138,6 +138,42 @@ export default class extends Controller {
         if (!fetchResponse.succeeded) {
             // Could dispatch an event here if needed
         }
+
+        // File-download fix: when a Turbo-intercepted request returns
+        // an attachment, Turbo issues no `turbo:render` for it (the
+        // payload is binary), so the progress bar + body.turbo-loading
+        // never clear. We detect Content-Disposition: attachment and
+        // hand the response back to the browser as a native download.
+        // Cleanest single point — works for every download endpoint
+        // across the app without needing data-turbo="false" everywhere.
+        try {
+            const response = fetchResponse.response;
+            const disposition = response?.headers?.get?.('content-disposition') ?? '';
+            if (disposition.toLowerCase().includes('attachment')) {
+                event.preventDefault();
+                document.body.classList.remove('turbo-loading');
+                const progress = document.querySelector('.turbo-progress-bar');
+                if (progress) {
+                    progress.style.opacity = '0';
+                }
+                response.blob().then((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+                    if (filenameMatch && filenameMatch[1]) {
+                        link.download = decodeURIComponent(filenameMatch[1]);
+                    }
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                });
+            }
+        } catch (e) {
+            // Defensive: if anything fails, fall through to default
+            // Turbo handling. Worst case: pre-fix behaviour (hung bar).
+        }
     }
 
     /**
@@ -186,7 +222,7 @@ export default class extends Controller {
     notify(message, type = 'info') {
         const html = `
             <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                <i class="bi bi-${this.getIconForType(type)}"></i> ${message}
+                <i class="fa-icon fa-icon--${this.getIconForType(type)}" aria-hidden="true"></i> ${message}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         `;
@@ -195,14 +231,15 @@ export default class extends Controller {
     }
 
     getIconForType(type) {
+        // Aurora-namespaced names (mapped from former Bootstrap-Icon ids)
         const icons = {
-            'success': 'check-circle',
-            'danger': 'exclamation-triangle',
-            'warning': 'exclamation-circle',
-            'info': 'info-circle'
+            'success': 'status-ok',
+            'danger': 'status-critical',
+            'warning': 'status-warning',
+            'info': 'status-info'
         };
 
-        return icons[type] || 'info-circle';
+        return icons[type] || 'status-info';
     }
 
     handleBeforeCache(event) {

@@ -133,10 +133,32 @@ confirm:
     typing_hint: 'Geben Sie „%keyword%" ein, um zu bestätigen:'
 back: Zurück
 common:
+    module_not_active: 'Modul "%module%" ist nicht aktiviert. Bitte Setup → Module aktivieren.'
+    tenant_not_found: 'Kein aktiver Organisation — bitte zuerst in einen Workspace einloggen, bevor diese Funktion genutzt wird.'
     please_select: 'Bitte auswählen...'
     next: Weiter
+    # Junior-ISB-Audit-2026-05-22 S14 #17: BP-Tooltips Drawer Pattern.
+    more_info: 'Mehr Info...'
+    more_info_aria: 'Vollständige Hilfe zu „%field%" öffnen'
     yes: 'Ja'
     no: 'Nein'
+    form:
+        errors: 'Formular-Fehler'
+    greeting:
+        hello_name: 'Hallo %name%,'
+    person_picker:
+        placeholder: 'Person auswählen…'
+        empty_state:
+            title: 'Keine Personen im Organisationen'
+            body: 'Bitte zuerst eine Person anlegen, bevor diese Rolle vergeben werden kann.'
+    owner_picker:
+        section_label: 'Verantwortlich'
+        or: 'oder'
+        legacy:
+            title: 'Altdaten – Migration empfohlen'
+            body: 'Dieser Eintrag stammt aus dem Freitext-Feld. Bitte bei nächster Gelegenheit auf einen Benutzer oder eine Person aus den Stammdaten umstellen.'
+    section:
+        other: 'Weitere Felder'
     link_matrix:
         title_vulnerability: 'Verknüpfte Entities (Schwachstelle)'
         title_risk: 'Verknüpfte Entities (Risiko)'
@@ -187,6 +209,9 @@ common:
     view_details: 'Details ansehen'
     view_all: 'Alle anzeigen'
     edit: Bearbeiten
+    clone:
+        label: 'Duplizieren'
+        help: 'Erzeugt eine bearbeitbare Kopie mit zurückgesetzten Status-/Ausführungsfeldern. Nützlich für wiederkehrende Zyklen, Vorlagen und Multi-Site-Rollouts.'
     show_all: 'Alle anzeigen'
     active: Aktiv
     not_active: 'Nicht aktiv'
@@ -206,13 +231,19 @@ common:
     download: Herunterladen
     error: Fehler
     error.invalid_csrf: 'Ungültiges Sicherheitstoken. Bitte laden Sie die Seite neu und versuchen Sie es erneut.'
+    error.access_denied: 'Zugriff verweigert.'
+    error.no_tenant: 'Kein Organisation zugeordnet.'
+    csrf_invalid: 'Ungültiges CSRF-Token.'
+    none: 'Keine'
+    type: 'Typ'
+    no_data: 'Keine Daten verfügbar'
     export: Exportieren
     export_excel: 'Als Excel exportieren'
     filter: Filtern
     filters: Filter
     clear: Zurücksetzen
     from: Von
-    help: Hilfe
+    help_label: Hilfe
     history: Verlauf
     id: ID
     inactive: Inaktiv
@@ -299,6 +330,8 @@ common:
         case_number_from_authority: 'Aktenzeichen der Aufsichtsbehörde (z.B. AZ-2024-123)'
         explain_deadline_exceeded: 'Erläutern Sie, warum die 72-Stunden-Frist überschritten wurde (Art. 33 Abs. 1 DSGVO)'
         explain_breach_reopened: 'Begründen Sie, warum die Datenschutzverletzung wiedereröffnet werden muss'
+        owner_user: '-- User wählen --'
+        owner_person: '-- Person wählen --'
     reset_all_filters: 'Alle Filter zurücksetzen'
     time_savings: Zeitersparnis
     consistency: Konsistenz
@@ -310,6 +343,15 @@ common:
     roles_and_responsibilities: 'Rollen und Verantwortlichkeiten'
     team_members: Teammitglieder
     observers: Beobachter
+    notes: Notizen
+    field:
+        owner_user: 'Verantwortlich (System-User)'
+        owner_person: 'Verantwortlich (Person)'
+        owner_deputies: Stellvertreter
+    help:
+        owner_user: 'System-User mit Login als Verantwortliche Person.'
+        owner_person: 'Person ohne Login als Verantwortliche (Reihenfolge: User > Person).'
+        owner_deputies: 'Weitere Personen mit Vertretungs- oder Mitverantwortung.'
 person:
     title: Person
     titles:
@@ -456,6 +498,9 @@ role:
         incident_manager: 'Incident Manager'
         asset_manager: 'Asset Manager'
         readonly: Nur-Lese-Benutzer
+messages:
+    csrf:
+        invalid: 'Ungültiges CSRF-Token.'
 error:
     csrf_invalid: 'Ungültiges CSRF-Token.'
     generic:
@@ -489,6 +534,20 @@ error:
         help: 'Bitte versuchen Sie es später erneut.'
         alva_line: 'Etwas ist schiefgelaufen.'
         alva_sub: 'Das ist nicht deine Schuld. Versuche es nochmal oder melde es dem Admin.'
+    code_label_unavailable: 'Wartungsmodus'
+    code_label_rate_limit: 'Rate-Limit'
+    503:
+        title: 'Dienst nicht verfügbar'
+        alva_line: 'Wir sind gleich wieder da.'
+        alva_sub: 'Der Dienst ist gerade vorübergehend nicht erreichbar — Wartung oder Last.'
+        heading: 'Dienst kurz nicht verfügbar'
+        message: 'Der Server ist gerade überlastet oder im Wartungsmodus. Bitte versuche es in wenigen Minuten erneut — deine Daten sind sicher.'
+    429:
+        title: 'Zu viele Anfragen'
+        alva_line: 'Kurze Pause.'
+        alva_sub: 'Du hast in kurzer Zeit zu viele Anfragen geschickt. Probier es gleich wieder.'
+        heading: 'Zu viele Anfragen in kurzer Zeit'
+        message: 'Aus Sicherheitsgründen begrenzen wir die Anzahl von Anfragen pro Minute. Bitte warte kurz und versuche es dann erneut.'
     action:
         homepage: 'Zur Startseite'
         back: Zurück
@@ -1037,6 +1096,11 @@ action:
     view_all: 'Alle anzeigen'
     view: Anzeigen
 form:
+    json:
+        invalid: 'Ungültiges JSON. Bitte korrekte JSON-Syntax verwenden (z.B. {"key":"value"} oder [...]).'
+    outline:
+        aria_label: 'Abschnitte'
+        title: 'Abschnitte'
     automatic_value: 'Dieses Feld wurde automatisch von der Cyberpunk Fee ausgefüllt.'
     complete_asset_inventory: 'Asset-Inventar vervollständigen'
     conduct_risk_analysis: 'Risikoanalyse durchführen'
@@ -1057,6 +1121,116 @@ form:
         invalid_format: 'Ungültiges Format'
         too_short: 'Zu kurz (min. %min% Zeichen)'
         too_long: 'Zu lang (max. %max% Zeichen)'
+    section:
+        overview: 'Übersicht'
+        applicability: 'Anwendbarkeit'
+        effectiveness: 'Wirksamkeit'
+        review: 'Überprüfung'
+        references: 'Framework-Referenzen'
+        relations: 'Verknüpfungen'
+        cloud: 'Cloud'
+        recovery: 'Wiederherstellung'
+        team: 'Team'
+        communication: 'Kommunikation'
+        resources: 'Ressourcen'
+        activation: 'Aktivierung'
+        testing: 'Tests'
+        audit_metadata: 'Audit-Daten'
+        results: 'Ergebnisse'
+        lessons_learned: 'Lessons Learned'
+        details: 'Details'
+        contact: 'Kontakt'
+        risk_assessment: 'Risikobewertung'
+        treatment: 'Behandlung'
+        acceptance: 'Risikoakzeptanz'
+        notification: 'Meldepflichten'
+        measures: 'Maßnahmen'
+        privacy: 'Datenschutz (DSGVO)'
+        classification: 'Klassifizierung'
+        affected_assets: 'Betroffene Assets'
+        mitigation: 'Behandlung & Behebung'
+        lifecycle: 'Lebenszyklus'
+        schedule: 'Zeitplanung'
+        audience: 'Zielgruppe'
+        verification: 'Überprüfung'
+        address: 'Adresse'
+        security_zone: 'Sicherheitsbereich'
+        access_control: 'Zugangssteuerung'
+        environmental: 'Umgebung'
+        target_metric: 'Zielkennzahl'
+        monitoring: 'Überwachung'
+        responsibility: 'Verantwortung'
+        internal_issues: 'Interne Sachverhalte'
+        external_issues: 'Externe Sachverhalte'
+        scope_definition: 'Anwendungsbereich'
+        interested_parties_link: 'Interessierte Parteien'
+        party_type: 'Parteityp'
+        owner: 'Prozessverantwortlicher'
+        criticality: 'Kritikalität'
+        dependencies: 'Abhängigkeiten'
+        recovery_targets: 'Wiederherstellungsziele'
+        treatment_option: 'Behandlungsoption'
+        residual_risk: 'Restrisiko'
+        approval: 'Genehmigung'
+        root_cause: 'Ursachenanalyse'
+        corrective_action: 'Korrekturmaßnahme'
+        transport: 'Transport'
+        storage: 'Lagerung'
+        photography: 'Fotografie'
+        physical: 'Physische Sicherheit'
+        organisation: 'Organisation'
+        handling: 'Handhabung'
+        controls: 'Controls'
+        party_details: 'Parteidetails'
+        action_plan: 'Maßnahmenplan'
+        advanced: 'Erweitert'
+        affected_systems: 'Betroffene Systeme'
+        branding: 'Branding'
+        compliance: 'Compliance'
+        content: 'Inhalt'
+        contract: 'Vertrag'
+        data_categories: 'Datenkategorien'
+        data_subject: 'Betroffene Person'
+        defaults: 'Standardwerte'
+        entity_classification: 'Einrichtungsklassifikation'
+        escalation: 'Eskalation'
+        exercise_scope: 'Übungsumfang'
+        followup: 'Nachverfolgung'
+        frameworks: 'Frameworks'
+        identity: 'Identität'
+        impact_assessment: 'Auswirkungsanalyse'
+        implementation: 'Umsetzung'
+        inputs: 'Eingaben'
+        intelligence_source: 'Informationsquelle'
+        layout: 'Layout'
+        legal_basis: 'Rechtsgrundlage'
+        lifecycle_status: 'Lebenszyklus'
+        lineage: 'Herkunft & Nachverfolgung'
+        lksg: 'LkSG'
+        marisk: 'MaRisk'
+        members: 'Mitglieder'
+        mitigations: 'Schutzmaßnahmen'
+        modules: 'Module'
+        organization: 'Organisation'
+        outputs: 'Ergebnisse'
+        ownership: 'Verantwortung'
+        linkage: 'Verknüpfungen'
+        protection_requirements: 'Schutzbedarf'
+        purposes: 'Zwecke'
+        recipients: 'Empfänger'
+        registration: 'Registrierung'
+        requirements: 'Anforderungen'
+        retention: 'Aufbewahrung'
+        role: 'Rolle'
+        rollout: 'Rollout'
+        threat_classification: 'Bedrohungsklassifikation'
+        tier_classification: 'Tier-Klassifikation'
+        typography: 'Typografie'
+        vulnerability_link: 'Verknüpfte Schwachstelle'
+        withdrawal: 'Widerruf'
+        warning:
+            unmapped_title: 'Hinweis (nur dev):'
+            unmapped_body: 'Folgende Felder sind in keiner Section abgebildet und landen im Auffangbecken: %fields%. SectionPolicy in der FormType-Klasse aktualisieren.'
 corporate:
     title: Konzernstruktur
     subtitle: 'Verwaltung von Muttergesellschaften und Tochtergesellschaften'
@@ -1065,11 +1239,11 @@ corporate:
         subsidiary: Tochtergesellschaft
     section:
         groups: Konzerngruppen
-        standalone: 'Eigenständige Mandanten'
+        standalone: 'Eigenständige Organisationen'
         structure: Konzernstruktur
     stats:
         standalone: Eigenständig
-        total: 'Gesamt Mandanten'
+        total: 'Gesamt Organisationen'
         own: Eigene
         inherited: Geerbt
         subsidiaries: Tochter
@@ -1083,10 +1257,10 @@ corporate:
         actions: Aktionen
         subsidiaries: Tochtergesellschaften
         parent: Muttergesellschaft
-        parent_help: 'Ordnen Sie diesen Mandanten einer Muttergesellschaft zu, um Konzernstrukturen abzubilden'
+        parent_help: 'Ordnen Sie diese Organisation einer Muttergesellschaft zu, um Konzernstrukturen abzubilden'
         subsidiary: Tochtergesellschaft
         is_corporate_parent: 'Ist Muttergesellschaft'
-        is_corporate_parent_help: 'Aktivieren, wenn dieser Mandant eine Muttergesellschaft mit Tochtergesellschaften ist'
+        is_corporate_parent_help: 'Aktivieren, wenn dieser Organisation eine Muttergesellschaft mit Tochtergesellschaften ist'
         corporate_notes: Konzernnotizen
         corporate_notes_help: 'Zusätzliche Informationen zur Konzernstruktur und Beziehungen'
         governance_model: Governance-Modell
@@ -1101,7 +1275,7 @@ corporate:
         view_structure: 'Struktur anzeigen'
     info:
         title: Konzernstruktur-Informationen
-        text: 'Hier können Sie hierarchische Beziehungen zwischen Mandanten verwalten'
+        text: 'Hier können Sie hierarchische Beziehungen zwischen Organisationen verwalten'
     modal:
         set_parent:
             title: 'Muttergesellschaft zuweisen'
@@ -1110,9 +1284,9 @@ corporate:
     confirm:
         remove_parent: 'Möchten Sie die Verbindung zur Muttergesellschaft wirklich entfernen?'
     single_tenant:
-        title: 'Einzelner Mandant'
-        message: 'Es ist nur ein Mandant im System vorhanden'
-        hint: 'Konzernstrukturen werden erst relevant, wenn Sie mehrere Mandanten verwalten'
+        title: 'Einzelner Organisation'
+        message: 'Es ist nur ein Organisation im System vorhanden'
+        hint: 'Konzernstrukturen werden erst relevant, wenn Sie mehrere Organisationen verwalten'
     flash:
         text: 'Hier können Sie Beziehungen zwischen Muttergesellschaften und Tochtergesellschaften verwalten. Das Governance-Modell bestimmt, wie ISMS-Verantwortlichkeiten zwischen Mutter- und Tochtergesellschaften aufgeteilt werden.'
         error: 'Fehler beim Verarbeiten der Konzernstruktur'
@@ -1120,7 +1294,7 @@ corporate:
     placeholder:
         parent: 'Keine Muttergesellschaft (eigenständig)'
         corporate_notes: 'z.B. Holdingstruktur, Verantwortlichkeiten, etc.'
-        hint: 'Konzernstrukturen werden erst relevant, wenn Sie mehrere Mandanten verwalten.'
+        hint: 'Konzernstrukturen werden erst relevant, wenn Sie mehrere Organisationen verwalten.'
     granular:
         title: 'Granulare Governance-Regeln'
         subtitle: 'Spezifische Governance-Regeln für einzelne Bereiche'
@@ -1155,7 +1329,7 @@ corporate:
             error: 'Fehler beim Speichern der Governance-Regel'
     inheritance:
         title: Vererbung
-        subtitle: 'Effektiver ISMS-Kontext für diesen Mandanten'
+        subtitle: 'Effektiver ISMS-Kontext für diese Organisation'
         organization: Organisation
         propagate: 'An Tochtergesellschaften verteilen'
         from: Von
@@ -1190,8 +1364,21 @@ bulk_actions:
     export: 'Export'
     add_tag: 'Tag hinzufügen'
     assign: 'Zuweisen'
+    assign_owner: 'Owner zuweisen'
+    tag: 'Tag'
+    approve: 'Approven'
     delete: 'Löschen'
     deselect: 'Auswahl aufheben'
+    close: 'Auswahl aufheben'
+    toolbar: 'Bulk-Aktionen'
+    applicable_change:
+        label: 'Anwendbarkeit setzen'
+        set_applicable: 'Applicable (ja)'
+        set_not_applicable: 'N/A (nicht anwendbar)'
+        default_reason: 'Bulk-Aktion via SoA-Tabelle'
+
+aria:
+    notifications: 'Benachrichtigungen'
 nis2:
     notification:
         early_warning: 'NIS2 Frühwarnung für Incident "%incident%" fällig in %hours% Stunden. Deadline: %deadline%'
@@ -1322,7 +1509,7 @@ bsi_check:
         title: 'Keine Anforderungen gefunden'
         message: 'Für die gewählte Absicherungsstufe sind keine BSI-IT-Grundschutz-Anforderungen erfasst. Versuchen Sie einen anderen Filter oder laden Sie den Kompendium-Datenbestand mit app:load-bsi-grundschutz-requirements und app:load-bsi-kompendium-delta.'
 Customer: Kunde
-Shareholder: Shareholder
+Shareholder: Anteilseigner
 Employee: Mitarbeiter
 Regulator: 'Regulatorische Institution'
 Supplier: Lieferant
@@ -1377,7 +1564,7 @@ data_management:
         validation_required: 'Validierung ist erforderlich vor dem Import'
         no_duplicate_detection: 'Keine automatische Duplikatserkennung - Überprüfen Sie manuell'
     export:
-        includes_all_records: 'Export enthält alle Datensätze des Mandanten'
+        includes_all_records: 'Export enthält alle Datensätze der Organisation'
         sensitive_data_warning: 'WARNUNG: Export kann vertrauliche Daten enthalten (DSGVO-relevant)'
         large_exports_warning: 'Große Datenmengen können längere Verarbeitungszeit benötigen'
         relationships_warning: 'Beziehungen zwischen Entitäten werden mit exportiert'
@@ -1416,6 +1603,8 @@ pdf:
         distribution_by_status: 'Verteilung nach Status'
     data_reuse:
         recommendations_title: 'Empfehlungen zur Daten-Wiederverwendung'
+        no_quick_wins: 'Keine Quick Wins mit ≥80% Wiederverwendung + hoher Konfidenz gefunden. Fokus auf mittelfristige Potenziale (50-80%).'
+        methodology: '<p>Die Daten-Wiederverwendungsanalyse bewertet jede Framework-Anforderung auf mögliche Überschneidungen mit bestehenden ISMS-Daten, Maßnahmen und Dokumentation. Wiederverwendungs-Quote = wiederverwendbare Datenpunkte / gesamt erforderliche Datenpunkte. Konfidenzlevel (niedrig/mittel/hoch) spiegeln die Mapping-Qualität wider. Zeitersparnis wird auf Basis historischer Compliance-Aufwand-Baselines geschätzt.</p>'
     transitive_compliance:
         from_framework: 'Von Framework'
         to_framework: 'Zu Framework'
@@ -1521,6 +1710,9 @@ security:
         saml_login_error: SAML-Anmeldefehler
         saml_logout_error: SAML-Abmeldefehler
     csrf_token_invalid: 'Ungültiges CSRF-Token - bitte laden Sie die Seite neu'
+    url:
+        no_internal_ip: 'Interne IP-Adressen sind aus Sicherheitsgründen nicht erlaubt (SSRF-Schutz). Verwenden Sie eine öffentliche URL.'
+        dns_resolution_failed: 'Hostname konnte nicht aufgelöst werden (potentieller DNS-Pinning-Angriff blockiert).'
 location:
     success:
         created: 'Standort erfolgreich erstellt'
@@ -1579,7 +1771,7 @@ dpia:
     cloned: 'DSFA erfolgreich dupliziert'
 admin:
     data_repair:
-        tenant_not_found: 'Mandant nicht gefunden'
+        tenant_not_found: 'Organisation nicht gefunden'
         invalid_entity_type: 'Ungültiger Entitätstyp'
         assigned_count: '%count% Entitäten zugewiesen'
         entity_not_found: 'Entität nicht gefunden'
@@ -1749,6 +1941,10 @@ pwa:
 
 # Share Target API - Phase 8A
 share:
+    success:
+        note_saved: 'Notiz erfolgreich gespeichert.'
+    warning:
+        unknown_action: 'Unbekannte Aktion.'
     title: 'Inhalt teilen'
     content_preview: 'Geteilter Inhalt'
     select_action: 'Was möchten Sie tun?'
@@ -1791,7 +1987,7 @@ compliance_wizard:
             detail: 'Details'
             mapping: 'Mappings'
         summary:
-            tenant: 'Mandant'
+            tenant: 'Organisation'
             target: 'Ziel-Framework'
             baseline: 'Basis-Framework'
             reporting_date: 'Berichtsdatum'
@@ -2007,7 +2203,7 @@ reuse:
     page:
         title: 'Data-Reuse-Hub'
         description: 'Welche Artefakte tragen die größte Last? Die wiederverwendeten Dokumente und Lieferanten über alle Frameworks hinweg.'
-        footer_hint: 'Assets als Top-Liste folgen, wenn die Dependency-Graph-Heuristik ausreichend robust für alle Mandanten ist (Sprint 5).'
+        footer_hint: 'Assets als Top-Liste folgen, wenn die Dependency-Graph-Heuristik ausreichend robust für alle Organisationen ist (Sprint 5).'
     fte:
         title: 'Durch Wiederverwendung eingespart'
         subtitle: 'Mapping-basierte Anforderungs-Vererbung über alle Frameworks'
@@ -2046,3 +2242,179 @@ reuse:
         suppliers:
             heading: 'Lieferanten (%count%, Max %max% Requirements)'
         hint_monoculture: 'Wenige sehr-rote Kacheln sind ein Monokultur-Risiko: fällt ein einzelnes Artefakt weg, bricht die Abdeckung vieler Frameworks ein. Spread the load.'
+
+# data_breach index table/filter keys (used in data_breach/index.html.twig with messages domain)
+data_breach:
+    index:
+        kpi_affected_subjects: 'Betroffene Personen gesamt'
+        kpi_total_count: 'Vorfälle insgesamt'
+        filter_title: 'Nach Status filtern'
+        filter_all: 'Alle'
+        filter_overdue: 'Überfällig'
+        filter_pending_authority: 'Behörde ausstehend'
+        filter_pending_subjects: 'Betroffene ausstehend'
+        filter_draft: 'Entwurf'
+        filter_under_assessment: 'In Bewertung'
+        filter_authority_notified: 'Behörde informiert'
+        filter_closed: 'Geschlossen'
+        col_reference: 'Referenz'
+        col_title: 'Titel'
+        col_status: 'Status'
+        col_risk: 'Risiko'
+        col_affected_subjects: 'Betr. Personen'
+        col_deadline: 'Frist'
+        col_authority: 'Behörde'
+        col_subjects: 'Betroffene'
+        col_actions: 'Aktionen'
+        unknown: 'Unbekannt'
+        overdue: 'Überfällig'
+        hours_left: '%hours% Std. verbleibend'
+        table_title: 'Datenpannen'
+
+file_upload:
+    validation:
+        mime_type_invalid: 'Dateityp nicht erlaubt. Erlaubte Typen: %types%'
+        max_size_exceeded: 'Datei zu groß (max %limit%).'
+
+pdf_switch:
+    also_available: 'Auch verfügbar in'
+
+# V3 W2-H3: Comment-Thread macro (templates/_components/_isms_comment_thread.html.twig)
+comments:
+    section_title: 'Kommentare'
+    empty: 'Noch keine Kommentare.'
+    label: 'Kommentar'
+    placeholder: 'Kommentar verfassen...'
+    submit: 'Senden'
+
+# SSO admin / approvals UI
+sso:
+    action:
+        approve: 'Genehmigen'
+        reject: 'Ablehnen'
+        enable: 'Aktivieren'
+        disable: 'Deaktivieren'
+    admin:
+        col:
+            name: 'Name'
+            slug: 'Slug'
+            type: 'Typ'
+            scope: 'Geltungsbereich'
+            status: 'Status'
+            domains: 'Domains'
+            actions: 'Aktionen'
+    approvals:
+        col:
+            email: 'E-Mail'
+            provider: 'Provider'
+            tenant: 'Organisation'
+            claims: 'Claims'
+            requested_at: 'Beantragt am'
+            actions: 'Aktionen'
+        show_claims: 'Claims anzeigen'
+    field:
+        auto_approve: 'Auto-Approve'
+    prompt:
+        reject_reason: 'Bitte Ablehnungsgrund angeben'
+    scope:
+        global: 'Global'
+    status:
+        enabled: 'Aktiv'
+        disabled: 'Deaktiviert'
+
+# Owner-Picker — Tri-State Owner Slot Component (S4 P-1)
+owner_picker:
+    legacy_hint: 'Legacy-Freitext aus älteren Datensätzen. Bitte einen Benutzer oder eine Person oben auswählen, dieses Feld ist nur lesbar und dient als Migrations-Hinweis.'
+
+# Cross-cutting Flash-Messages (DeploymentWizard, DataRepair) — Keys mit `messages`-Domain referenziert
+'setup.preset.applied': 'Industry-Preset "%preset%" angewendet. %modules% Modul(e) aktiviert, %frameworks% Framework(s) freigeschaltet.'
+'setup.preset.error.unknown': 'Unbekanntes Industry-Preset.'
+'admin.data_repair.partial_assignment': 'Teilweise zugeordnet — %assigned% von %total% verwaisten Datensätzen zugeordnet. Restliche Einträge manuell prüfen.'
+
+# Static-extractor fallback for JsonStructured-Builder keys
+# (bc_plans/bc_exercises/suppliers builders use dynamic translationDomain)
+# Runtime resolves via explicit-domain trans() — these mirrors prevent
+# `debug:translation --only-missing` from flagging _undefined-domain entries.
+# Junior-ISB-Audit K-03 (2026-05-23)
+'Allgemein': 'Allgemein'
+'Branding': 'Branding'
+'Sicherheit': 'Sicherheit'
+'Audit': 'Audit'
+'bc_exercises.json_builder.raw_help': 'Achtung: Roh-Editing kann Daten beschädigen. Schema muss zur Entity-Definition passen.'
+'bc_exercises.json_builder.raw_label': 'Roh-JSON (Power-User)'
+'bc_exercises.json_builder.raw_toggle': 'Als JSON bearbeiten'
+'bc_exercises.success_criteria.add': 'Kriterium hinzufügen'
+'bc_exercises.success_criteria.apply_prefill': 'Vorschläge übernehmen'
+'bc_exercises.success_criteria.aria': 'Erfolgskriterien — strukturierter Editor'
+'bc_exercises.success_criteria.col.actions': 'Aktionen'
+'bc_exercises.success_criteria.col.actual': 'Ist'
+'bc_exercises.success_criteria.col.criterion': 'Kriterium'
+'bc_exercises.success_criteria.col.met': 'Erfüllt'
+'bc_exercises.success_criteria.col.target': 'Soll'
+'bc_exercises.success_criteria.empty': 'Noch keine Erfolgskriterien definiert. Definieren Sie messbare Kriterien (z. B. RTO eingehalten, Kommunikation funktional).'
+'bc_exercises.success_criteria.met.no': 'Nicht erfüllt'
+'bc_exercises.success_criteria.met.unknown': '— Offen —'
+'bc_exercises.success_criteria.met.yes': 'Erfüllt'
+'bc_exercises.success_criteria.placeholder.actual': 'z. B. 3h 12min'
+'bc_exercises.success_criteria.placeholder.criterion': 'z. B. RTO eingehalten'
+'bc_exercises.success_criteria.placeholder.target': 'z. B. 4h'
+'bc_exercises.success_criteria.prefill_applied': 'RTO/RPO-Vorschläge aus getesteten BC-Plänen übernommen. Felder können überschrieben werden.'
+'bc_exercises.success_criteria.remove': 'Kriterium entfernen'
+'bc_plans.escalation_chain.add': 'Stufe hinzufügen'
+'bc_plans.escalation_chain.aria': 'Eskalationsstufen — BSI 200-4 §6.2'
+'bc_plans.escalation_chain.col.escalate_after': 'Eskalation nach'
+'bc_plans.escalation_chain.col.level': 'Stufe'
+'bc_plans.escalation_chain.col.responder': 'Verantwortlich'
+'bc_plans.escalation_chain.col.trigger': 'Auslöser'
+'bc_plans.escalation_chain.empty': 'Noch keine Eskalationsstufen definiert.'
+'bc_plans.escalation_chain.help': 'Definieren Sie die Eskalations-Kaskade nach BSI 200-4 §6.2: pro Stufe Auslöser, Verantwortlicher und Zeitschwelle.'
+'bc_plans.escalation_chain.placeholder.escalate_after': 'z. B. 15min, 1h, 4h'
+'bc_plans.escalation_chain.placeholder.responder': 'z. B. ISB / Krisenstab'
+'bc_plans.escalation_chain.placeholder.trigger': 'z. B. Service-Ausfall > 30 Min.'
+'bc_plans.escalation_chain.remove': 'Stufe entfernen'
+'bc_plans.json_builder.raw_help': 'Achtung: Roh-Editing kann Daten beschädigen. Schema muss zur Entity-Definition passen.'
+'bc_plans.json_builder.raw_label': 'Roh-JSON (Power-User)'
+'bc_plans.json_builder.raw_toggle': 'Als JSON bearbeiten'
+'bc_plans.resource_list.add': 'Hinzufügen'
+'bc_plans.resource_list.aria': 'Erforderliche Ressourcen — strukturierter Editor'
+'bc_plans.team_role.comms_lead': 'Kommunikations-Lead'
+'bc_plans.team_role.incident_commander': 'Vorfalls-Koordinator (Incident Commander)'
+'bc_plans.team_role.other': 'Sonstige Rolle'
+'bc_plans.team_role.recovery_lead': 'Wiederanlauf-Lead'
+'bc_plans.team_role.technical_lead': 'Technischer Lead'
+'bc_plans.team_role_builder.add': 'Rolle hinzufügen'
+'bc_plans.team_role_builder.aria': 'Reaktionsteam — strukturierter Editor'
+'bc_plans.team_role_builder.col.actions': 'Aktionen'
+'bc_plans.team_role_builder.col.contact': 'Kontakt'
+'bc_plans.team_role_builder.col.name': 'Name'
+'bc_plans.team_role_builder.col.responsibilities': 'Verantwortlichkeiten'
+'bc_plans.team_role_builder.col.role': 'Rolle'
+'bc_plans.team_role_builder.empty': 'Noch keine Teammitglieder erfasst. Klicken Sie „Rolle hinzufügen", um Ihr Reaktionsteam aufzubauen.'
+'bc_plans.team_role_builder.placeholder.contact': '+49 123 456789'
+'bc_plans.team_role_builder.placeholder.name': 'Max Mustermann'
+'bc_plans.team_role_builder.placeholder.responsibilities': 'Gesamtkoordination im Notfall'
+'bc_plans.team_role_builder.remove': 'Rolle entfernen'
+'supplier.subcontractor.add': 'Subunternehmer hinzufügen'
+'supplier.subcontractor.country': 'Land'
+'supplier.subcontractor.critical': 'Kritisch (DORA Art. 28)'
+'supplier.subcontractor.critical_help': 'Als kritisch im Sinne von DORA Art. 28 markieren — Subunternehmer mit wesentlicher Funktion.'
+'supplier.subcontractor.empty': 'Noch keine Subunternehmer erfasst. Klicken Sie „Hinzufügen", um eine neue Ebene anzulegen.'
+'supplier.subcontractor.indent': 'Tier erhöhen (verschachteln)'
+'supplier.subcontractor.name': 'Name'
+'supplier.subcontractor.outdent': 'Tier reduzieren (ausrücken)'
+'supplier.subcontractor.placeholder.name': 'z. B. Acme Hosting GmbH'
+'supplier.subcontractor.placeholder.service': 'z. B. Cloud Hosting, Backup-Service'
+'supplier.subcontractor.service': 'Dienstleistung'
+'supplier.subcontractor_chain.aria': 'Subunternehmer-Kette — strukturierter Editor (DORA Art. 28, max. 4 Stufen)'
+'supplier.subcontractor_chain.help': 'Erfassen Sie die Sub-Outsourcing-Kette nach DORA Art. 28. Maximale Verschachtelungstiefe: 4 Stufen. Markieren Sie kritische Subunternehmer für das Konzentrations-Reporting.'
+'supplier.subcontractor_chain.raw_help': 'Achtung: Roh-Editing kann Daten beschädigen. Schema muss zur Entity-Definition passen.'
+'supplier.subcontractor_chain.raw_label': 'Roh-JSON (Power-User)'
+'supplier.subcontractor_chain.raw_toggle': 'Als JSON bearbeiten'
+'supplier.subcontractor_chain.remove': 'Subunternehmer entfernen'
+
+# Junior-ISB-Audit-2026-05-22 S12 §4-6 — truly-missing flat-domain keys
+'supplier.subcontractor.country_placeholder': 'z.B. DE'
+'training.error.material_upload_failed': 'Material-Upload fehlgeschlagen.'
+
+# Missing common action keys
+'common.update': 'Aktualisieren'

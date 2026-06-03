@@ -4,27 +4,38 @@ declare(strict_types=1);
 
 namespace App\Form;
 
+use App\Entity\Asset;
 use App\Entity\Supplier;
 use App\Entity\SupplierCriticalityLevel;
 use App\Entity\Tenant;
+use App\Form\DataTransformer\CommaOrLinesListTransformer;
+use App\Form\DataTransformer\SubcontractorChainTransformer;
+use App\Form\Trait\ModuleAwareFormTrait;
+use App\Form\Type\JsonOrLinesTextareaType;
+use App\Repository\AssetRepository;
 use App\Repository\SupplierCriticalityLevelRepository;
+use App\Service\ModuleConfigurationService;
 use App\Service\TenantContext;
+use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
 use Symfony\Component\Form\Extension\Core\Type\EmailType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
-use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
-class SupplierType extends AbstractType
+final class SupplierType extends AbstractType implements SectionMapInterface
 {
+    use ModuleAwareFormTrait;
+
     public function __construct(
         private readonly SupplierCriticalityLevelRepository $criticalityRepo,
         private readonly TenantContext $tenantContext,
+        private readonly ModuleConfigurationService $moduleConfiguration,
     ) {
     }
 
@@ -103,9 +114,12 @@ class SupplierType extends AbstractType
                 'choice_translation_domain' => false, // Labels already translated via getLabel()
                 'required' => true,
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix, Sprint Y.5) ──
+            // Owned by `supplier_lifecycle`. ISO 27001 A.5.19-A.5.22, 4-eyes
+            // on `terminate`. Transitions via LifecycleService only.
             ->add('status', ChoiceType::class, [
                 'label' => 'supplier.field.status',
-                'help' => 'supplier.help.status',
+                'help' => 'supplier.help.status_readonly',
                 'choices' => [
                     'supplier.status.active' => 'active',
                     'supplier.status.inactive' => 'inactive',
@@ -113,7 +127,11 @@ class SupplierType extends AbstractType
                     'supplier.status.terminated' => 'terminated',
                 ],
                 'choice_translation_domain' => 'suppliers',
-                'required' => true,
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
             ])
             ->add('securityScore', IntegerType::class, [
                 'label' => 'supplier.field.security_score',
@@ -195,6 +213,78 @@ class SupplierType extends AbstractType
                     'placeholder' => 'supplier.placeholder.certifications',
                 ],
             ])
+            // S14 Cluster A C1-05 — expose the existing supportedAssets M2M.
+            // Tenant-scoped; tom-select for searchable multi-select UX.
+            // ISO 27001 A.5.21 / DORA Art. 28 — supplier-asset linkage.
+            ->add('supportedAssets', EntityType::class, [
+                'class'         => Asset::class,
+                'choice_label'  => 'name',
+                'multiple'      => true,
+                'expanded'      => false,
+                'required'      => false,
+                'by_reference'  => false,
+                'label'         => 'supplier.field.supported_assets',
+                'help'          => 'supplier.help.supported_assets',
+                'attr'          => [
+                    'data-controller' => 'tom-select',
+                ],
+                'query_builder' => function ($r) {
+                    /** @var AssetRepository $r */
+                    $qb = $r->createQueryBuilder('a')->orderBy('a.name', 'ASC');
+                    $tenant = $this->tenantContext->getCurrentTenant();
+                    if ($tenant !== null) {
+                        $qb->andWhere('a.tenant = :tenant')->setParameter('tenant', $tenant);
+                    }
+                    return $qb;
+                },
+            ])
+        ;
+
+        // ── DSGVO / GDPR processor fields (Art. 28) — privacy module gate ──
+        // GDPR Art. 28 (Auftragsverarbeitung / DPA), Art. 44-49 (Drittland-Transfer)
+        if ($this->isModuleActive('privacy')) {
+            $this->addPrivacyFields($builder);
+        }
+
+        // ── DORA ROI (Register of Information) — nis2_dora module gate ─────
+        // DORA Art. 28 (Third-Party-Risk), Art. 30 (Sub-Contracting), RTS 2024/1773
+        if ($this->isModuleActive('nis2_dora')) {
+            $this->addDoraFields($builder);
+        }
+
+        // ── LkSG fields — lksg module gate (Lieferkettensorgfaltspflicht) ──
+        // German Supply Chain Due Diligence Act (LkSG §§ 4-10)
+        if ($this->isModuleActive('lksg')) {
+            $this->addLksgFields($builder);
+        }
+
+        // ── MaRisk outsourcing fields — marisk module gate ────────────────
+        // BaFin MaRisk AT 9 (Auslagerungen), non-ICT-Banken-Compliance
+        if ($this->isModuleActive('marisk')) {
+            $this->addMariskFields($builder);
+        }
+
+        // C-06: subcontractorChain + processingLocations are now mapped JSON
+        // fields with dedicated DataTransformers. The previous POST_SUBMIT
+        // listener + finishView() hydration is no longer needed — the
+        // transformers handle both directions (array<->textarea) and surface
+        // invalid JSON as a user-friendly TransformationFailedException.
+        if ($builder->has('subcontractorChain')) {
+            $builder->get('subcontractorChain')->addModelTransformer(new SubcontractorChainTransformer());
+        }
+        if ($builder->has('processingLocations')) {
+            $builder->get('processingLocations')->addModelTransformer(new CommaOrLinesListTransformer());
+        }
+    }
+
+    /**
+     * DSGVO / GDPR fields (Art. 28 processor, Art. 44-49 transfer).
+     * Gated by 'privacy' module. Includes the classic DPA fields plus
+     * the WS-3 Art. 28 processor-status / transfer-mechanism fields.
+     */
+    private function addPrivacyFields(FormBuilderInterface $builder): void
+    {
+        $builder
             ->add('hasDPA', CheckboxType::class, [
                 'label' => 'supplier.field.has_dpa',
                 'help' => 'supplier.help.has_dpa',
@@ -206,25 +296,97 @@ class SupplierType extends AbstractType
                 'widget' => 'single_text',
                 'required' => false,
             ])
+            ->add('gdprProcessorStatus', ChoiceType::class, [
+                'label' => 'supplier.field.gdpr_processor_status',
+                'help' => 'supplier.help.gdpr_processor_status',
+                'required' => false,
+                'placeholder' => 'supplier.value.na',
+                'choices' => [
+                    'supplier.gdpr_processor_status.controller' => 'controller',
+                    'supplier.gdpr_processor_status.processor' => 'processor',
+                    'supplier.gdpr_processor_status.joint_controller' => 'joint_controller',
+                    'supplier.gdpr_processor_status.none' => 'none',
+                ],
+                'choice_translation_domain' => 'suppliers',
+            ])
+            ->add('gdprTransferMechanism', TextType::class, [
+                'label' => 'supplier.field.gdpr_transfer_mechanism',
+                'help' => 'supplier.help.gdpr_transfer_mechanism',
+                'required' => false,
+                'attr' => ['maxlength' => 50, 'placeholder' => 'supplier.placeholder.gdpr_transfer_mechanism'],
+            ])
+            ->add('gdprAvContractSigned', CheckboxType::class, [
+                'label' => 'supplier.field.gdpr_av_contract_signed',
+                'help' => 'supplier.help.gdpr_av_contract_signed',
+                'required' => false,
+            ])
+            ->add('gdprAvContractDate', DateType::class, [
+                'label' => 'supplier.field.gdpr_av_contract_date',
+                'help' => 'supplier.help.gdpr_av_contract_date',
+                'widget' => 'single_text',
+                'required' => false,
+            ])
+        ;
+    }
 
-            // ── WS-3: DORA ROI (Register of Information) ─────────────────────
+    /**
+     * DORA Register-of-Information (RoI) fields per RTS 2024/1773.
+     * Gated by 'nis2_dora' module. Covers DORA Art. 28 third-party-risk
+     * + Art. 30 sub-contracting + exit-strategy reporting.
+     */
+    private function addDoraFields(FormBuilderInterface $builder): void
+    {
+        $builder
+            ->add('isDoraRelevant', CheckboxType::class, [
+                'label'    => 'supplier.field.is_dora_relevant',
+                'help'     => 'supplier.help.is_dora_relevant',
+                'required' => false,
+            ])
             ->add('leiCode', TextType::class, [
                 'label' => 'supplier.field.lei_code',
                 'help' => 'supplier.help.lei_code',
                 'required' => false,
-                'attr' => ['maxlength' => 20, 'placeholder' => 'LEI (20 chars)'],
+                // S14+ §19: HTML5 `pattern` + `title` give browser-native inline
+                // validation tooltip on hover and block submission with the
+                // native message. Server-side Regex below is the authoritative
+                // gate; pattern attr is a UX enhancement only.
+                'attr' => [
+                    'maxlength' => 20,
+                    'placeholder' => 'supplier.placeholder.lei_code',
+                    'pattern' => '[A-Z0-9]{18}[0-9]{2}',
+                    'title' => 'supplier.help.lei_code_format',
+                ],
+                // T10.10 — LEI: ISO 17442 — 20 chars, [A-Z0-9]{18}[0-9]{2} checksum.
+                'constraints' => [
+                    new \Symfony\Component\Validator\Constraints\Regex(
+                        pattern: '/^[A-Z0-9]{18}[0-9]{2}$/',
+                        message: 'supplier.validation.lei_code.format',
+                    ),
+                ],
             ])
             ->add('naceCode', TextType::class, [
                 'label' => 'supplier.field.nace_code',
                 'help' => 'supplier.help.nace_code',
                 'required' => false,
-                'attr' => ['maxlength' => 10, 'placeholder' => 'z.B. 62.01'],
+                'attr' => [
+                    'maxlength' => 10,
+                    'placeholder' => 'supplier.placeholder.nace_code',
+                    'pattern' => '[0-9]{2}(\.[0-9]{1,2})?',
+                    'title' => 'supplier.help.nace_code_format',
+                ],
+                // T10.10 — NACE Rev.2: 1-2 digits section, optional . + 1-2 digits subclass.
+                'constraints' => [
+                    new \Symfony\Component\Validator\Constraints\Regex(
+                        pattern: '/^[0-9]{2}(\.[0-9]{1,2})?$/',
+                        message: 'supplier.validation.nace_code.format',
+                    ),
+                ],
             ])
             ->add('countryOfHeadOffice', TextType::class, [
                 'label' => 'supplier.field.country_of_head_office',
                 'help' => 'supplier.help.country_of_head_office',
                 'required' => false,
-                'attr' => ['maxlength' => 2, 'placeholder' => 'DE'],
+                'attr' => ['maxlength' => 2, 'placeholder' => 'supplier.placeholder.country_of_head_office'],
             ])
             ->add('ictCriticality', ChoiceType::class, [
                 'label' => 'supplier.field.ict_criticality',
@@ -242,7 +404,7 @@ class SupplierType extends AbstractType
                 'label' => 'supplier.field.ict_function_type',
                 'help' => 'supplier.help.ict_function_type',
                 'required' => false,
-                'attr' => ['maxlength' => 100, 'placeholder' => 'Cloud / SaaS / Managed Service'],
+                'attr' => ['maxlength' => 100, 'placeholder' => 'supplier.placeholder.ict_function_type'],
             ])
             ->add('substitutability', ChoiceType::class, [
                 'label' => 'supplier.field.substitutability',
@@ -261,19 +423,23 @@ class SupplierType extends AbstractType
                 'help' => 'supplier.help.has_subcontractors',
                 'required' => false,
             ])
-            ->add('subcontractorChain', TextareaType::class, [
+            // C-06: mapped JSON field — SubcontractorChainTransformer (attached
+            // in buildForm tail) handles both JSON-array and newline-delimited
+            // input shapes and raises TransformationFailedException on invalid
+            // JSON instead of silently writing null.
+            ->add('subcontractorChain', JsonOrLinesTextareaType::class, [
                 'label' => 'supplier.field.subcontractor_chain',
                 'help' => 'supplier.help.subcontractor_chain',
                 'required' => false,
-                'mapped' => false,
-                'attr' => ['rows' => 3, 'placeholder' => 'Provider A' . "\n" . 'Provider B' . "\n" . 'Provider C'],
+                'attr' => ['rows' => 3, 'placeholder' => 'supplier.placeholder.subcontractor_chain'],
             ])
-            ->add('processingLocations', TextareaType::class, [
+            // C-06: mapped JSON field — CommaOrLinesListTransformer handles
+            // comma/semicolon/newline-delimited input.
+            ->add('processingLocations', JsonOrLinesTextareaType::class, [
                 'label' => 'supplier.field.processing_locations',
                 'help' => 'supplier.help.processing_locations',
                 'required' => false,
-                'mapped' => false,
-                'attr' => ['rows' => 2, 'placeholder' => 'DE, IE, US'],
+                'attr' => ['rows' => 2, 'placeholder' => 'supplier.placeholder.processing_locations'],
             ])
             ->add('lastDoraAuditDate', DateType::class, [
                 'label' => 'supplier.field.last_dora_audit_date',
@@ -286,131 +452,231 @@ class SupplierType extends AbstractType
                 'help' => 'supplier.help.has_exit_strategy',
                 'required' => false,
             ])
-
-            // ── WS-3: DSGVO Art. 28 processor fields ─────────────────────────
-            ->add('gdprProcessorStatus', ChoiceType::class, [
-                'label' => 'supplier.field.gdpr_processor_status',
-                'help' => 'supplier.help.gdpr_processor_status',
-                'required' => false,
-                'placeholder' => 'supplier.value.na',
-                'choices' => [
-                    'supplier.gdpr_processor_status.controller' => 'controller',
-                    'supplier.gdpr_processor_status.processor' => 'processor',
-                    'supplier.gdpr_processor_status.joint_controller' => 'joint_controller',
-                    'supplier.gdpr_processor_status.none' => 'none',
-                ],
-                'choice_translation_domain' => 'suppliers',
-            ])
-            ->add('gdprTransferMechanism', TextType::class, [
-                'label' => 'supplier.field.gdpr_transfer_mechanism',
-                'help' => 'supplier.help.gdpr_transfer_mechanism',
-                'required' => false,
-                'attr' => ['maxlength' => 50, 'placeholder' => 'SCC / Adequacy Decision / BCR'],
-            ])
-            ->add('gdprAvContractSigned', CheckboxType::class, [
-                'label' => 'supplier.field.gdpr_av_contract_signed',
-                'help' => 'supplier.help.gdpr_av_contract_signed',
-                'required' => false,
-            ])
-            ->add('gdprAvContractDate', DateType::class, [
-                'label' => 'supplier.field.gdpr_av_contract_date',
-                'help' => 'supplier.help.gdpr_av_contract_date',
-                'widget' => 'single_text',
-                'required' => false,
-            ])
         ;
-
-        // Sync unmapped textareas back to JSON entity properties
-        $builder->addEventListener(
-            \Symfony\Component\Form\FormEvents::POST_SUBMIT,
-            static function (\Symfony\Component\Form\Event\PostSubmitEvent $event): void {
-                $form = $event->getForm();
-                $supplier = $form->getData();
-                if (!$supplier instanceof Supplier) {
-                    return;
-                }
-                if ($form->has('subcontractorChain')) {
-                    $raw = trim((string) ($form->get('subcontractorChain')->getData() ?? ''));
-                    $list = [];
-                    if (str_starts_with($raw, '[')) {
-                        $decoded = json_decode($raw, true);
-                        if (is_array($decoded)) {
-                            foreach ($decoded as $entry) {
-                                if (is_string($entry) && trim($entry) !== '') {
-                                    $list[] = trim($entry);
-                                    continue;
-                                }
-                                if (is_array($entry)) {
-                                    $name = isset($entry['name']) ? trim((string) $entry['name']) : '';
-                                    if ($name === '') {
-                                        continue;
-                                    }
-                                    $tier = isset($entry['tier']) ? max(1, min(5, (int) $entry['tier'])) : 1;
-                                    $list[] = [
-                                        'tier' => $tier,
-                                        'name' => $name,
-                                        'lei' => isset($entry['lei']) ? trim((string) $entry['lei']) : '',
-                                        'country' => isset($entry['country']) ? strtoupper(substr(trim((string) $entry['country']), 0, 2)) : '',
-                                        'service' => isset($entry['service']) ? trim((string) $entry['service']) : '',
-                                        'criticality' => isset($entry['criticality']) && in_array($entry['criticality'], ['low', 'medium', 'high', 'critical'], true)
-                                            ? $entry['criticality']
-                                            : '',
-                                    ];
-                                }
-                            }
-                        }
-                    } elseif ($raw !== '') {
-                        $list = array_values(array_filter(
-                            array_map('trim', preg_split('/\r?\n/', $raw) ?: []),
-                            static fn(string $v): bool => $v !== '',
-                        ));
-                    }
-                    $supplier->setSubcontractorChain($list === [] ? null : $list);
-                }
-                if ($form->has('processingLocations')) {
-                    $raw = (string) ($form->get('processingLocations')->getData() ?? '');
-                    $list = array_values(array_filter(
-                        array_map('trim', preg_split('/[,;\r\n]+/', $raw) ?: []),
-                        static fn(string $v): bool => $v !== '',
-                    ));
-                    $supplier->setProcessingLocations($list === [] ? null : $list);
-                }
-            },
-        );
     }
 
     /**
-     * Hydrate the unmapped textarea fields (subcontractorChain,
-     * processingLocations) from entity arrays. Must run in finishView() —
-     * children FormViews are only populated after buildView() returns, so
-     * `$view['subcontractorChain']` would not yet exist.
+     * LkSG (Lieferkettensorgfaltspflichtengesetz) fields.
+     * Gated by 'lksg' module. Covers German Supply Chain Due Diligence Act
+     * §§ 4-10 (risk analysis, complaint mechanism, prevention measures).
      */
-    public function finishView(
-        \Symfony\Component\Form\FormView $view,
-        \Symfony\Component\Form\FormInterface $form,
-        array $options,
-    ): void {
-        $supplier = $form->getData();
-        if (!$supplier instanceof Supplier) {
-            return;
-        }
-        if (isset($view['subcontractorChain']) && !$form->get('subcontractorChain')->getViewData()) {
-            $chain = $supplier->getSubcontractorChain();
-            if (is_array($chain) && $chain !== []) {
-                // JSON-encode so the Stimulus editor picks up structured rows.
-                // Legacy strings are preserved verbatim in the encoded array.
-                $view['subcontractorChain']->vars['value'] = json_encode($chain, JSON_UNESCAPED_UNICODE);
-            }
-        }
-        if (isset($view['processingLocations']) && !$form->get('processingLocations')->getViewData()) {
-            $locs = $supplier->getProcessingLocations();
-            if (is_array($locs) && $locs !== []) {
-                // Defensive: filter out non-scalars (legacy data may contain nested
-                // structures); only strings/scalars survive into the textarea value.
-                $flat = array_values(array_filter($locs, 'is_scalar'));
-                $view['processingLocations']->vars['value'] = implode(', ', array_map('strval', $flat));
-            }
-        }
+    private function addLksgFields(FormBuilderInterface $builder): void
+    {
+        $builder
+            ->add('lksgReportingObligation', CheckboxType::class, [
+                'label' => 'supplier.field.lksg_reporting_obligation',
+                'help' => 'supplier.help.lksg_reporting_obligation',
+                'required' => false,
+            ])
+            ->add('lksgRiskCategory', ChoiceType::class, [
+                'label' => 'supplier.field.lksg_risk_category',
+                'help' => 'supplier.help.lksg_risk_category',
+                'required' => false,
+                'placeholder' => 'supplier.placeholder.lksg_risk_category',
+                'choices' => [
+                    'supplier.lksg_risk.low' => 'low',
+                    'supplier.lksg_risk.medium' => 'medium',
+                    'supplier.lksg_risk.high' => 'high',
+                    'supplier.lksg_risk.critical' => 'critical',
+                ],
+                'choice_translation_domain' => 'suppliers',
+            ])
+            ->add('lksgHumanRightsRiskScore', IntegerType::class, [
+                'label' => 'supplier.field.lksg_human_rights_risk_score',
+                'help' => 'supplier.help.lksg_human_rights_risk_score',
+                'required' => false,
+                'attr' => ['min' => 0, 'max' => 100],
+            ])
+            ->add('lksgEnvironmentalRiskScore', IntegerType::class, [
+                'label' => 'supplier.field.lksg_environmental_risk_score',
+                'help' => 'supplier.help.lksg_environmental_risk_score',
+                'required' => false,
+                'attr' => ['min' => 0, 'max' => 100],
+            ])
+            ->add('lksgRiskAnalysisDate', DateType::class, [
+                'label' => 'supplier.field.lksg_risk_analysis_date',
+                'help' => 'supplier.help.lksg_risk_analysis_date',
+                'widget' => 'single_text',
+                'required' => false,
+            ])
+            ->add('lksgComplaintMechanism', TextareaType::class, [
+                'label' => 'supplier.field.lksg_complaint_mechanism',
+                'help' => 'supplier.help.lksg_complaint_mechanism',
+                'required' => false,
+                'attr' => ['rows' => 3],
+            ])
+            ->add('lksgPreventionMeasures', TextareaType::class, [
+                'label' => 'supplier.field.lksg_prevention_measures',
+                'help' => 'supplier.help.lksg_prevention_measures',
+                'required' => false,
+                'attr' => ['rows' => 3],
+            ])
+        ;
+    }
+
+    private function addMariskFields(FormBuilderInterface $builder): void
+    {
+        $builder
+            ->add('outsourcingClassification', ChoiceType::class, [
+                'choices' => [
+                    'supplier.marisk.outsourcing_classification.substantial' => 'substantial',
+                    'supplier.marisk.outsourcing_classification.non_substantial' => 'non_substantial',
+                ],
+                'choice_translation_domain' => 'suppliers',
+                'label' => 'supplier.marisk.field.outsourcing_classification',
+                'required' => false,
+                'placeholder' => 'supplier.marisk.placeholder.outsourcing_classification',
+                'help' => 'supplier.marisk.help.outsourcing_classification',
+            ])
+            ->add('outsourcingDueDiligenceCompleted', CheckboxType::class, [
+                'label' => 'supplier.marisk.field.outsourcing_due_diligence_completed',
+                'required' => false,
+                'help' => 'supplier.marisk.help.outsourcing_due_diligence_completed',
+            ])
+            ->add('outsourcingDueDiligenceDate', DateType::class, [
+                'label' => 'supplier.marisk.field.outsourcing_due_diligence_date',
+                'widget' => 'single_text',
+                'required' => false,
+                'help' => 'supplier.marisk.help.outsourcing_due_diligence_date',
+            ])
+            ->add('outsourcingExitStrategy', TextareaType::class, [
+                'label' => 'supplier.marisk.field.outsourcing_exit_strategy',
+                'required' => false,
+                'attr' => ['rows' => 4],
+                'help' => 'supplier.marisk.help.outsourcing_exit_strategy',
+            ])
+            ->add('bafinNotificationRequired', CheckboxType::class, [
+                'label' => 'supplier.marisk.field.bafin_notification_required',
+                'required' => false,
+                'help' => 'supplier.marisk.help.bafin_notification_required',
+            ])
+            ->add('bafinNotificationDate', DateType::class, [
+                'label' => 'supplier.marisk.field.bafin_notification_date',
+                'widget' => 'single_text',
+                'required' => false,
+                'help' => 'supplier.marisk.help.bafin_notification_date',
+            ])
+            ->add('riskBearingCapacityImpact', TextareaType::class, [
+                'label' => 'supplier.marisk.field.risk_bearing_capacity_impact',
+                'required' => false,
+                'attr' => ['rows' => 3],
+                'help' => 'supplier.marisk.help.risk_bearing_capacity_impact',
+            ])
+            ->add('boardLevelRiskAcceptance', CheckboxType::class, [
+                'label' => 'supplier.marisk.field.board_level_risk_acceptance',
+                'required' => false,
+                'help' => 'supplier.marisk.help.board_level_risk_acceptance',
+            ])
+            ->add('complianceFunctionInvolvement', CheckboxType::class, [
+                'label' => 'supplier.marisk.field.compliance_function_involvement',
+                'required' => false,
+                'help' => 'supplier.marisk.help.compliance_function_involvement',
+            ])
+            ->add('internalAuditFunctionInvolvement', CheckboxType::class, [
+                'label' => 'supplier.marisk.field.internal_audit_function_involvement',
+                'required' => false,
+                'help' => 'supplier.marisk.help.internal_audit_function_involvement',
+            ])
+        ;
+    }
+
+    /**
+     * S4 Foundation P-2 SectionPolicy — covers ALL fields including module-gated ones.
+     * Module-gated fields (privacy, nis2_dora, lksg, marisk) are listed here so the
+     * section-map is always complete. Fields not built by buildForm() are silently
+     * ignored by _auto_form.html.twig.
+     *
+     * Sections map (DORA Art. 28 · Lieferanten-Management):
+     * - overview:           core identification
+     * - contact:            contact information
+     * - risk_assessment:    security scoring + assessment schedule
+     * - contract:           contract dates + requirements + certifications
+     * - privacy:            GDPR Art. 28 — processor fields (privacy module)
+     * - tier_classification: DORA Art. 28 ROI fields (nis2_dora module)
+     * - lksg:               German Supply Chain Due Diligence Act (lksg module)
+     * - marisk:             BaFin MaRisk AT 9 outsourcing fields (marisk module)
+     *
+     * @return array<string, list<string>>
+     */
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview' => [
+                'name',
+                'description',
+                'criticality',
+                'status',
+                'serviceProvided',
+            ],
+            'contact' => [
+                'contactPerson',
+                'email',
+                'phone',
+                'address',
+            ],
+            'risk_assessment' => [
+                'securityScore',
+                'lastSecurityAssessment',
+                'nextAssessmentDate',
+                'assessmentFindings',
+                'nonConformities',
+            ],
+            'contract' => [
+                'contractStartDate',
+                'contractEndDate',
+                'securityRequirements',
+                'hasISO27001',
+                'hasISO22301',
+                'certifications',
+            ],
+            // S14 Cluster A C1-05 — supplier ↔ asset linkage (ISO 27001 A.5.21).
+            'linkage' => [
+                'supportedAssets',
+            ],
+            'privacy' => [
+                'hasDPA',
+                'dpaSignedDate',
+                'gdprProcessorStatus',
+                'gdprTransferMechanism',
+                'gdprAvContractSigned',
+                'gdprAvContractDate',
+            ],
+            'tier_classification' => [
+                'isDoraRelevant',
+                'leiCode',
+                'naceCode',
+                'countryOfHeadOffice',
+                'ictCriticality',
+                'ictFunctionType',
+                'substitutability',
+                'hasSubcontractors',
+                'subcontractorChain',
+                'processingLocations',
+                'lastDoraAuditDate',
+                'hasExitStrategy',
+            ],
+            'lksg' => [
+                'lksgReportingObligation',
+                'lksgRiskCategory',
+                'lksgHumanRightsRiskScore',
+                'lksgEnvironmentalRiskScore',
+                'lksgRiskAnalysisDate',
+                'lksgComplaintMechanism',
+                'lksgPreventionMeasures',
+            ],
+            'marisk' => [
+                'outsourcingClassification',
+                'outsourcingDueDiligenceCompleted',
+                'outsourcingDueDiligenceDate',
+                'outsourcingExitStrategy',
+                'bafinNotificationRequired',
+                'bafinNotificationDate',
+                'riskBearingCapacityImpact',
+                'boardLevelRiskAcceptance',
+                'complianceFunctionInvolvement',
+                'internalAuditFunctionInvolvement',
+            ],
+        ];
     }
 
     public function configureOptions(OptionsResolver $resolver): void

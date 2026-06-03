@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use Exception;
+use App\Controller\Trait\LocalizedFlashTrait;
 use App\Entity\MfaToken;
 use App\Entity\User;
 use App\Repository\MfaTokenRepository;
+use App\Security\Voter\TenantScopedAdminVoter;
 use App\Service\AuditLogger;
 use App\Service\MfaService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -18,17 +20,41 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
+/**
+ * Admin UI for MFA-Token management (TOTP / WebAuthn / Backup codes).
+ *
+ * Role-Scope: class-level {@see TenantScopedAdminVoter::ADMIN_OWN_TENANT}
+ * (Phase 4e — system-settings cluster). Tenant admins manage MFA tokens for
+ * their own users; SUPER_ADMIN passes through transparently. Existing
+ * method-level `MFA_VIEW`/`MFA_SETUP`/`MFA_MANAGE`/`MFA_DELETE` permission
+ * attributes stay authoritative for fine-grained access.
+ */
+#[IsGranted(TenantScopedAdminVoter::ADMIN_OWN_TENANT)]
 class MfaTokenController extends AbstractController
 {
+    use LocalizedFlashTrait;
+
     public function __construct(
         private readonly MfaTokenRepository $mfaTokenRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly MfaService $mfaService,
         private readonly AuditLogger $auditLogger,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly TranslatorInterface $translator,
     ) {}
-    #[Route('/admin/mfa', name: 'admin_mfa_index')]
+
+    protected function getFlashDomain(): string
+    {
+        return 'mfa';
+    }
+
+    protected function getTranslator(): TranslatorInterface
+    {
+        return $this->translator;
+    }
+    #[Route('/admin/mfa', name: 'admin_mfa_index', methods: ['GET'])]
     #[IsGranted('MFA_VIEW')]
     public function index(): Response
     {
@@ -60,7 +86,7 @@ class MfaTokenController extends AbstractController
             'webauthn_count' => $webauthnCount,
         ]);
     }
-    #[Route('/admin/mfa/user/{id}/setup-totp', name: 'admin_mfa_setup_totp', requirements: ['id' => '\d+'])]
+    #[Route('/admin/mfa/user/{id}/setup-totp', name: 'admin_mfa_setup_totp', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('MFA_SETUP')]
     public function setupTotp(User $user, Request $request): Response
     {
@@ -145,13 +171,13 @@ class MfaTokenController extends AbstractController
     public function regenerateBackupCodes(MfaToken $mfaToken, Request $request): Response
     {
         if (!$this->isCsrfTokenValid('regenerate_backup_' . $mfaToken->getId(), $request->request->get('_token'))) {
-            $this->addFlash('danger', 'Invalid CSRF token');
+            $this->flashError('mfa.token.error.invalid_csrf');
             return $this->redirectToRoute('admin_mfa_show', ['id' => $mfaToken->getId()]);
         }
 
         $backupCodes = $this->mfaService->regenerateBackupCodes($mfaToken);
 
-        $this->addFlash('success', 'Backup codes regenerated successfully');
+        $this->flashSuccess('mfa.token.success.backup_regenerated');
 
         $this->logger->info('Backup codes regenerated', [
             'admin_user' => $this->getUser()?->getUserIdentifier(),
@@ -163,7 +189,7 @@ class MfaTokenController extends AbstractController
             'backup_codes' => $backupCodes,
         ]);
     }
-    #[Route('/admin/mfa/{id}', name: 'admin_mfa_show', requirements: ['id' => '\d+'])]
+    #[Route('/admin/mfa/{id}', name: 'admin_mfa_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('MFA_VIEW')]
     public function show(MfaToken $mfaToken): Response
     {
@@ -179,7 +205,7 @@ class MfaTokenController extends AbstractController
     public function disable(MfaToken $mfaToken, Request $request): Response
     {
         if (!$this->isCsrfTokenValid('disable_' . $mfaToken->getId(), $request->request->get('_token'))) {
-            $this->addFlash('danger', 'Invalid CSRF token');
+            $this->flashError('mfa.token.error.invalid_csrf');
             return $this->redirectToRoute('admin_mfa_show', ['id' => $mfaToken->getId()]);
         }
 
@@ -192,7 +218,7 @@ class MfaTokenController extends AbstractController
             'token_type' => $mfaToken->getTokenType(),
         ]);
 
-        $this->addFlash('success', 'MFA token disabled successfully');
+        $this->flashSuccess('mfa.token.success.disabled');
 
         return $this->redirectToRoute('admin_mfa_index');
     }
@@ -201,7 +227,7 @@ class MfaTokenController extends AbstractController
     public function delete(MfaToken $mfaToken, Request $request): Response
     {
         if (!$this->isCsrfTokenValid('delete_' . $mfaToken->getId(), $request->request->get('_token'))) {
-            $this->addFlash('danger', 'Invalid CSRF token');
+            $this->flashError('mfa.token.error.invalid_csrf');
             return $this->redirectToRoute('admin_mfa_index');
         }
 
@@ -228,7 +254,7 @@ class MfaTokenController extends AbstractController
             sprintf('MFA token deleted for user %s by admin', $userEmail)
         );
 
-        $this->addFlash('success', 'MFA token deleted successfully');
+        $this->flashSuccess('mfa.token.success.deleted');
 
         return $this->redirectToRoute('admin_mfa_index');
     }

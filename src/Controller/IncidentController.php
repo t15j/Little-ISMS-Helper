@@ -10,10 +10,12 @@ use App\Enum\IncidentSeverity;
 use App\Enum\IncidentStatus;
 use Exception;
 use DateTime;
+use App\Entity\CorrectiveAction;
 use App\Entity\Incident;
 use App\Entity\Risk;
 use App\Form\IncidentType;
 use App\Repository\AuditLogRepository;
+use App\Repository\CommentRepository;
 use App\Repository\ComplianceFrameworkRepository;
 use App\Repository\IncidentRepository;
 use App\Repository\RiskRepository;
@@ -24,20 +26,29 @@ use App\Service\IncidentEscalationWorkflowService;
 use App\Service\PdfExportService;
 use App\Service\TenantContext;
 use App\Service\WorkflowService;
-use App\Service\WorkflowAutoProgressionService;
 use App\Service\IncidentRiskFeedbackService;
+use App\Service\Risk\RiskIncidentLinkService;
+use App\Repository\RiskIncidentLinkRepository;
 use App\Repository\UserRepository;
+use App\Service\AuditLogger;
+use App\Controller\Trait\BulkActionTrait;
+use App\Controller\Trait\CurrentUserTrait;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 class IncidentController extends AbstractController
 {
+    use BulkActionTrait;
+    use CurrentUserTrait;
+
     public function __construct(
         private readonly IncidentRepository $incidentRepository,
         private readonly AuditLogRepository $auditLogRepository,
@@ -53,11 +64,14 @@ class IncidentController extends AbstractController
         private readonly IncidentEscalationWorkflowService $incidentEscalationWorkflowService,
         private readonly TenantContext $tenantContext,
         private readonly WorkflowService $workflowService,
-        private readonly WorkflowAutoProgressionService $workflowAutoProgressionService,
         private readonly IncidentRiskFeedbackService $incidentRiskFeedbackService,
-        private readonly RiskRepository $riskRepository
+        private readonly RiskRepository $riskRepository,
+        private readonly RiskIncidentLinkService $riskIncidentLinkService,
+        private readonly RiskIncidentLinkRepository $riskIncidentLinkRepository,
+        private readonly ?CommentRepository $commentRepository = null,
+        private readonly ?AuditLogger $auditLogger = null,
     ) {}
-    #[Route('/incident/', name: 'app_incident_index')]
+    #[Route('/incident', name: 'app_incident_index', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function index(Request $request): Response
     {
@@ -196,7 +210,7 @@ class IncidentController extends AbstractController
             'detailedStats' => $detailedStats,
         ]);
     }
-    #[Route('/incident/new', name: 'app_incident_new')]
+    #[Route('/incident/new', name: 'app_incident_new', methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function new(Request $request): Response
     {
@@ -238,7 +252,7 @@ class IncidentController extends AbstractController
                     default => IncidentSeverity::Low,
                 };
                 $incident->setSeverity($severity);
-                $incident->setStatus(IncidentStatus::Reported);
+                $incident->setStatus(IncidentStatus::Reported); // @phpstan-ignore lifecycle.directSetStatus (initial state on pre-persist entity; 'reported' is the incident_lifecycle initial_marking)
                 // Link back to the originating risk via realizedRisks
                 $incident->addRealizedRisk($sourceRisk);
             }
@@ -257,20 +271,21 @@ class IncidentController extends AbstractController
                 $this->emailNotificationService->sendIncidentNotification($incident, $admins);
             }
 
-            // Check and auto-progress workflow if conditions are met
-            $currentUser = $this->security->getUser();
-            if ($currentUser instanceof User) {
-                $this->workflowAutoProgressionService->checkAndProgressWorkflow($incident, $currentUser);
-            }
+            // Auto-progression fires via FieldCompletionAutoTransition Doctrine listener
+            // (postUpdate event) — no explicit service call required (canonical since Y.1).
 
-            $this->addFlash('success', $this->translator->trans('incident.success.reported'));
+            $this->addFlash('success', $this->translator->trans('incident.success.reported', [], 'messages'));
             return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('incident/new.html.twig', [
             'incident' => $incident,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
     /**
      * GDPR Breach Wizard - Calculate risk assessment
@@ -295,6 +310,37 @@ class IncidentController extends AbstractController
 
         return $this->json($assessment);
     }
+    /**
+     * Dependency-check endpoint for the Aurora bulk-delete-confirmation modal.
+     * Warns if an Incident has linked DataBreach records or RiskIncidentLinks.
+     */
+    #[Route('/incident/bulk-delete-check', name: 'app_incident_bulk_delete_check', methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function bulkDeleteCheck(Request $request): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true) ?? [];
+        $ids = array_filter((array) ($data['ids'] ?? []), 'is_int');
+        if ($ids === []) {
+            return new JsonResponse(['dependencies' => [], 'checked_count' => 0]);
+        }
+
+        $user = $this->security->getUser();
+        $tenant = $user?->getTenant();
+        $incidents = $this->incidentRepository->findBy(['id' => $ids, 'tenant' => $tenant]);
+
+        $em = $this->entityManager;
+        return $this->checkBulkDependencies($incidents, 'getTitle', [
+            fn (\App\Entity\Incident $incident): ?array => ($c = (int) $em->createQuery(
+                'SELECT COUNT(db.id) FROM App\Entity\DataBreach db WHERE db.incident = :incident'
+            )->setParameter('incident', $incident)->getSingleScalarResult()) > 0
+                ? ['message' => sprintf('%d Datenpanne(n) verknüpft', $c), 'icon' => 'shield-x']
+                : null,
+            fn (\App\Entity\Incident $incident): ?array => ($c = $this->riskIncidentLinkRepository->count(['incident' => $incident])) > 0
+                ? ['message' => sprintf('%d Risiko-Vorfall-Verknüpfung(en)', $c), 'icon' => 'link-45deg']
+                : null,
+        ]);
+    }
+
     #[Route('/incident/bulk-delete', name: 'app_incident_bulk_delete', methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function bulkDelete(Request $request): Response
@@ -352,7 +398,7 @@ class IncidentController extends AbstractController
             'message' => "$deleted incidents deleted successfully"
         ]);
     }
-    #[Route('/incident/{id}', name: 'app_incident_show', requirements: ['id' => '\d+'])]
+    #[Route('/incident/{id}', name: 'app_incident_show', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function show(Incident $incident): Response
     {
@@ -369,9 +415,26 @@ class IncidentController extends AbstractController
             $workflowInstance = $workflowStatus['workflow_instance'];
             $currentStep = $workflowInstance->getCurrentStep();
             if ($currentStep) {
-                $canApproveWorkflow = $this->workflowService->canUserApprove($this->getUser(), $currentStep);
+                $canApproveWorkflow = $this->workflowService->canUserApprove($this->currentUser(), $currentStep);
             }
         }
+
+        // V3 W3-Aurora: Comment-Thread (C7) — load thread for this Incident.
+        $comments = [];
+        $tenant = $this->tenantContext->getCurrentTenant();
+        if ($this->commentRepository !== null && $tenant !== null && $incident->getId() !== null) {
+            $comments = $this->commentRepository->findThread($tenant, 'Incident', $incident->getId());
+        }
+
+        // F16: structured risk cross-links
+        $riskIncidentLinks = $this->riskIncidentLinkRepository->findByIncident($incident);
+
+        // Junior-ISB-Audit-2026-05-22 M-07 Phase-1 — structured CAPAs auto-materialised
+        // from this Incident (per ADR 2026-05-23). Used to show "Legacy"-alert near the
+        // freetext field + link the analyst to the structured record.
+        $linkedCorrectiveActions = $this->entityManager
+            ->getRepository(CorrectiveAction::class)
+            ->findBy(['sourceIncident' => $incident], ['createdAt' => 'DESC']);
 
         return $this->render('incident/show.html.twig', [
             'incident' => $incident,
@@ -382,9 +445,15 @@ class IncidentController extends AbstractController
             // Data-Reuse: one-click link matrix
             'linkedRisks' => $incident->getRealizedRisks(),
             'linkedVulnerabilities' => $incident->getRelatedVulnerabilities(),
+            // F16: structured risk cross-links
+            'riskIncidentLinks' => $riskIncidentLinks,
+            // V3 W3-Aurora: Comments thread
+            'comments' => $comments,
+            // Junior-ISB-Audit-2026-05-22 M-07 Phase-1: structured CAPAs for this incident
+            'linkedCorrectiveActions' => $linkedCorrectiveActions,
         ]);
     }
-    #[Route('/incident/{id}/edit', name: 'app_incident_edit', requirements: ['id' => '\d+'])]
+    #[Route('/incident/{id}/edit', name: 'app_incident_edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     #[IsGranted('ROLE_USER')]
     public function edit(Request $request, Incident $incident): Response
     {
@@ -402,11 +471,11 @@ class IncidentController extends AbstractController
                 $this->emailNotificationService->sendIncidentUpdateNotification($incident, $admins, $changeDescription);
             }
 
-            // Check and auto-progress workflow if conditions are met
+            // Auto-progression fires via FieldCompletionAutoTransition Doctrine listener
+            // (postUpdate event) — no explicit service call required (canonical since Y.1).
+
             $currentUser = $this->security->getUser();
             if ($currentUser instanceof User) {
-                $this->workflowAutoProgressionService->checkAndProgressWorkflow($incident, $currentUser);
-
                 // Trigger Incident→Risk feedback loop if incident was closed
                 if ($incident->getStatus() === IncidentStatus::Closed && $originalStatus !== IncidentStatus::Closed) {
                     $triggeredCount = $this->incidentRiskFeedbackService->processIncidentFeedback($incident, $currentUser);
@@ -417,18 +486,95 @@ class IncidentController extends AbstractController
                             'incident'
                         ) ?: sprintf('%d related risk(s) triggered for re-evaluation', $triggeredCount));
                     }
+
+                    // F16: suggest risk review for cross-linked risks
+                    $linkedRisksToReview = $this->riskIncidentLinkService->suggestRiskUpdateOnIncidentClose($incident);
+                    if (!empty($linkedRisksToReview)) {
+                        $this->addFlash('info', $this->translator->trans(
+                            'incident.link.risk_review_suggested',
+                            ['%count%' => count($linkedRisksToReview)],
+                            'incident'
+                        ));
+                    }
                 }
             }
 
-            $this->addFlash('success', $this->translator->trans('incident.success.updated'));
+            $this->addFlash('success', $this->translator->trans('incident.success.updated', [], 'messages'));
             return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
         }
+
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
 
         return $this->render('incident/edit.html.twig', [
             'incident' => $incident,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
+    /**
+     * F16: Link a Risk to this Incident.
+     */
+    #[Route('/incident/{id}/link-risk', name: 'app_incident_link_risk', requirements: ['id' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function linkRisk(Request $request, Incident $incident): Response
+    {
+        if (!$this->isCsrfTokenValid('link_risk_' . $incident->getId(), $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('incident.link.csrf_invalid', [], 'incident'));
+            return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+        }
+
+        $riskId   = (int) $request->request->get('risk_id');
+        $linkType = (string) $request->request->get('link_type', 'related');
+        $notes    = $request->request->get('notes');
+
+        $risk = $this->riskRepository->find($riskId);
+        if ($risk === null) {
+            $this->addFlash('error', $this->translator->trans('incident.link.risk_not_found', [], 'incident'));
+            return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+        }
+
+        /** @var \App\Entity\User|null $currentUser */
+        $currentUser = $this->security->getUser();
+        $this->riskIncidentLinkService->link(
+            $risk,
+            $incident,
+            $linkType,
+            $currentUser instanceof \App\Entity\User ? $currentUser : null,
+            is_string($notes) ? $notes : null,
+        );
+
+        $this->addFlash('success', $this->translator->trans('incident.link.risk_linked', [], 'incident'));
+        return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+    }
+
+    /**
+     * F16: Unlink a Risk from this Incident by link ID.
+     */
+    #[Route('/incident/{id}/unlink-risk/{linkId}', name: 'app_incident_unlink_risk', requirements: ['id' => '\d+', 'linkId' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_MANAGER')]
+    public function unlinkRisk(Request $request, Incident $incident, int $linkId): Response
+    {
+        if (!$this->isCsrfTokenValid('unlink_risk_' . $linkId, $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('incident.link.csrf_invalid', [], 'incident'));
+            return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+        }
+
+        $link = $this->riskIncidentLinkRepository->find($linkId);
+        if ($link === null || $link->getIncident()?->getId() !== $incident->getId()) {
+            $this->addFlash('error', $this->translator->trans('incident.link.link_not_found', [], 'incident'));
+            return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+        }
+
+        $risk = $link->getRisk();
+        if ($risk !== null) {
+            $this->riskIncidentLinkService->unlink($risk, $incident);
+        }
+
+        $this->addFlash('success', $this->translator->trans('incident.link.risk_unlinked', [], 'incident'));
+        return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+    }
+
     #[Route('/incident/{id}/delete', name: 'app_incident_delete', requirements: ['id' => '\d+'], methods: ['POST'])]
     #[IsGranted('ROLE_ADMIN')]
     public function delete(Request $request, Incident $incident): Response
@@ -437,7 +583,7 @@ class IncidentController extends AbstractController
             $this->entityManager->remove($incident);
             $this->entityManager->flush();
 
-            $this->addFlash('success', $this->translator->trans('incident.success.deleted'));
+            $this->addFlash('success', $this->translator->trans('incident.success.deleted', [], 'messages'));
         }
 
         return $this->redirectToRoute('app_incident_index');
@@ -450,7 +596,7 @@ class IncidentController extends AbstractController
      *
      * Note: Only available when NIS2 framework is installed and active.
      */
-    #[Route('/incident/{id}/nis2-report.pdf', name: 'app_incident_nis2_report', requirements: ['id' => '\d+'])]
+    #[Route('/incident/{id}/nis2-report.pdf', name: 'app_incident_nis2_report', requirements: ['id' => '\d+'], methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function downloadNis2Report(Request $request, Incident $incident): Response
     {
@@ -616,6 +762,47 @@ class IncidentController extends AbstractController
         return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
     }
     /**
+     * V3 W2-FV-5 — Reassess a risk in direct response to an incident.
+     *
+     * Stamps the audit-trail (Risk.lastIncidentReassessmentAt /
+     * .lastIncidentReassessmentIncident) and forwards the risk-owner to
+     * the Risk-Edit screen so they can update probability / impact /
+     * controls based on the realised incident.
+     *
+     * Risk must be among the incident's realizedRisks (security guard);
+     * otherwise the request is treated as tampered.
+     */
+    #[Route('/incident/{id}/risk/{riskId}/reassess', name: 'app_incident_risk_reassess', requirements: ['id' => '\d+', 'riskId' => '\d+'], methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function reassessLinkedRisk(Request $request, Incident $incident, int $riskId): Response
+    {
+        if (!$this->isCsrfTokenValid('incident-risk-reassess-' . $incident->getId() . '-' . $riskId, (string) $request->request->get('_token'))) {
+            $this->addFlash('error', $this->translator->trans('messages.csrf.invalid', [], 'messages'));
+            return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+        }
+
+        $risk = $this->riskRepository->find($riskId);
+        if (!$risk instanceof Risk) {
+            $this->addFlash('error', $this->translator->trans('risk.not_found', [], 'risk'));
+            return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+        }
+
+        // Guard: risk must be linked to this incident.
+        if (!$incident->getRealizedRisks()->contains($risk)) {
+            $this->addFlash('error', $this->translator->trans('incident.fv5.not_linked', [], 'incident'));
+            return $this->redirectToRoute('app_incident_show', ['id' => $incident->getId()]);
+        }
+
+        $risk->setLastIncidentReassessmentAt(new \DateTimeImmutable());
+        $risk->setLastIncidentReassessmentIncident($incident);
+        $this->entityManager->flush();
+
+        $this->addFlash('info', $this->translator->trans('incident.fv5.reassess_started', [], 'incident'));
+
+        return $this->redirectToRoute('app_risk_edit', ['id' => $risk->getId()]);
+    }
+
+    /**
      * Generate BCM impact report (PDF)
      */
     #[Route('/incident/{id}/bcm-impact/report', name: 'app_incident_bcm_impact_report', methods: ['GET'])]
@@ -692,5 +879,63 @@ class IncidentController extends AbstractController
         ];
 
         return $this->json($response);
+    }
+
+    /**
+     * Bulk CSV export of selected incidents.
+     * ISO 27001 Cl. 7.5.3 — audit-logged via BulkActionTrait.
+     */
+    #[Route('/incident/bulk-export', name: 'app_incident_bulk_export', methods: ['POST'])]
+    #[IsGranted('ROLE_USER')]
+    public function bulkExport(Request $request): StreamedResponse|Response
+    {
+        $data = json_decode($request->getContent(), true);
+        if (!$this->isCsrfTokenValid('bulk_action', (string) ($data['_token'] ?? ''))) {
+            return $this->json(['error' => 'Invalid CSRF token'], 403);
+        }
+        $ids  = $data['ids'] ?? [];
+        if (!is_array($ids) || $ids === []) {
+            return $this->json(['error' => 'No items selected'], 400);
+        }
+
+        $user   = $this->security->getUser();
+        $tenant = $user instanceof User ? $user->getTenant() : null;
+
+        $incidents = [];
+        foreach ($ids as $rawId) {
+            $incident = $this->incidentRepository->find((int) $rawId);
+            if ($incident === null) {
+                continue;
+            }
+            if ($tenant !== null && $incident->getTenant() !== $tenant) {
+                continue;
+            }
+            $incidents[] = $incident;
+        }
+
+        if ($incidents === []) {
+            return $this->json(['error' => 'No exportable incidents'], 404);
+        }
+
+        $headers = ['ID', 'Title', 'Category', 'Severity', 'Status', 'Assigned To', 'Reported By'];
+
+        return $this->streamCsvExport(
+            $incidents,
+            $headers,
+            static function (Incident $i): array {
+                return [
+                    (string) $i->getId(),
+                    (string) $i->getTitle(),
+                    (string) $i->getCategory(),
+                    (string) ($i->getSeverity()?->value ?? ''),
+                    (string) ($i->getStatus()?->value ?? ''),
+                    (string) $i->getAssignedTo(),
+                    (string) $i->getReportedBy(),
+                ];
+            },
+            'incidents-export',
+            'Incident',
+            $this->auditLogger,
+        );
     }
 }

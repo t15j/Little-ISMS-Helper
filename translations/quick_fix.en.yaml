@@ -1,17 +1,49 @@
 quick_fix:
     title: 'Quick Fix — Schema Maintenance'
+    # Async-job progress page strings (Phase 2 rollout).
+    job:
+        id_label: 'Job ID'
+        worker_hint: 'Running in the background. This page refreshes every 3 seconds.'
+        back: 'Back to Quick Fix'
+        generic_label: 'Async job'
+        apply_label: 'Apply Pending Migrations'
+        apply_subtitle: 'Running the Doctrine migration plan in the background…'
+        reconcile_label: 'Reconcile Schema'
+        reconcile_subtitle: 'Aligning the live database with entity metadata in the background…'
+        repair_orphans_label: 'Repair Orphans'
+        repair_orphans_subtitle: 'Assigning orphaned entities to the default tenant in the background…'
+        repair_mismatches_label: 'Repair Organization Mismatches'
+        repair_mismatches_subtitle: 'Aligning child entity tenants with their parent (Asset) in the background…'
+        repair_duplicates_label: 'Repair Duplicates'
+        repair_duplicates_subtitle: 'Merging duplicate entries (oldest kept) in the background…'
+        repair_all_label: 'Repair All'
+        repair_all_subtitle: 'Orphans + mismatches + duplicates in the background — this may take several minutes.'
+        force_schema_label: 'Force Schema Update'
+        force_schema_subtitle: 'Running doctrine:schema:update in safe mode (additive only) in the background…'
     pending:
         title: 'Database update required'
         body: 'This instance has been upgraded but the database schema is still at the previous version. Apply with one click:'
         count_label: 'pending migration(s)'
         button: 'Apply migrations now'
+        phantom_skip_show: 'Advanced: skip phantom migrations…'
+        phantom_skip_body: 'If the normal apply already fails on a phantom migration (column/table already exists in the schema), you can mark ALL pending migrations as executed without re-running DDL. Only use when you are certain the schema is already in the target state.'
+        phantom_skip_button: 'Mark all pending as executed (phantom bypass)'
     drift:
         title: 'Schema drift detected'
         body: 'All migrations applied, but the database schema differs from the entity definition. Reconcile with one click:'
         count_label: 'pending schema statement(s)'
         show_sql: 'Show SQL'
         button: 'Reconcile schema now'
-        destructive_warning: 'Warning: %count% destructive statement(s) detected (DROP). Manual review required. Please use CLI:'
+        destructive_count_label: 'destructive statement(s) (DROP/TRUNCATE)'
+        pending_fs_label: 'migration(s) on disk but not executed (file-system vs DB)'
+        pending_fs_show: 'Show versions'
+        destructive_warning: 'Destructive statements detected. Review before applying — may delete data. If you accept the risk, tick the checkbox below.'
+        destructive_confirm_label: 'I understand the risk and want to apply destructive statements'
+        destructive_button: 'Reconcile incl. destructive statements'
+    entity_drift:
+        title: 'Entity-schema drift detected'
+        body: 'The entity model expects columns or tables that do not yet exist in the database. The migrations table and SchemaTool both report zero — the mismatch was detected directly via metadata comparison. Force a schema update (ADD/CREATE only, no DROPs):'
+        count_label: 'missing schema statement(s)'
     ok:
         title: 'All up to date'
         body: 'No pending schema migrations.'
@@ -25,6 +57,55 @@ quick_fix:
         token_hint: 'If you have an installer token, enter it here:'
         token_placeholder: 'Token from var/setup-token'
         token_submit: 'Unlock with token'
+    repair:
+        section:
+            title: 'Data Integrity'
+        partial_error:
+            label: 'Data integrity check partial — %count% error(s) (schema incomplete, some checks could not run)'
+            show: 'Show details'
+        orphans:
+            title: 'Orphaned entities (no tenant assigned)'
+            button: 'Assign orphans'
+            empty: 'No orphans'
+        tenant_mismatches:
+            title: 'Organization mismatches'
+            button: 'Fix mismatches'
+            empty: 'No mismatches'
+        duplicates:
+            title: 'Duplicates'
+            button: 'Merge'
+        all:
+            title: 'Safe repair all'
+            button: 'Safe repair all'
+            empty: 'All data integrity checks OK'
+        success:
+            orphans: '%count% orphan(s) assigned to default tenant.'
+            tenant_mismatches: '%count% tenant mismatch(es) fixed.'
+            duplicates: '%count% duplicate(s) merged for "%type%".'
+            all: 'All repairs done: %orphans% orphan(s), %mismatches% mismatch(es), %duplicates% duplicate(s).'
+    apply_failure:
+        title: 'Migration failed — Recovery'
+        warning: 'WARNING: Only use these options if you understand what the migration does. An incorrect skip can lead to data inconsistency.'
+        skip_single_confirm: 'I confirm that I understand the failing migration and can safely skip it (e.g. because the change is already present in the schema or the migration should be rolled back).'
+        skip_single_button: 'Skip this migration (mark as executed, no DDL)'
+        skip_all_show: 'Skip all pending migrations (expert option)...'
+        skip_all_body: 'Marks ALL pending migrations as executed without running their DDL. Only use if you are certain the schema already reflects the desired state. This action cannot be undone.'
+        skip_all_confirm: 'I confirm that ALL pending migrations can safely be skipped and I understand the consequences.'
+        skip_all_button: 'Skip all pending migrations (no DDL)'
+    phantom_diff:
+        title: 'Schema already current — mark migration as executed'
+        warning: 'Only click if the schema ALREADY contains the table/column. This action skips the DDL and only records the migration in the version table.'
+        confirm_label: 'I confirm that the schema already contains this change and the migration can safely be marked as executed.'
+        button: 'Mark migration as executed (no DDL)'
+        mark_all_show: 'Mark all phantom-diff migrations at once...'
+        mark_all_body: 'Marks ALL pending migrations as executed that produce a phantom-diff error (table/column already exists). Stops at the first migration that does not produce a phantom-diff error. Only use when you are certain ALL pending migrations are already reflected in the live schema.'
+        mark_all_confirm_label: 'I confirm that ALL pending migrations are already applied at the schema level and can safely be marked as executed without running their DDL.'
+        mark_all_button: 'Mark all phantom-diff migrations as executed (no DDL)'
+    force_update:
+        show: 'Show force schema update (last resort for persistent reconcile failure)...'
+        body: 'Runs doctrine:schema:update --force (saveMode=true) — emits only ADD/CREATE statements, never drops tables. Use when reconcile fails despite FK checks. Bypasses Doctrine migrations tracking.'
+        confirm_label: 'I understand this bypasses Doctrine migrations tracking and should only be used as a last resort.'
+        button: 'Force schema update (nuclear)'
     settings:
         title: 'Quick Fix'
         description: 'Controls the public fallback page shown on schema mismatch instead of a 500 error.'
@@ -39,5 +120,6 @@ quick_fix:
             help: 'Quick Fix only reachable when APP_ENV=dev.'
         ip_allowlist:
             label: 'IP allowlist'
-            help: 'Comma-separated list of permitted client IPs. Empty = disabled.'
+            help: 'Comma-separated list of permitted client IPs or CIDR ranges (e.g. 10.0.0.5, 192.168.1.0/24, ::1). Empty = disabled.'
+        ip_allowlist_invalid: 'IP allowlist not saved: invalid entries. Only exact IPs (IPv4/IPv6) or CIDR ranges are allowed, e.g. 10.0.0.5, 192.168.1.0/24.'
         save: 'Save'

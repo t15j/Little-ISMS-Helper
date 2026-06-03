@@ -8,14 +8,17 @@ use DateTimeImmutable;
 use DateTime;
 use DateTimeInterface;
 use App\Entity\ISMSObjective;
+use App\Enum\ISMSObjectiveStatus;
+use App\Lifecycle\LifecycleTransitionInterface;
 use App\Repository\ISMSObjectiveRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
-class ISMSObjectiveService
+final class ISMSObjectiveService
 {
     public function __construct(
         private readonly ISMSObjectiveRepository $ismsObjectiveRepository,
-        private readonly EntityManagerInterface $entityManager
+        private readonly EntityManagerInterface $entityManager,
+        private readonly ?LifecycleTransitionInterface $lifecycleService = null,
     ) {}
 
     /**
@@ -37,7 +40,7 @@ class ISMSObjectiveService
         $ismsObjective->setUpdatedAt(new DateTimeImmutable());
 
         // Automatically set achieved date when status changes to achieved
-        if ($ismsObjective->getStatus() === 'achieved' && !$ismsObjective->getAchievedDate()) {
+        if ($ismsObjective->getStatus() === ISMSObjectiveStatus::Achieved->value && !$ismsObjective->getAchievedDate()) {
             $ismsObjective->setAchievedDate(new DateTime());
         }
 
@@ -64,8 +67,8 @@ class ISMSObjectiveService
         return [
             'total' => count($objectives),
             'active' => count($active),
-            'achieved' => count($this->ismsObjectiveRepository->findBy(['status' => 'achieved'])),
-            'delayed' => count(array_filter($objectives, fn(ISMSObjective $obj): bool => $obj->getStatus() === 'in_progress' &&
+            'achieved' => count($this->ismsObjectiveRepository->findBy(['status' => ISMSObjectiveStatus::Achieved->value])),
+            'delayed' => count(array_filter($objectives, fn(ISMSObjective $obj): bool => $obj->getStatus() === ISMSObjectiveStatus::InProgress->value &&
                    $obj->getTargetDate() < new DateTime() &&
                    !$obj->getAchievedDate())),
             'at_risk' => $this->countAtRiskObjectives($objectives),
@@ -79,7 +82,7 @@ class ISMSObjectiveService
     {
         $thirtyDaysFromNow = new DateTime()->modify('+30 days');
 
-        return count(array_filter($objectives, fn($obj): bool => $obj->getStatus() === 'in_progress' &&
+        return count(array_filter($objectives, fn($obj): bool => $obj->getStatus() === ISMSObjectiveStatus::InProgress->value &&
                $obj->getTargetDate() <= $thirtyDaysFromNow &&
                $obj->getTargetDate() >= new DateTime()));
     }
@@ -155,10 +158,36 @@ class ISMSObjectiveService
             );
         }
 
-        // Check if objective is now achieved
+        // Check if objective is now achieved; transition via Lifecycle X.1.
+        // C-08: previously fell back to direct setStatus() when the Workflow
+        // guard rejected the transition (LifecycleService null OR status not
+        // in_progress) — that bypass skipped Voter / audit-log / regulatory
+        // guards and could promote a not_started/delayed objective to achieved
+        // without ever going through `start`. Removed.
+        // InvalidTransitionException / FourEyesRequiredException propagate to
+        // the caller (Controller), which translates to a flash message.
+        // For objectives that aren't in_progress, the user must first transition
+        // via the lifecycle dropdown (start / reopen).
         if ($ismsObjective->getTargetValue() && $currentValue >= (float)$ismsObjective->getTargetValue()) {
-            $ismsObjective->setStatus('achieved');
-            $ismsObjective->setAchievedDate(new DateTime());
+            if ($this->lifecycleService === null) {
+                // @intentional-assertion: LifecycleService is required; the previous
+                // setStatus() fallback bypassed Voter / audit-log (C-08).
+                throw new \LogicException(
+                    'ISMSObjectiveService::updateProgress() requires LifecycleService; '
+                    . 'direct setStatus() fallback removed (C-08).'
+                );
+            }
+            if ($ismsObjective->getStatus() === ISMSObjectiveStatus::InProgress->value) {
+                // Lifecycle X.1: canonical `achieve` transition (in_progress → achieved).
+                $this->lifecycleService->transition(
+                    $ismsObjective,
+                    'isms_objective_lifecycle',
+                    'achieve',
+                );
+                $ismsObjective->setAchievedDate(new DateTime());
+            }
+            // else: auto-promotion to achieved is no longer silent for non-
+            // in_progress states. The user/operator must transition explicitly.
         }
 
         $this->updateObjective($ismsObjective);

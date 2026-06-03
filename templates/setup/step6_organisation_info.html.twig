@@ -28,7 +28,7 @@
                 {% block card_header %}
                     <div class="card-header">
                         <h1 class="h3 mb-0">
-                            <i class="bi bi-building me-2" aria-hidden="true"></i>
+                            <i class="fa-icon me-2 fa-icon--nav-building" aria-hidden="true"></i>
                             {{ 'setup.organisation.header'|trans({}, 'setup') }}
                         </h1>
                     </div>
@@ -53,7 +53,7 @@
                         </div>
 
                         {# Multi-Industry Selection for Corporate Structures #}
-                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-diagram-3', class: 'mb-2' } } %}
+                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'nav-workflow', class: 'mb-2' } } %}
                             {% block alert_body %}<small>{{ 'setup.organisation.industries_help'|trans({}, 'setup') }}</small>{% endblock %}
                         {% endembed %}
                         <div class="row">
@@ -90,20 +90,20 @@
                         </div>
 
                         {# Information Box #}
-                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-info-circle' } } %}
+                        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-info' } } %}
                             {% block alert_body %}<strong>{{ 'setup.organisation.usage.title'|trans({}, 'setup') }}</strong> <p class="mb-0">{{ 'setup.organisation.usage.message'|trans({}, 'setup') }}</p>{% endblock %}
                         {% endembed %}
 
                         {# Navigation #}
                         <div class="d-flex justify-content-between mt-4">
                             <a href="{{ path('setup_step5_email_config') }}" class="btn btn-outline-secondary">
-                                <i class="bi bi-arrow-left me-2" aria-hidden="true"></i>
+                                <i class="fa-icon me-2 fa-icon--util-arrow-left" aria-hidden="true"></i>
                                 {{ 'setup.navigation.back'|trans({}, 'setup') }}
                             </a>
 
                             <button type="submit" class="btn btn-primary">
                                 {{ 'setup.navigation.next'|trans({}, 'setup') }}
-                                <i class="bi bi-arrow-right ms-2" aria-hidden="true"></i>
+                                <i class="fa-icon ms-2 fa-icon--util-arrow-right" aria-hidden="true"></i>
                             </button>
                         </div>
 

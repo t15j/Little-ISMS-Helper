@@ -1,5 +1,6 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_status_pill.html.twig' as pill %}
 {% trans_default_domain 'management_reports' %}
 
 {% block title %}{{ 'cert_readiness.title'|trans({}, 'management_reports') }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
@@ -9,8 +10,8 @@
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.reports'|trans({}, 'nav'), path: 'app_reports_index' },
-            { label: 'management_reports.title'|trans({}, 'management_reports'), path: 'app_management_reports' },
+            { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_index') },
+            { label: 'management_reports.title'|trans({}, 'management_reports'), url: path('app_management_reports') },
             { label: 'cert_readiness.title'|trans({}, 'management_reports') }
         ]
     } only %}
@@ -19,9 +20,12 @@
         <h1 class="h2 mb-0">
             <i class="fa-icon fa-icon--nav-patch-check" aria-hidden="true"></i> {{ 'cert_readiness.title'|trans({}, 'management_reports') }}
         </h1>
-        <a href="{{ path('app_management_reports_cert_readiness_pdf') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-            <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'management_reports.action.download_pdf'|trans({}, 'management_reports') }}
-        </a>
+        <div>
+            <a href="{{ path('app_management_reports_cert_readiness_pdf') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
+                <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'management_reports.action.download_pdf'|trans({}, 'management_reports') }}
+            </a>
+            {% include '_components/_fa_pdf_locale_switch.html.twig' with {route: 'app_management_reports_cert_readiness_pdf'} only %}
+        </div>
     </div>
 
     {# Readiness Score Overview #}
@@ -31,27 +35,21 @@
                 'class': 'h-100 text-center ' ~ (recommendation == 'READY' ? 'border-success' : (recommendation == 'CONDITIONAL' ? 'border-warning' : 'border-danger'))
             } %}
                 {% block card_body %}
+                    {% import '_components/_status_pill.html.twig' as pill %}
                     <h3 class="display-4 fw-bold {% if recommendation == 'READY' %}text-success{% elseif recommendation == 'CONDITIONAL' %}text-warning{% else %}text-danger{% endif %}">
                         {{ overall_score }}%
                     </h3>
                     <p class="text-muted mb-2">{{ 'cert_readiness.overall_score'|trans({}, 'management_reports') }}</p>
-                    <span class="badge fs-6 {% if recommendation == 'READY' %}bg-success{% elseif recommendation == 'CONDITIONAL' %}bg-warning-subtle text-warning{% else %}bg-danger{% endif %}">
-                        {{ ('cert_readiness.recommendation.' ~ recommendation|lower)|trans({}, 'management_reports') }}
-                    </span>
+                    {{ pill.render(('cert_readiness.recommendation.' ~ recommendation|lower)|trans({}, 'management_reports'), recommendation == 'READY' ? 'success' : (recommendation == 'CONDITIONAL' ? 'warning' : 'danger')) }}
                 {% endblock %}
             {% endembed %}
         </div>
         <div class="col-md-4">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100' } %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <h5>{{ 'cert_readiness.clause_compliance_score'|trans({}, 'management_reports') }}</h5>
-                    <div class="progress progress-h-24 mb-2">
-                        <div class="progress-bar {% if clause_score >= 80 %}bg-success{% elseif clause_score >= 60 %}bg-warning{% else %}bg-danger{% endif %}"
-                             role="progressbar" style="width: {{ clause_score }}%"
-                             aria-valuenow="{{ clause_score }}" aria-valuemin="0" aria-valuemax="100">
-                            {{ clause_score }}%
-                        </div>
-                    </div>
+                    {{ _fa_progress.render({ value: clause_score, tone: clause_score >= 80 ? 'success' : (clause_score >= 60 ? 'warning' : 'danger'), showText: true, class: 'mb-2' }) }}
                     <small class="text-muted">{{ 'cert_readiness.clauses_4_10'|trans({}, 'management_reports') }}</small>
                 {% endblock %}
             {% endembed %}
@@ -59,14 +57,9 @@
         <div class="col-md-4">
             {% embed '_components/_card.html.twig' with { 'class': 'h-100' } %}
                 {% block card_body %}
+                    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <h5>{{ 'cert_readiness.annex_a_coverage'|trans({}, 'management_reports') }}</h5>
-                    <div class="progress progress-h-24 mb-2">
-                        <div class="progress-bar {% if control_percentage >= 80 %}bg-success{% elseif control_percentage >= 60 %}bg-warning{% else %}bg-danger{% endif %}"
-                             role="progressbar" style="width: {{ control_percentage }}%"
-                             aria-valuenow="{{ control_percentage }}" aria-valuemin="0" aria-valuemax="100">
-                            {{ control_percentage }}%
-                        </div>
-                    </div>
+                    {{ _fa_progress.render({ value: control_percentage, tone: control_percentage >= 80 ? 'success' : (control_percentage >= 60 ? 'warning' : 'danger'), showText: true, class: 'mb-2' }) }}
                     <small class="text-muted">
                         {{ control_stats.implemented }} / {{ control_stats.total }} {{ 'cert_readiness.controls_implemented'|trans({}, 'management_reports') }}
                     </small>
@@ -86,54 +79,45 @@
         {% endblock %}
         {% block card_body %}
             {% if clause_compliance is not empty %}
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead>
-                        <tr>
-                            <th scope="col">{{ 'cert_readiness.table.clause'|trans({}, 'management_reports') }}</th>
-                            <th scope="col">{{ 'cert_readiness.table.score'|trans({}, 'management_reports') }}</th>
-                            <th scope="col">{{ 'cert_readiness.table.status'|trans({}, 'management_reports') }}</th>
-                            <th scope="col">{{ 'cert_readiness.table.gaps'|trans({}, 'management_reports') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for key, clause in clause_compliance %}
-                        <tr>
-                            <td>
-                                <strong>{{ clause.name|trans({}, 'compliance') }}</strong>
-                            </td>
-                            <td>
-                                <div class="progress" style="height: 20px; min-width: 100px;">
-                                    <div class="progress-bar {% if clause.score >= 80 %}bg-success{% elseif clause.score >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
-                                         role="progressbar" style="width: {{ clause.score }}%"
-                                         aria-valuenow="{{ clause.score }}" aria-valuemin="0" aria-valuemax="100">
-                                        {{ clause.score }}%
-                                    </div>
-                                </div>
-                            </td>
-                            <td>
-                                {% if clause.status == 'complete' %}
-                                    <span class="fa-status-pill fa-status-pill--success">{{ 'cert_readiness.status.complete'|trans({}, 'management_reports') }}</span>
-                                {% elseif clause.status == 'partial' %}
-                                    <span class="fa-status-pill fa-status-pill--warning">{{ 'cert_readiness.status.partial'|trans({}, 'management_reports') }}</span>
-                                {% else %}
-                                    <span class="fa-status-pill fa-status-pill--danger">{{ 'cert_readiness.status.not_started'|trans({}, 'management_reports') }}</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if clause.gaps|length > 0 %}
-                                    <span class="text-danger">{{ clause.gaps|length }} {{ 'cert_readiness.gaps_found'|trans({}, 'management_reports') }}</span>
-                                {% else %}
-                                    <span class="text-success"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i></span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            {% embed '_components/_fa_table.html.twig' %}
+                {% block table_head %}
+                    <tr>
+                        <th scope="col" class="fa-table__th">{{ 'cert_readiness.table.clause'|trans({}, 'management_reports') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'cert_readiness.table.score'|trans({}, 'management_reports') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'cert_readiness.table.status'|trans({}, 'management_reports') }}</th>
+                        <th scope="col" class="fa-table__th">{{ 'cert_readiness.table.gaps'|trans({}, 'management_reports') }}</th>
+                    </tr>
+                {% endblock %}
+                {% block table_body %}
+                    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
+                    {% for key, clause in clause_compliance %}
+                    <tr class="fa-table__row">
+                        <td class="fa-table__cell"><strong>{{ clause.name|trans({}, 'compliance') }}</strong></td>
+                        <td class="fa-table__cell">
+                            {{ _fa_progress.render({ value: clause.score, tone: clause.score >= 80 ? 'success' : (clause.score >= 40 ? 'warning' : 'danger'), showText: true }) }}
+                        </td>
+                        <td class="fa-table__cell">
+                            {% if clause.status == 'complete' %}
+                                <span class="fa-status-pill fa-status-pill--success">{{ 'cert_readiness.status.complete'|trans({}, 'management_reports') }}</span>
+                            {% elseif clause.status == 'partial' %}
+                                <span class="fa-status-pill fa-status-pill--warning">{{ 'cert_readiness.status.partial'|trans({}, 'management_reports') }}</span>
+                            {% else %}
+                                <span class="fa-status-pill fa-status-pill--danger">{{ 'cert_readiness.status.not_started'|trans({}, 'management_reports') }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="fa-table__cell">
+                            {% if clause.gaps|length > 0 %}
+                                <span class="text-danger">{{ clause.gaps|length }} {{ 'cert_readiness.gaps_found'|trans({}, 'management_reports') }}</span>
+                            {% else %}
+                                <span class="text-success"><i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i></span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% endblock %}
+            {% endembed %}
             {% else %}
-            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'warning', icon: 'bi-info-circle', class: 'mb-0' } } %}
+            {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'warning', icon: 'status-info', class: 'mb-0' } } %}
                 {% block alert_body %}{{ 'cert_readiness.no_iso_wizard'|trans({}, 'management_reports') }}{% endblock %}
             {% endembed %}
             {% endif %}
@@ -200,7 +184,7 @@
         {% block card_header %}
             <div class="card-header">
                 <h3 class="h5 mb-0">
-                    <i class="bi bi-exclamation-octagon" aria-hidden="true"></i> {{ 'cert_readiness.section.critical_gaps'|trans({}, 'management_reports') }}
+                    <i class="fa-icon fa-icon--status-critical" aria-hidden="true"></i> {{ 'cert_readiness.section.critical_gaps'|trans({}, 'management_reports') }}
                 </h3>
             </div>
         {% endblock %}

@@ -1,26 +1,23 @@
 {% extends 'base.html.twig' %}
 {% trans_default_domain 'compliance' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
-
 {% block title %}{{ 'compliance.title.gap_analysis'|trans({}, 'compliance') }} - Little ISMS Helper{% endblock %}
 
 {% block body %}
-<div class="page-header">
-    <div>
-        <h1>{{ 'compliance.title.gap_analysis'|trans({}, 'compliance') }}</h1>
-        <p class="text-muted">{{ 'compliance.description.gap_analysis'|trans({}, 'compliance') }}</p>
-    </div>
-    <div class="button-group">
-        <a href="{{ path('app_compliance_export_gaps_pdf', {id: framework.id}) }}" class="fa-cyber-btn fa-cyber-btn--danger" data-turbo="false">
-            <i class="fa-icon fa-icon--nav-file-pdf" aria-hidden="true"></i> {{ 'compliance.action.export_pdf'|trans({}, 'compliance') }}
-        </a>
-        <a href="{{ path('app_compliance_export_gaps_excel', {id: framework.id}) }}" class="fa-cyber-btn fa-cyber-btn--success" data-turbo="false">
-            <i class="bi bi-file-excel" aria-hidden="true"></i> {{ 'compliance.action.export_excel'|trans({}, 'compliance') }}
-        </a>
-        <a href="{{ path('app_compliance_export_gaps', {id: framework.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" data-turbo="false">
-            <i class="bi bi-file-text" aria-hidden="true"></i> {{ 'compliance.action.export_csv'|trans({}, 'compliance') }}
-        </a>
-    </div>
+{{ _fa_page_header.render({
+    badge: { icon: 'compliance-shield', label: 'nav.compliance'|trans({}, 'nav') },
+    title: 'compliance.title.gap_analysis'|trans({}, 'compliance'),
+    subtitle: 'compliance.description.gap_analysis'|trans({}, 'compliance'),
+    actions: [
+        { label: 'compliance.action.export_pdf'|trans({}, 'compliance'), variant: 'danger', icon: 'nav-file-pdf', href: path('app_compliance_export_gaps_pdf', {id: framework.id}), attrs: {'data-turbo': 'false'} },
+        { label: 'compliance.action.export_excel'|trans({}, 'compliance'), variant: 'secondary', icon: 'nav-file-check', href: path('app_compliance_export_gaps_excel', {id: framework.id}), attrs: {'data-turbo': 'false'} },
+        { label: 'compliance.action.export_csv'|trans({}, 'compliance'), variant: 'ghost', icon: 'nav-document', href: path('app_compliance_export_gaps', {id: framework.id}), attrs: {'data-turbo': 'false'} }
+    ]
+}) }}
+{# PDF locale switch for gap analysis export #}
+<div class="d-flex justify-content-end mb-2">
+    {% include '_components/_fa_pdf_locale_switch.html.twig' with {route: 'app_compliance_export_gaps_pdf', route_params: {id: framework.id}} only %}
 </div>
 
 {# Statistics Cards #}
@@ -57,7 +54,7 @@
 
     {% embed '_components/_card.html.twig' with { 'variant': 'bordered', 'borderColor': 'warning' } %}
         {% block card_body %}
-            <div class="fs-2-mb-sm"><i class="bi bi-circle-fill text-warning" aria-hidden="true"></i></div>
+            <div class="fs-2-mb-sm"><i class="fa-icon text-warning fa-icon--status-pending" aria-hidden="true"></i></div>
             <h2>{{ 'compliance.severity.high'|trans({}, 'compliance') }}</h2>
             <div class="mt-2">
                 <strong class="fs-15-warning">{{ gaps|filter(g => g.requirement.priority == 'high')|length }}</strong>
@@ -70,7 +67,7 @@
 
     {% embed '_components/_card.html.twig' with { 'variant': 'bordered', 'borderColor': 'info' } %}
         {% block card_body %}
-            <div class="fs-2-mb-sm"><i class="bi bi-circle-fill text-info" aria-hidden="true"></i></div>
+            <div class="fs-2-mb-sm"><i class="fa-icon text-info fa-icon--status-pending" aria-hidden="true"></i></div>
             <h2>{{ 'compliance.severity.medium'|trans({}, 'compliance') }}</h2>
             <div class="mt-2">
                 <strong class="fs-15-info">{{ gaps|filter(g => g.requirement.priority == 'medium')|length }}</strong>
@@ -83,7 +80,7 @@
 
     {% embed '_components/_card.html.twig' with { 'variant': 'bordered', 'borderColor': 'secondary' } %}
         {% block card_body %}
-            <div class="fs-2-mb-sm"><i class="bi bi-circle text-secondary" aria-hidden="true"></i></div>
+            <div class="fs-2-mb-sm"><i class="fa-icon text-secondary fa-icon--status-pending" aria-hidden="true"></i></div>
             <h2>{{ 'compliance.severity.low'|trans({}, 'compliance') }}</h2>
             <div class="mt-2">
                 <strong class="fs-4">{{ gaps|filter(g => g.requirement.priority == 'low')|length }}</strong>
@@ -112,6 +109,7 @@
         </tr>
     {% endblock %}
     {% block table_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
         {% for gap in gaps %}
         <tr>
             <td>
@@ -136,9 +134,7 @@
             </td>
             <td>
                 {% set fulfillment = gap.analysis.calculated_fulfillment ?? 0 %}
-                <div class="progress" style="height: 6px;" title="{{ fulfillment }}%">
-                    <div class="progress-bar" role="progressbar" style="width: {{ fulfillment }}%" aria-valuenow="{{ fulfillment }}" aria-valuemin="0" aria-valuemax="100"></div>
-                </div>
+                {{ _fa_progress.render({ value: fulfillment, size: 'sm', label: fulfillment ~ '%' }) }}
                 <small class="text-muted">{{ fulfillment }}%</small>
             </td>
             <td class="text-center">

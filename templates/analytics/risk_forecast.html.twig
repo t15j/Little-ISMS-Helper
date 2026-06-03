@@ -109,7 +109,7 @@
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" data-bs-toggle="tab" data-bs-target="#anomalies-tab" type="button" role="tab">
-                <i class="bi bi-exclamation-diamond me-1" aria-hidden="true"></i> {{ 'analytics.forecast.tabs.anomalies'|trans({}, 'analytics') }}
+                <i class="fa-icon me-1 fa-icon--status-warning" aria-hidden="true"></i> {{ 'analytics.forecast.tabs.anomalies'|trans({}, 'analytics') }}
                 {% if anomalies.total_count > 0 %}
                 {% include '_components/_badge.html.twig' with { variant: 'danger', content: anomalies.total_count } %}
                 {% endif %}
@@ -148,7 +148,7 @@
                                 <span class="text-muted">{{ 'analytics.forecast.predictions.trend'|trans({}, 'analytics') }}</span>
                                 {% include '_components/_badge.html.twig' with {
                                     variant: forecast.trend.direction == 'increasing' ? 'danger' : (forecast.trend.direction == 'decreasing' ? 'success' : 'secondary'),
-                                    icon: forecast.trend.direction == 'increasing' ? 'bi-arrow-up' : (forecast.trend.direction == 'decreasing' ? 'bi-arrow-down' : 'bi-arrow-right'),
+                                    icon: forecast.trend.direction == 'increasing' ? 'util-arrow-up' : (forecast.trend.direction == 'decreasing' ? 'util-arrow-down' : 'util-arrow-right'),
                                     content: forecast.trend.direction == 'increasing' ? 'analytics.forecast.predictions.increasing'|trans({}, 'analytics') : (forecast.trend.direction == 'decreasing' ? 'analytics.forecast.predictions.decreasing'|trans({}, 'analytics') : 'analytics.forecast.predictions.stable'|trans({}, 'analytics'))
                                 } %}
                             </div>
@@ -204,13 +204,13 @@
                             <div class="row text-center mb-4">
                                 <div class="col-6">
                                     <div class="bg-danger bg-opacity-10 rounded p-3">
-                                        <h3 class="text-danger mb-0">{{ velocity.last_30_days.new_risks }}</h3>
+                                        <h3 class="mb-0" style="color: var(--danger-strong, var(--danger)); font-weight: 700;">{{ velocity.last_30_days.new_risks }}</h3>
                                         <small class="text-muted">{{ 'analytics.forecast.velocity.new_risks'|trans({}, 'analytics') }}</small>
                                     </div>
                                 </div>
                                 <div class="col-6">
                                     <div class="bg-success bg-opacity-10 rounded p-3">
-                                        <h3 class="text-success mb-0">{{ velocity.last_30_days.closed_risks }}</h3>
+                                        <h3 class="mb-0" style="color: var(--success-strong, var(--success)); font-weight: 700;">{{ velocity.last_30_days.closed_risks }}</h3>
                                         <small class="text-muted">{{ 'analytics.forecast.velocity.closed_risks'|trans({}, 'analytics') }}</small>
                                     </div>
                                 </div>
@@ -306,6 +306,7 @@
                             </div>
                         {% endblock %}
                         {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                             {% for level in ['critical', 'high', 'medium', 'low'] %}
                             {% set actual_val = attribute(appetite.actual, level)|default(0) %}
                             {% set threshold_val = attribute(appetite.appetite, level ~ '_max')|default(10) %}
@@ -315,13 +316,8 @@
                                     {% include '_components/_badge.html.twig' with { variant: level == 'critical' ? 'danger' : (level == 'high' ? 'warning' : (level == 'medium' ? 'info' : 'success')), content: level|title } %}
                                     <span>{{ actual_val }} / {{ threshold_val }} {{ 'analytics.forecast.appetite.threshold'|trans({}, 'analytics') }}</span>
                                 </div>
-                                <div class="progress progress-h-25">
-                                    {% set progress_pct = threshold_val > 0 ? (actual_val / threshold_val) * 100 : 0 %}
-                                    <div class="progress-bar bg-{% if is_compliant %}success{% else %}danger{% endif %}"
-                                         style="width: {{ progress_pct > 100 ? 100 : progress_pct }}%">
-                                        {{ actual_val }}
-                                    </div>
-                                </div>
+                                {% set progress_pct = threshold_val > 0 ? (actual_val / threshold_val) * 100 : 0 %}
+                                {{ _fa_progress.render({ value: progress_pct > 100 ? 100 : progress_pct, tone: is_compliant ? 'success' : 'danger' }) }}
                                 <small class="{% if is_compliant %}text-success{% else %}text-danger{% endif %}">
                                     {% if is_compliant %}
                                         <i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i> {{ 'analytics.forecast.appetite.within_threshold'|trans({}, 'analytics') }}
@@ -339,9 +335,9 @@
             {% if appetite.breaches|length > 0 %}
             {% embed '_components/_card.html.twig' %}
                 {% block card_header %}
-                    <div class="card-header bg-danger text-white">
+                    <div class="card-header">
                         <h5 class="mb-0">
-                            <i class="fa-icon fa-icon--status-warning me-2" aria-hidden="true"></i>
+                            <i class="fa-icon fa-icon--status-warning text-danger me-2" aria-hidden="true"></i>
                             {{ 'analytics.forecast.appetite.recommendations'|trans({}, 'analytics') }}
                         </h5>
                     </div>
@@ -352,7 +348,7 @@
                         <div class="list-group-item">
                             <div class="d-flex w-100 justify-content-between">
                                 <h6 class="mb-1">
-                                    <i class="bi bi-exclamation-diamond text-danger me-2" aria-hidden="true"></i>
+                                    <i class="fa-icon text-danger me-2 fa-icon--status-warning" aria-hidden="true"></i>
                                     {{ breach.level|title }} Risk Threshold Exceeded
                                 </h6>
                                 {% include '_components/_badge.html.twig' with { variant: breach.severity == 'high' ? 'danger' : 'warning', content: breach.severity|title } %}
@@ -376,10 +372,10 @@
                 <div class="col-md-6 mb-4">
                     {% embed '_components/_card.html.twig' with { 'class': 'border-' ~ (anomaly.severity == 'critical' ? 'danger' : (anomaly.severity == 'warning' ? 'warning' : 'info')) } %}
                         {% block card_header %}
-                            <div class="card-header bg-{{ anomaly.severity == 'critical' ? 'danger' : (anomaly.severity == 'warning' ? 'warning' : 'info') }} text-{{ anomaly.severity == 'warning' ? 'dark' : 'white' }}">
+                            <div class="card-header">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <h5 class="mb-0">
-                                        <i class="bi bi-exclamation-diamond me-2" aria-hidden="true"></i>
+                                        <i class="fa-icon me-2 fa-icon--status-warning text-{{ anomaly.severity == 'critical' ? 'danger' : (anomaly.severity == 'warning' ? 'warning' : 'info') }}" aria-hidden="true"></i>
                                         {{ anomaly.type|replace({'_': ' '})|title }}
                                     </h5>
                                     {% include '_components/_badge.html.twig' with { variant: 'light', content: anomaly.severity|title } %}
@@ -427,19 +423,19 @@
                         <div class="col-md-4">
                             <div class="p-3 bg-body-secondary rounded">
                                 <h4 class="mb-1">{{ anomalies.by_type.risk_spikes|default(0) }}</h4>
-                                <small class="text-muted">Risk Spikes</small>
+                                <small class="text-muted">{{ 'analytics.anomaly.risk_spikes'|trans({}, 'analytics') }}</small>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="p-3 bg-body-secondary rounded">
                                 <h4 class="mb-1">{{ anomalies.by_type.incident_patterns|default(0) }}</h4>
-                                <small class="text-muted">Incident Patterns</small>
+                                <small class="text-muted">{{ 'analytics.anomaly.incident_patterns'|trans({}, 'analytics') }}</small>
                             </div>
                         </div>
                         <div class="col-md-4">
                             <div class="p-3 bg-body-secondary rounded">
                                 <h4 class="mb-1">{{ anomalies.by_type.control_drift|default(0) }}</h4>
-                                <small class="text-muted">Control Drift</small>
+                                <small class="text-muted">{{ 'analytics.anomaly.control_drift'|trans({}, 'analytics') }}</small>
                             </div>
                         </div>
                     </div>
@@ -453,9 +449,22 @@
 
 {% block javascripts %}
     {{ parent() }}
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
         document.addEventListener('turbo:load', function() {
+            // Resolve Aurora design-tokens to color strings for Chart.js
+            // (Chart.js doesn't resolve CSS custom properties).
+            const _tokens = getComputedStyle(document.documentElement);
+            const T = (name) => _tokens.getPropertyValue(name).trim();
+            const COLORS = {
+                primary:      T('--primary'),
+                primaryTint:  T('--primary-tint'),
+                warning:      T('--warning'),
+                warningGlow:  T('--warning-glow'),
+                success:      T('--success'),
+                danger:       T('--danger'),
+                surface3:     T('--surface-3'),
+            };
+
             // Forecast Chart
             const forecastCtx = document.getElementById('forecastChart');
             if (forecastCtx) {
@@ -470,15 +479,15 @@
                         datasets: [{
                             label: '{{ 'analytics.forecast.chart.historical'|trans({}, 'analytics') }}',
                             data: [...historical.map(h => h.total), ...Array(predicted.length).fill(null)],
-                            borderColor: 'var(--primary)',
-                            backgroundColor: 'var(--primary-tint)',
+                            borderColor: COLORS.primary,
+                            backgroundColor: COLORS.primaryTint,
                             fill: true
                         }, {
                             label: '{{ 'analytics.forecast.chart.predicted'|trans({}, 'analytics') }}',
                             data: [...Array(historical.length - 1).fill(null), historical.length > 0 ? historical[historical.length - 1].total : 0, ...predicted.map(p => p.total)],
-                            borderColor: 'var(--warning)',
+                            borderColor: COLORS.warning,
                             borderDash: [5, 5],
-                            backgroundColor: 'var(--warning-glow)',
+                            backgroundColor: COLORS.warningGlow,
                             fill: true
                         }]
                     },
@@ -514,7 +523,7 @@
                         datasets: [{
                             label: '{{ 'analytics.forecast.velocity.net_change'|trans({}, 'analytics') }}',
                             data: changes,
-                            backgroundColor: changes.map(c => c > 0 ? 'var(--danger)' : 'var(--success)')
+                            backgroundColor: changes.map(c => c > 0 ? COLORS.danger : COLORS.success)
                         }]
                     },
                     options: {
@@ -539,8 +548,8 @@
                         datasets: [{
                             data: [score, 100 - score],
                             backgroundColor: [
-                                score >= 80 ? 'var(--success)' : (score >= 50 ? 'var(--warning)' : 'var(--danger)'),
-                                'var(--surface-3)'
+                                score >= 80 ? COLORS.success : (score >= 50 ? COLORS.warning : COLORS.danger),
+                                COLORS.surface3
                             ],
                             circumference: 180,
                             rotation: 270

@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% trans_default_domain 'privacy' %}
 {% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
@@ -8,20 +9,27 @@
 <div class="container-fluid mt-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.privacy'|trans({}, 'nav') },
+            { label: 'nav.privacy'|trans({}, 'nav'), url: path('app_processing_activity_index') },
             { label: 'nav.dpia'|trans({}, 'nav') }
         ]
     } %}
 
     {{ _fa_page_header.render({
-        badge: { icon: 'clipboard-check', label: 'DPIA / DSFA' },
+        badge: { icon: 'nav-clipboard-check', label: 'DPIA / DSFA' },
         title: 'dpia.index.page_title'|trans({}, 'privacy'),
         subtitle: 'dpia.index.page_subtitle'|trans({}, 'privacy'),
         actions: [
-            { label: 'dpia.index.button_dashboard'|trans({}, 'privacy'), variant: 'ghost', icon: 'speedometer2', href: path('app_dpia_dashboard') },
-            { label: 'dpia.index.button_new_dpia'|trans({}, 'privacy'), variant: 'primary', icon: 'plus-lg', href: path('app_dpia_new') }
+            { label: 'dpia.index.button_dashboard'|trans({}, 'privacy'), variant: 'ghost', icon: 'nav-dashboard', href: path('app_dpia_dashboard') },
+            { label: 'dpia.index.button_new_dpia'|trans({}, 'privacy'), variant: 'primary', icon: 'plus', href: path('app_dpia_new') }
         ]
     }) }}
+{% set _global_hints = alva_hints('dpia_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 
     <main class="fa-aurora-surface">
 
@@ -83,11 +91,10 @@
         <div class="col-md-3">
             {% embed '_components/_card.html.twig' %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="text-muted fw-semibold">{{ 'dpia.index.completeness'|trans({}, 'privacy') }}</div>
                     <div class="fs-2 fw-bold">{{ statistics.completeness_rate }}%</div>
-                    <div class="progress progress-h-10 mt-2">
-                        <div class="progress-bar bg-success" style="width: {{ statistics.completeness_rate }}%"></div>
-                    </div>
+                    {{ _fa_progress.render({ value: statistics.completeness_rate, tone: 'success', class: 'mt-2' }) }}
                 {% endblock %}
             {% endembed %}
         </div>
@@ -103,7 +110,7 @@
         {% block filters %}
             <div class="col-md-4">
                 <label for="filter-status" class="form-label">{{ 'dpia.index.filter_dpias'|trans({}, 'privacy') }}</label>
-                <select class="form-select" id="filter-status" name="filter">
+                <select class="form-select fa-cyber-input__field" id="filter-status" name="filter">
                     <option value="">{{ 'dpia.index.all'|trans({}, 'privacy') }} ({{ statistics.total }})</option>
                     <option value="draft" {{ current_filter == 'draft' ? 'selected' : '' }}>{{ 'dpia.index.draft'|trans({}, 'privacy') }} ({{ statistics.draft }})</option>
                     <option value="in_review" {{ current_filter == 'in_review' ? 'selected' : '' }}>{{ 'dpia.index.in_review'|trans({}, 'privacy') }} ({{ statistics.in_review }})</option>
@@ -119,6 +126,7 @@
 
     {# DPIA Table #}
     {% embed '_components/_card.html.twig' with {noPadding: true} %}
+        {% block card_attrs %}data-controller="bulk-actions" data-bulk-actions-endpoint-value="/{{ app.request.locale }}/dpia"{% endblock %}
         {% block card_header %}
             <div class="card-header"><h2 class="h5 mb-0"><i class="fa-icon fa-icon--evidence" aria-hidden="true"></i> {{ 'dpia.index.dpias_list'|trans({}, 'privacy') }} ({{ dpias|length }})</h2></div>
         {% endblock %}
@@ -130,6 +138,13 @@
                 } %}
                     {% block table_head %}
                         <tr>
+                            <th scope="col" class="bulk-select-column">
+                                <input type="checkbox"
+                                       class="form-check-input"
+                                       data-action="bulk-actions#selectAll"
+                                       data-bulk-actions-target="selectAllCheckbox"
+                                       aria-label="{{ 'bulk_actions.select_all'|trans({}, 'messages') }}">
+                            </th>
                             <th scope="col">{{ 'dpia.index.reference'|trans({}, 'privacy') }}</th>
                             <th scope="col">{{ 'dpia.index.title_col'|trans({}, 'privacy') }}</th>
                             <th scope="col">{{ 'dpia.index.status'|trans({}, 'privacy') }}</th>
@@ -141,8 +156,17 @@
                         </tr>
                     {% endblock %}
                     {% block table_body %}
+                        {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                         {% for dpia in dpias %}
                             <tr>
+                                <td class="bulk-select-column">
+                                    <input type="checkbox"
+                                           class="form-check-input"
+                                           data-bulk-actions-target="item"
+                                           data-action="bulk-actions#selectItem"
+                                           value="{{ dpia.id }}"
+                                           aria-label="{{ 'common.select'|trans({}, 'messages') }} {{ dpia.referenceNumber }}">
+                                </td>
                                 <td>
                                     <a href="{{ path('app_dpia_show', {id: dpia.id}) }}">
                                         {{ dpia.referenceNumber }}
@@ -186,14 +210,8 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <div class="progress progress-h-20">
-                                        {% set percentage = dpia.completenessPercentage %}
-                                        {% set bar_class = percentage == 100 ? 'bg-success' : 'bg-warning' %}
-                                        <div class="progress-bar {{ bar_class }}"
-                                             style="width: {{ percentage }}%">
-                                            {{ percentage }}%
-                                        </div>
-                                    </div>
+                                    {% set percentage = dpia.completenessPercentage %}
+                                    {{ _fa_progress.render({ value: percentage, tone: percentage == 100 ? 'success' : 'warning', showText: true }) }}
                                 </td>
                                 <td>
                                     {% if dpia.dpoConsultationDate %}
@@ -227,12 +245,17 @@
                         {% endfor %}
                     {% endblock %}
                 {% endembed %}
+
+                {# Bulk Action Bar #}
+                {% include '_components/_bulk_action_bar.html.twig' with {
+                    actions: ['export', 'delete']
+                } %}
             {% else %}
                 {{ _fa_empty_state.render({
                     mood: 'sleeping',
                     title: 'dpia.index.no_dpias_found'|trans({}, 'privacy'),
                     actions: [
-                        { label: 'dpia.index.create_first_dpia'|trans({}, 'privacy'), variant: 'primary', icon: 'plus-circle', href: path('app_dpia_new') }
+                        { label: 'dpia.index.create_first_dpia'|trans({}, 'privacy'), variant: 'primary', icon: 'plus', href: path('app_dpia_new') }
                     ]
                 }) }}
             {% endif %}

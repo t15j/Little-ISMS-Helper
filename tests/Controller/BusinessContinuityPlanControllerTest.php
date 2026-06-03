@@ -13,6 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -24,6 +25,7 @@ use PHPUnit\Framework\Attributes\Test;
  * - Role-based access control
  * - Multi-tenant isolation
  */
+#[AllowMockObjectsWithoutExpectations]
 class BusinessContinuityPlanControllerTest extends WebTestCase
 {
     private KernelBrowser $client;
@@ -37,7 +39,22 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
     protected function setUp(): void
     {
         $this->client = static::createClient();
+        $this->client->disableReboot();
+
         $container = static::getContainer();
+
+        $moduleService = $this->createMock(\App\Service\ModuleConfigurationService::class);
+        $moduleService->method('isModuleActive')->willReturnCallback(
+            fn(string $key) => in_array($key, [
+                'core', 'authentication', 'assets', 'risks', 'controls',
+                'incidents', 'audits', 'training', 'reviews', 'bcm',
+                'compliance', 'audit_logging', 'privacy', 'nis2_dora',
+                'ai_governance', 'cloud_security', 'vulnerability_intel',
+                'marisk', 'tisax', 'quantitative_risk', 'notifications', 'eu_authority_reporting', 'tisax_isa', 'ai_act', 'cra_sbom', 'procedures',
+            ], true)
+        );
+        $container->set(\App\Service\ModuleConfigurationService::class, $moduleService);
+
         $this->entityManager = $container->get(EntityManagerInterface::class);
 
         $this->createTestData();
@@ -184,6 +201,15 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
         $this->testPlan->setActivationCriteria('System downtime exceeds 30 minutes');
         $this->testPlan->setRecoveryProcedures('1. Notify team\n2. Assess damage\n3. Execute recovery');
         $this->testPlan->setNextReviewDate(new \DateTime('+1 year'));
+        // Junior-ISB-Audit-2026-05-22 C2-06: validateTeamSlot requires non-empty
+        // responseTeamMembers OR linked crisisTeams for plans in active/published.
+        $this->testPlan->setResponseTeamMembers([[
+            'role' => 'incident_commander',
+            'userId' => null,
+            'name' => 'Test Incident Commander',
+            'contact' => '+49 123 456789',
+            'responsibilities' => 'Overall responsibility',
+        ]]);
         $this->entityManager->persist($this->testPlan);
 
         $this->entityManager->flush();
@@ -201,7 +227,7 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
 
     private function generateCsrfToken(string $tokenId): string
     {
-        $this->client->request('GET', '/en/business-continuity-plan/');
+        $this->client->request('GET', '/en/business-continuity-plan');
 
         $session = $this->client->getRequest()->getSession();
         $tokenGenerator = new \Symfony\Component\Security\Csrf\TokenGenerator\UriSafeTokenGenerator();
@@ -216,7 +242,7 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
     #[Test]
     public function testIndexRequiresAuthentication(): void
     {
-        $this->client->request('GET', '/en/business-continuity-plan/');
+        $this->client->request('GET', '/en/business-continuity-plan');
 
         $this->assertResponseRedirects();
     }
@@ -226,7 +252,7 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $this->client->request('GET', '/en/business-continuity-plan/');
+        $this->client->request('GET', '/en/business-continuity-plan');
 
         $this->assertResponseIsSuccessful();
         $this->assertSelectorExists('html');
@@ -250,7 +276,7 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
 
         $this->loginAsUser($this->testUser);
 
-        $this->client->request('GET', '/en/business-continuity-plan/');
+        $this->client->request('GET', '/en/business-continuity-plan');
 
         $this->assertResponseIsSuccessful();
 
@@ -277,7 +303,7 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
 
         $this->loginAsUser($this->testUser);
 
-        $this->client->request('GET', '/en/business-continuity-plan/');
+        $this->client->request('GET', '/en/business-continuity-plan');
 
         $this->assertResponseIsSuccessful();
 
@@ -350,9 +376,14 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
             'business_continuity_plan[businessProcess]' => $this->testProcess->getId(),
             'business_continuity_plan[planOwner]' => 'New Owner',
             'business_continuity_plan[planOwnerUser]' => (string) $this->testUser->getId(),
-            'business_continuity_plan[status]' => 'draft',
+            // Status is intentionally NOT submitted: BusinessContinuityPlanType marks
+            // `status` as `disabled => true` (Lifecycle-bypass fix, Sprint Y.5). Status
+            // changes flow through LifecycleService::transition() only.
             'business_continuity_plan[activationCriteria]' => 'When systems fail',
             'business_continuity_plan[recoveryProcedures]' => 'Step 1: Do something',
+            'business_continuity_plan[rto]' => '4',
+            'business_continuity_plan[rpo]' => '1',
+            'business_continuity_plan[version]' => '1.0',
         ]);
 
         $this->client->submit($form);
@@ -415,6 +446,9 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
             'business_continuity_plan[name]' => 'Updated Test BC Plan',
             'business_continuity_plan[description]' => 'Updated description',
             'business_continuity_plan[planOwnerUser]' => (string) $this->testUser->getId(),
+            'business_continuity_plan[rto]' => '4',
+            'business_continuity_plan[rpo]' => '1',
+            'business_continuity_plan[version]' => '1.0',
         ]);
 
         $this->client->submit($form);
@@ -474,7 +508,7 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
             '_token' => $token,
         ]);
 
-        $this->assertResponseRedirects('/en/business-continuity-plan/');
+        $this->assertResponseRedirects('/en/business-continuity-plan');
     }
 
     #[Test]
@@ -487,7 +521,7 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
         ]);
 
         // Should redirect but not delete
-        $this->assertResponseRedirects('/en/business-continuity-plan/');
+        $this->assertResponseRedirects('/en/business-continuity-plan');
 
         // Verify plan was NOT deleted
         $planRepository = $this->entityManager->getRepository(BusinessContinuityPlan::class);
@@ -536,7 +570,7 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
 
         $this->loginAsUser($this->testUser);
 
-        $this->client->request('GET', '/en/business-continuity-plan/');
+        $this->client->request('GET', '/en/business-continuity-plan');
 
         $this->assertResponseIsSuccessful();
         // User should only see plans from their own tenant
@@ -602,3 +636,4 @@ class BusinessContinuityPlanControllerTest extends WebTestCase
         $this->assertResponseIsSuccessful();
     }
 }
+

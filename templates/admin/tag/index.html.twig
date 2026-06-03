@@ -1,87 +1,82 @@
-{% extends 'base.html.twig' %}
+{% extends 'admin/layout.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_empty_state.html.twig' as _fa_empty_state %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+{% import '_components/_status_pill.html.twig' as pill %}
 
-{% block title %}{{ 'tags.admin.page.title'|trans({}, 'tags') }}{% endblock %}
+{% block admin_title %}{{ 'tags.admin.page.title'|trans({}, 'tags') }}{% endblock %}
 
-{% block body %}
-<div class="container-fluid">
-    {% include '_components/_breadcrumb.html.twig' with {
-        breadcrumbs: [
-            { label: 'admin.title'|trans({}, 'admin'), url: path('admin_dashboard') },
-            { label: 'admin.nav.tags'|trans({}, 'admin') }
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item active" aria-current="page">{{ 'admin.nav.tags'|trans({}, 'admin') }}</li>
+{% endblock %}
+
+{% block admin_content %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'ui-tag', label: 'Tags' },
+        title: 'tags.admin.page.title'|trans({}, 'tags'),
+        subtitle: 'tags.admin.page.lead'|trans({}, 'tags'),
+        actions: [
+            { label: 'tags.admin.action.new'|trans({}, 'tags'), variant: 'primary', icon: 'plus', href: path('admin_tag_new') }
         ]
-    } %}
-
-    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
-        <div>
-            <h1 class="h3">{{ 'tags.admin.page.title'|trans({}, 'tags') }}</h1>
-            <p class="text-muted mb-0">{{ 'tags.admin.page.lead'|trans({}, 'tags') }}</p>
-        </div>
-        <a href="{{ path('admin_tag_new') }}" class="fa-cyber-btn fa-cyber-btn--primary">
-            <i class="fa-icon fa-icon--ui-plus" aria-hidden="true"></i>
-            {{ 'tags.admin.action.new'|trans({}, 'tags') }}
-        </a>
-    </div>
+    }) }}
 
     {% if tags|length == 0 %}
-        {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info' } } %}
-            {% block alert_body %}{{ 'tags.admin.empty'|trans({}, 'tags') }}{% endblock %}
-        {% endembed %}
+        {{ _fa_empty_state.render({
+            mood: 'thinking',
+            title: 'tags.admin.empty'|trans({}, 'tags')
+        }) }}
     {% else %}
-        {% embed '_components/_card.html.twig' with {'noPadding': true, 'tags': tags} %}
-            {% block card_body %}
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <caption class="visually-hidden">{{ 'tags.admin.table.caption'|trans({}, 'tags') }}</caption>
-                        <thead>
-                            <tr>
-                                <th scope="col">{{ 'tags.form.name'|trans({}, 'tags') }}</th>
-                                <th scope="col">{{ 'tags.form.type'|trans({}, 'tags') }}</th>
-                                <th scope="col">{{ 'tags.form.framework_code'|trans({}, 'tags') }}</th>
-                                <th scope="col">{{ 'tags.admin.scope'|trans({}, 'tags') }}</th>
-                                <th scope="col" class="text-end">{{ 'tags.admin.actions'|trans({}, 'tags') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for tag in tags %}
-                                <tr>
-                                    <td>
-                                        {% set _tpill = tag.color in ['info'] ? 'primary' : (tag.color in ['secondary','light','dark'] ? 'neutral' : tag.color) %}
-                                        <span class="badge bg-{{ tag.color }} fa-status-pill fa-status-pill--{{ _tpill }}">{{ tag.name }}</span>
-                                        {% if tag.description %}
-                                            <br><small class="text-muted">{{ tag.description }}</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>{{ ('tags.type.' ~ tag.type)|trans({}, 'tags') }}</td>
-                                    <td>{{ tag.frameworkCode ?: '—' }}</td>
-                                    <td>
-                                        {% if tag.tenant %}
-                                            <small class="text-muted">{{ tag.tenant.name }}</small>
-                                        {% else %}
-                                            <span class="badge bg-secondary fa-status-pill fa-status-pill--neutral">{{ 'tags.admin.scope_global'|trans({}, 'tags') }}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end">
-                                        <a href="{{ path('admin_tag_edit', {id: tag.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm"
-                                           aria-label="{{ 'tags.admin.aria.edit'|trans({'%name%': tag.name}, 'tags') }}">
-                                            <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
-                                        </a>
-                                        <form method="post" action="{{ path('admin_tag_delete', {id: tag.id}) }}" class="d-inline"
-                                              onsubmit="return confirm('{{ 'tags.admin.confirm.delete'|trans({}, 'tags')|e('js') }}');">
-                                            <input type="hidden" name="_token" value="{{ csrf_token('tag_delete_' ~ tag.id) }}">
-                                            <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm"
-                                                    aria-label="{{ 'tags.admin.aria.delete'|trans({'%name%': tag.name}, 'tags') }}">
-                                                <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i>
-                                            </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+        {# V3 W3-UX: migrated to fa-table Aurora pattern #}
+        {% embed '_components/_fa_table.html.twig' with { hover: true, sortable: true } %}
+            {% block table_head %}
+                <tr>
+                    <th class="fa-table__th fa-table__th--sortable" data-sort-key="name" tabindex="0" role="columnheader" aria-sort="none" data-action="click->fa-table-sort#sort keydown.enter->fa-table-sort#sort keydown.space->fa-table-sort#sort">{{ 'tags.form.name'|trans({}, 'tags') }}</th>
+                    <th class="fa-table__th">{{ 'tags.form.type'|trans({}, 'tags') }}</th>
+                    <th class="fa-table__th">{{ 'tags.form.framework_code'|trans({}, 'tags') }}</th>
+                    <th class="fa-table__th">{{ 'tags.admin.scope'|trans({}, 'tags') }}</th>
+                    <th class="fa-table__th fa-table__th--actions">{{ 'tags.admin.actions'|trans({}, 'tags') }}</th>
+                </tr>
+            {% endblock %}
+            {% block table_body %}
+                {% import '_components/_status_pill.html.twig' as pill %}
+                {% for tag in tags %}
+                    <tr class="fa-table__row">
+                        <td class="fa-table__cell" data-sort-value="{{ tag.name }}">
+                            {% set _ttone = tag.color in ['info'] ? 'primary' : (tag.color in ['secondary','light','dark'] ? 'neutral' : tag.color) %}
+                            {{ pill.render(tag.name, _ttone, {size: 'sm'}) }}
+                            {% if tag.description %}
+                                <br><small class="text-muted">{{ tag.description }}</small>
+                            {% endif %}
+                        </td>
+                        <td class="fa-table__cell">{{ ('tags.type.' ~ tag.type)|trans({}, 'tags') }}</td>
+                        <td class="fa-table__cell">{{ tag.frameworkCode ?: '—' }}</td>
+                        <td class="fa-table__cell">
+                            {% if tag.tenant %}
+                                <small class="text-muted">{{ tag.tenant.name }}</small>
+                            {% else %}
+                                <span class="fa-status-pill fa-status-pill--neutral">{{ 'tags.admin.scope_global'|trans({}, 'tags') }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="fa-table__cell fa-table__cell--actions">
+                            <a href="{{ path('admin_tag_edit', {id: tag.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm"
+                               aria-label="{{ 'tags.admin.aria.edit'|trans({'%name%': tag.name}, 'tags') }}">
+                                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
+                            </a>
+                            <form method="post" action="{{ path('admin_tag_delete', {id: tag.id}) }}" class="d-inline"
+                                  data-controller="ui-actions"
+                                  data-action="submit->ui-actions#confirm"
+                                  data-ui-actions-message-param="{{ 'tags.admin.confirm.delete'|trans({}, 'tags') }}"
+                                  data-ui-actions-tone-param="danger">
+                                <input type="hidden" name="_token" value="{{ csrf_token('tag_delete_' ~ tag.id) }}">
+                                <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm"
+                                        aria-label="{{ 'tags.admin.aria.delete'|trans({'%name%': tag.name}, 'tags') }}">
+                                    <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
             {% endblock %}
         {% endembed %}
     {% endif %}
-</div>
 {% endblock %}

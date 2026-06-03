@@ -9,6 +9,7 @@ use App\Entity\User;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\Vote;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
+use Symfony\Component\Security\Core\Role\RoleHierarchyInterface;
 
 /**
  * Role Voter
@@ -33,8 +34,13 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  * - Prevents privilege escalation by protecting core system roles
  * - Ensures role integrity for security-critical operations
  */
-class RoleVoter extends Voter
+final class RoleVoter extends Voter
 {
+    public function __construct(
+        private readonly RoleHierarchyInterface $roleHierarchy,
+    ) {
+    }
+
     public const string VIEW = 'role.view';
     public const string CREATE = 'role.create';
     public const string EDIT = 'role.edit';
@@ -76,7 +82,8 @@ class RoleVoter extends Voter
         }
 
         // Admins can do everything
-        if (in_array('ROLE_ADMIN', $user->getRoles())) {
+        $reachableRoles = $this->roleHierarchy->getReachableRoleNames($user->getRoles());
+        if (in_array('ROLE_ADMIN', $reachableRoles, true)) {
             return true;
         }
 

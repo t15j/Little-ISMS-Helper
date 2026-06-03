@@ -1,6 +1,6 @@
 {% extends 'admin/layout.html.twig' %}
-{% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% trans_default_domain 'admin'%}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% block admin_title %}{{ 'admin.settings.security.title'|trans({}, 'admin') }}{% endblock %}
 
@@ -10,37 +10,43 @@
 {% endblock %}
 
 {% block admin_content %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-shield-lock', label: 'Security' },
+        title: 'admin.settings.security.title'|trans({}, 'admin'),
+    }) }}
+
     <div class="row">
         <div class="col-lg-8">
-            {% embed '_components/_card.html.twig' %}
-                {% block card_header %}
-                    <div class="card-header">
-                        <h2 class="card-title mb-0">
-                            <i class="fa-icon fa-icon--mfa text-danger" aria-hidden="true"></i>
-                            {{ 'admin.settings.security.title'|trans({}, 'admin') }}
-                        </h2>
-                    </div>
-                {% endblock %}
-                {% block card_body %}
+            <section class="fa-section">
+                <div class="fa-section__header">
+                    <h2 class="fa-section__title">
+                        <i class="fa-icon fa-icon--mfa text-danger" aria-hidden="true"></i>
+                        {{ 'admin.settings.security.title'|trans({}, 'admin') }}
+                    </h2>
+                </div>
+                <div class="fa-section__body">
                     {{ form_start(form) }}
+                        {# H-03: strict_whitelist — security settings must not
+                           leak any new auth field without explicit review. #}
                         {% include '_components/_auto_form.html.twig' with {
-                            'form': form,
-                            'sections': {
+                            form: form,
+                            strict_whitelist: true,
+                            sections: {
                                 'session_settings': {
                                     'label': 'admin.settings.security.session_settings'|trans({}, 'admin'),
-                                    'fields': ['session_lifetime', 'remember_me_lifetime']
+                                    fields: ['session_lifetime', 'remember_me_lifetime']
                                 },
                                 'password_policy': {
                                     'label': 'admin.settings.security.password_settings'|trans({}, 'admin'),
-                                    'fields': ['password_min_length']
+                                    fields: ['password_min_length']
                                 },
                                 '2fa_settings': {
                                     'label': 'admin.settings.security.2fa_settings'|trans({}, 'admin'),
-                                    'fields': ['require_2fa']
+                                    fields: ['require_2fa']
                                 },
                                 'login_protection': {
                                     'label': 'admin.settings.security.auth_settings'|trans({}, 'admin'),
-                                    'fields': ['max_login_attempts', 'lockout_duration']
+                                    fields: ['max_login_attempts', 'lockout_duration']
                                 }
                             },
                             'col_widths': {
@@ -63,8 +69,8 @@
                             </button>
                         </div>
                     {{ form_end(form) }}
-                {% endblock %}
-            {% endembed %}
+                </div>
+            </section>
         </div>
 
         <div class="col-lg-4">

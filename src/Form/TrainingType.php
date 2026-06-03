@@ -5,34 +5,57 @@ declare(strict_types=1);
 namespace App\Form;
 
 use App\Entity\ComplianceFramework;
-use App\Entity\Person;
-use App\Entity\User;
 use App\Entity\Training;
 use App\Entity\Control;
 use App\Entity\ComplianceRequirement;
+use App\Entity\User;
+use App\Entity\Person;
+use App\Form\Trait\OwnerPickerFormTrait;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
+use App\Form\SectionMapInterface;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateType;
+use Symfony\Component\Form\Extension\Core\Type\FileType;
 use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
+use Symfony\Component\Validator\Constraints\All;
 use Symfony\Component\Validator\Constraints\Callback;
+use Symfony\Component\Validator\Constraints\File;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\Constraints\Range;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class TrainingType extends AbstractType
+final class TrainingType extends AbstractType implements SectionMapInterface
 {
+    use OwnerPickerFormTrait;
+
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview'     => ['title', 'description', 'trainingType', 'deliveryMethod'],
+            'schedule'     => ['scheduledDate', 'durationMinutes', 'completionDate', 'recurrenceMonths'],
+            // Junior-ISB-Audit-2026-05-22 9.7: attendeeCount no longer in form
+            // (derived from participantUsers / TrainingParticipation Collection).
+            'audience'     => ['targetAudience', 'participantUsers', 'participants'],
+            'team'         => ['trainerUser', 'trainerPerson', 'trainerDeputyPersons', 'trainer'],
+            'verification' => ['status', 'mandatory', 'coveredControls', 'complianceRequirements'],
+            // Junior-ISB-Audit-2026-05-22 9.5: materialFiles (File-Upload) replaces
+            // the verbose Freitext `materials` textarea on the canonical data path.
+            // Legacy `materials` field is kept read-only for migration display.
+            'resources'    => ['materialFiles', 'materials', 'feedback'],
+        ];
+    }
+
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
         $builder
             ->add('title', TextType::class, [
                 'label' => 'training.field.title',
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'training.placeholder.title',
                 ],
                 'constraints' => [
@@ -43,7 +66,6 @@ class TrainingType extends AbstractType
                 'label' => 'training.field.description',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                     'placeholder' => 'training.placeholder.description',
                 ],
@@ -60,7 +82,6 @@ class TrainingType extends AbstractType
                     'training.types.cyber_security' => 'cyber_security',
                     'training.types.other' => 'other',
                 ],
-                'attr' => ['class' => 'form-select'],
                 'constraints' => [
                     new NotBlank(),
                 ],
@@ -75,13 +96,11 @@ class TrainingType extends AbstractType
                     'training.delivery_methods.hybrid' => 'hybrid',
                     'training.delivery_methods.workshop' => 'workshop',
                 ],
-                'attr' => ['class' => 'form-select'],
                 'choice_translation_domain' => 'training',
             ])
             ->add('scheduledDate', DateType::class, [
                 'label' => 'training.field.scheduled_date',
                 'widget' => 'single_text',
-                'attr' => ['class' => 'form-control'],
                 'constraints' => [
                     new NotBlank(message: 'training.validation.date_required'),
                 ],
@@ -90,7 +109,6 @@ class TrainingType extends AbstractType
                 'label' => 'training.field.duration',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'min' => 15,
                     'placeholder' => 'training.placeholder.duration',
                 ],
@@ -99,74 +117,53 @@ class TrainingType extends AbstractType
                 ],
                 'help' => 'training.help.duration',
             ])
-            ->add('trainerUser', EntityType::class, [
-                'label' => 'training.field.trainer',
-                'class' => User::class,
-                'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
-                'required' => false,
-                'placeholder' => 'training.placeholder.trainer_user',
-                'attr' => ['class' => 'form-select'],
-                'help' => 'training.help.trainer_user',
-            ])
-            ->add('trainerPerson', EntityType::class, [
-                'label' => 'training.field.trainer_person',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'placeholder' => 'training.placeholder.trainer_person',
-                'required' => false,
-                'attr' => ['class' => 'form-select'],
-                'help' => 'training.help.trainer_person',
-            ])
-            ->add('trainerDeputyPersons', EntityType::class, [
-                'label' => 'training.field.trainer_deputy_persons',
-                'class' => Person::class,
-                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
-                'required' => false,
-                'multiple' => true,
-                'expanded' => false,
-                'attr' => [
-                    'class' => 'form-select',
-                    'data-controller' => 'tom-select',
-                ],
-                'help' => 'training.help.trainer_deputy_persons',
-            ])
-            ->add('trainer', TextType::class, [
-                'label' => 'training.field.trainer_legacy',
-                'required' => false,
-                'attr' => [
-                    'class' => 'form-control',
-                    'placeholder' => 'training.placeholder.trainer',
-                ],
-            ])
             ->add('targetAudience', TextType::class, [
                 'label' => 'training.field.target_audience',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'placeholder' => 'training.placeholder.target_audience',
                 ],
                 'help' => 'training.help.target_audience',
             ])
+            // P-15 DataReuse: structured participantUsers Multi-Select.
+            // Persisting flows through TrainingController which creates
+            // TrainingParticipation rows on save (status=pending,
+            // assignmentSource=manual:edit_form). Legacy `participants`
+            // textarea kept read-only for migration data.
+            ->add('participantUsers', EntityType::class, [
+                'label' => 'training.field.participant_users',
+                'class' => User::class,
+                'choice_label' => fn(User $u): string => $u->getFullName() . ' (' . $u->getEmail() . ')',
+                'multiple' => true,
+                'expanded' => false,
+                'required' => false,
+                'mapped' => true,
+                'by_reference' => false,
+                'attr' => [
+                    'data-controller' => 'tom-select',
+                ],
+                'help' => 'training.help.participant_users',
+            ])
             ->add('participants', TextareaType::class, [
-                'label' => 'training.field.participants',
+                'label' => 'training.field.participants_legacy',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 3,
                     'placeholder' => 'training.placeholder.participants',
                 ],
-                'help' => 'training.help.participants',
+                'help' => 'training.help.participants_legacy',
             ])
-            ->add('attendeeCount', IntegerType::class, [
-                'label' => 'training.field.attendee_count',
-                'required' => false,
-                'attr' => [
-                    'class' => 'form-control',
-                    'min' => 0,
-                ],
-            ])
+            // Junior-ISB-Audit-2026-05-22 9.7: attendeeCount derived from participants Collection.
+            // The integer form field has been removed — the count is now computed
+            // from {@see Training::getParticipations()} (count of TrainingParticipation
+            // rows). The legacy stored column survives in the entity for backfill
+            // backwards compatibility but is no longer user-editable.
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix, Sprint Y.5) ──
+            // Owned by `training_lifecycle`. Transitions via
+            // LifecycleService::transition() only.
             ->add('status', ChoiceType::class, [
                 'label' => 'training.field.status',
+                'help' => 'training.help.status_readonly',
                 'choices' => [
                     'training.statuses.planned' => 'planned',
                     'training.statuses.scheduled' => 'scheduled',
@@ -174,7 +171,11 @@ class TrainingType extends AbstractType
                     'training.statuses.completed' => 'completed',
                     'training.statuses.cancelled' => 'cancelled',
                 ],
-                'attr' => ['class' => 'form-select'],
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
                 'choice_translation_domain' => 'training',
             ])
             ->add('mandatory', ChoiceType::class, [
@@ -193,7 +194,6 @@ class TrainingType extends AbstractType
                 'multiple' => true,
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'size' => 5,
                     'data-controller' => 'tom-select',
                 ],
@@ -210,25 +210,72 @@ class TrainingType extends AbstractType
                 'multiple' => true,
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'training.help.compliance_requirements',
             ])
-            ->add('materials', TextareaType::class, [
-                'label' => 'training.field.materials',
+            // Junior-ISB-Audit-2026-05-22 9.5: File-Upload statt Freitext-Pfade.
+            // Multi-file upload widget. Files are validated via
+            // FileUploadSecurityService inside the controller, moved to
+            // public/uploads/training-materials/ and tracked as JSON metadata
+            // in Training.materialFiles. The 'mapped' => false flag keeps the
+            // form clean of Doctrine concerns — the controller is responsible
+            // for invoking ->addMaterialFile() after a successful upload.
+            ->add('materialFiles', FileType::class, [
+                'label' => 'training.field.material_files',
                 'required' => false,
+                'mapped' => false,
+                'multiple' => true,
+                'help' => 'training.help.material_files',
                 'attr' => [
-                    'class' => 'form-control',
-                    'rows' => 3,
+                    'accept' => '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.zip,.7z',
+                    'multiple' => 'multiple',
                 ],
-                'help' => 'training.help.materials',
+                'constraints' => [
+                    new All(constraints: [
+                        new File(
+                            maxSize: '10M',
+                            mimeTypes: [
+                                'application/pdf',
+                                'application/msword',
+                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                'application/vnd.ms-excel',
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'application/vnd.ms-powerpoint',
+                                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                                'text/plain',
+                                'text/csv',
+                                'image/jpeg',
+                                'image/png',
+                                'image/gif',
+                                'image/webp',
+                                'application/zip',
+                                'application/x-zip-compressed',
+                                'application/x-7z-compressed',
+                            ],
+                            mimeTypesMessage: 'file_upload.validation.mime_type_invalid',
+                            maxSizeMessage: 'file_upload.validation.max_size_exceeded',
+                        ),
+                    ]),
+                ],
+            ])
+            // Junior-ISB-Audit-2026-05-22 9.5: legacy free-text retained as
+            // read-only migration display. New content MUST land in
+            // `materialFiles` above.
+            ->add('materials', TextareaType::class, [
+                'label' => 'training.field.materials_legacy',
+                'required' => false,
+                'disabled' => true,
+                'attr' => [
+                    'rows' => 3,
+                    'readonly' => true,
+                ],
+                'help' => 'training.help.materials_legacy',
             ])
             ->add('feedback', TextareaType::class, [
                 'label' => 'training.field.feedback',
                 'required' => false,
                 'attr' => [
-                    'class' => 'form-control',
                     'rows' => 4,
                 ],
                 'help' => 'training.help.feedback',
@@ -237,8 +284,44 @@ class TrainingType extends AbstractType
                 'label' => 'training.field.completion_date',
                 'widget' => 'single_text',
                 'required' => false,
-                'attr' => ['class' => 'form-control'],
+            ])
+            // Junior-ISB-Audit C3-02 (S14, 2026-05-23) — Awareness recurrence
+            // (ISO 27001 A.6.3). NULL = one-off, integer >=1 = months cadence
+            // picked up by `app:training-send-reminders` cron.
+            ->add('recurrenceMonths', IntegerType::class, [
+                'label' => 'training.field.recurrence_months',
+                'required' => false,
+                'attr' => [
+                    'min' => 1,
+                    'max' => 60,
+                    'step' => 1,
+                    'placeholder' => 'training.placeholder.recurrence_months',
+                ],
+                'help' => 'training.help.recurrence_months',
             ]);
+
+        // S4 P-1 Wave-2 — Trainer compound slot. Replaces the inline
+        // 4-field block (trainerUser + trainerPerson + trainerDeputyPersons
+        // + trainer legacy text). Legacy free-text `trainer` is preserved
+        // as read-only Migration-Hint when populated.
+        $this->addOwnerPicker($builder, [
+            'field_prefix'       => 'trainer',
+            'user_field'         => 'trainerUser',
+            'person_field'       => 'trainerPerson',
+            'deputies_field'     => 'trainerDeputyPersons',
+            'legacy_field'       => 'trainer',
+            'label_user'         => 'training.field.trainer',
+            'label_person'       => 'training.field.trainer_person',
+            'label_deputies'     => 'training.field.trainer_deputy_persons',
+            'label_legacy'       => 'training.field.trainer_legacy',
+            'placeholder_user'   => 'training.placeholder.trainer_user',
+            'placeholder_person' => 'training.placeholder.trainer_person',
+            'help_user'          => 'training.help.trainer_user',
+            'help_person'        => 'training.help.trainer_person',
+            'help_deputies'      => 'training.help.trainer_deputy_persons',
+            'with_deputies'      => true,
+            'with_legacy'        => true,
+        ]);
     }
 
     public function configureOptions(OptionsResolver $resolver): void

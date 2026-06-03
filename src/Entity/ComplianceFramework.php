@@ -150,7 +150,7 @@ class ComplianceFramework
         return $this->code;
     }
 
-    public function setCode(string $code): static
+    public function setCode(?string $code): static
     {
         $this->code = $code;
         return $this;
@@ -161,7 +161,7 @@ class ComplianceFramework
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -183,7 +183,7 @@ class ComplianceFramework
         return $this->version;
     }
 
-    public function setVersion(string $version): static
+    public function setVersion(?string $version): static
     {
         $this->version = $version;
         return $this;
@@ -194,7 +194,7 @@ class ComplianceFramework
         return $this->applicableIndustry;
     }
 
-    public function setApplicableIndustry(string $applicableIndustry): static
+    public function setApplicableIndustry(?string $applicableIndustry): static
     {
         $this->applicableIndustry = $applicableIndustry;
         return $this;
@@ -205,7 +205,7 @@ class ComplianceFramework
         return $this->regulatoryBody;
     }
 
-    public function setRegulatoryBody(string $regulatoryBody): static
+    public function setRegulatoryBody(?string $regulatoryBody): static
     {
         $this->regulatoryBody = $regulatoryBody;
         return $this;
@@ -216,7 +216,7 @@ class ComplianceFramework
         return $this->mandatory;
     }
 
-    public function setMandatory(bool $mandatory): static
+    public function setMandatory(?bool $mandatory): static
     {
         $this->mandatory = $mandatory;
         return $this;
@@ -238,7 +238,7 @@ class ComplianceFramework
         return $this->active;
     }
 
-    public function setActive(bool $active): static
+    public function setActive(?bool $active): static
     {
         $this->active = $active;
         return $this;
@@ -268,7 +268,7 @@ class ComplianceFramework
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -328,5 +328,47 @@ class ComplianceFramework
     public function requiresModule(string $moduleKey): bool
     {
         return in_array($moduleKey, $this->requiredModules ?? []);
+    }
+
+    /**
+     * Compute an in-memory compliance percentage from already-loaded requirements.
+     *
+     * Each ComplianceRequirement is considered "fulfilled" when its status equals
+     * 'fulfilled' or 'compliant'. This avoids extra DB queries — the framework
+     * index controller eager-loads requirements via LEFT JOIN.
+     *
+     * @todo 2026-05-14 replace with a dedicated service query for large frameworks once
+     *       performance benchmarks flag this (N requirements × M tenants).
+     *       Track: open GitHub issue for ComplianceFramework N+1 optimisation.
+     *
+     */
+    public function getCompliancePercentage(): float
+    {
+        // Denominator = top-level requirements only. The EU-mapping decomposition
+        // import added ~5000 sub_requirements (parentRequirement set); these roll
+        // up via their parent and must NOT dilute the compliance %.
+        $total = 0;
+        $fulfilled = 0;
+        foreach ($this->requirements as $req) {
+            /** @var \App\Entity\ComplianceRequirement $req */
+            // Top-level only: no parent AND a core/detailed type. Sub-requirements
+            // (parent set, or requirementType='sub_requirement') are excluded.
+            if ($req->getParentRequirement() !== null
+                || !in_array($req->getRequirementType(), ['core', 'detailed'], true)) {
+                continue;
+            }
+            $total++;
+
+            $status = method_exists($req, 'getStatus') ? $req->getStatus() : null;
+            if (in_array($status, ['fulfilled', 'compliant'], true)) {
+                $fulfilled++;
+            }
+        }
+
+        if ($total === 0) {
+            return 0.0;
+        }
+
+        return round(($fulfilled / $total) * 100, 1);
     }
 }

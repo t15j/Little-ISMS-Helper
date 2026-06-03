@@ -36,6 +36,7 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * logged-in user. The group reports instead traverse the subtree
  * explicitly and never mutate data.
  */
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/group-report', name: 'app_group_report_')]
 #[IsGranted('ROLE_GROUP_CISO')]
 final class GroupReportController extends AbstractController
@@ -96,6 +97,19 @@ final class GroupReportController extends AbstractController
         $root = $this->tenantContext->getCurrentTenant();
         if (!$root instanceof Tenant) {
             throw $this->createAccessDeniedException('No active tenant');
+        }
+
+        // Concern B fix (2026-05-27): Konzern-Reports are only meaningful for
+        // tenants that are part of a corporate structure (parent + at least one
+        // subsidiary, or is itself a subsidiary).  A single standalone tenant
+        // would render "Organisation: 0" and empty framework tables — confusing
+        // and purposeless.  Redirect to dashboard with an explanatory flash.
+        if (!$root->isPartOfCorporateStructure()) {
+            $this->addFlash(
+                'info',
+                $this->translator->trans('group_report.tree.flash.holding_only', [], 'group_report')
+            );
+            return $this->redirectToRoute('app_home');
         }
 
         // Intentionally NOT getRootParent(): a Group-CISO sitting on a

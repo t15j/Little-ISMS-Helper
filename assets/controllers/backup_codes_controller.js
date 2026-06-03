@@ -70,7 +70,7 @@ export default class extends Controller {
 
         const printWindow = window.open('', '', 'width=600,height=800');
         if (!printWindow) {
-            alert(window.translations?.mfa?.allow_popups || 'Please allow popups to print backup codes');
+            window.faToast(window.translations?.mfa?.allow_popups || 'Please allow popups to print backup codes', 'warning');
             return;
         }
 
@@ -266,7 +266,7 @@ export default class extends Controller {
             document.execCommand('copy');
             this.showFeedback(button, 'success', this.copiedTextValue);
         } catch (err) {
-            alert(this.copyFailedTextValue);
+            window.faToast(this.copyFailedTextValue, 'danger');
         }
 
         document.body.removeChild(textarea);
@@ -279,7 +279,7 @@ export default class extends Controller {
         const originalHTML = button.innerHTML;
         const originalClasses = [...button.classList];
 
-        button.innerHTML = `<i class="bi bi-check" aria-hidden="true"></i> ${text}`;
+        button.innerHTML = `<i class="fa-icon fa-icon--ui-check" aria-hidden="true"></i> ${text}`;
         button.classList.remove('btn-primary', 'btn-outline-primary', 'btn-outline-secondary');
         button.classList.add('btn-success');
 

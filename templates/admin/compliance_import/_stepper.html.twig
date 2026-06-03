@@ -11,9 +11,9 @@
  #}
 {% set active_step = active_step|default(1) %}
 {% set steps = [
-    { key: 1, label: 'compliance_import.stepper.step1'|trans({}, 'compliance_import'), icon: 'bi-upload' },
-    { key: 2, label: 'compliance_import.stepper.step2'|trans({}, 'compliance_import'), icon: 'bi-eye' },
-    { key: 3, label: 'compliance_import.stepper.step3'|trans({}, 'compliance_import'), icon: 'bi-check2-circle' }
+    { key: 1, label: 'compliance_import.stepper.step1'|trans({}, 'compliance_import'), icon: 'ui-upload' },
+    { key: 2, label: 'compliance_import.stepper.step2'|trans({}, 'compliance_import'), icon: 'ui-eye' },
+    { key: 3, label: 'compliance_import.stepper.step3'|trans({}, 'compliance_import'), icon: 'status-ok' }
 ] %}
 
 <nav class="mb-4" aria-label="{{ 'compliance_import.stepper.aria_label'|trans({}, 'compliance_import') }}">
@@ -39,7 +39,8 @@
                         {% endif %}
                     </span>
                     <span class="fw-semibold">
-                        <i class="bi {{ step.icon }}" aria-hidden="true"></i>
+                        {# Auto-strip legacy bi- prefix so DB/YAML values keep working. #}
+                        <i class="fa-icon fa-icon--{{ (step.icon starts with 'bi-') ? step.icon[3:] : step.icon }}" aria-hidden="true"></i>
                         {{ step.label }}
                     </span>
                     <span class="visually-hidden"> — {{ state_label }}</span>

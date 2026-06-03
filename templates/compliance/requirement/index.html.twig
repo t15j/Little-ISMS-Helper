@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 
 {% block title %}Compliance Requirements{% endblock %}
@@ -12,12 +13,13 @@
         ]
     } %}
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="fa-icon fa-icon--nav-list-check" aria-hidden="true"></i> Compliance Requirements</h1>
-        <a href="{{ path('app_compliance_requirement_new', {framework: selected_framework}) }}" class="fa-cyber-btn fa-cyber-btn--primary">
-            <i class="fa-icon fa-icon--ui-plus" aria-hidden="true"></i> New Requirement
-        </a>
-    </div>
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-list-check', label: 'nav.compliance'|trans({}, 'nav') },
+        title: 'compliance.requirement.index_title'|trans({}, 'compliance'),
+        actions: [
+            { label: 'compliance.requirement.action.new'|trans({}, 'compliance'), variant: 'primary', icon: 'ui-plus', href: path('app_compliance_requirement_new', {framework: selected_framework}) }
+        ]
+    }) }}
 
     {# Framework Filter #}
     {% embed '_components/_card.html.twig' with { 'class': 'mb-4' } %}
@@ -25,7 +27,7 @@
             <form method="get" class="row g-3">
                 <div class="col-md-4">
                     <label for="framework" class="form-label">{{ 'compliance.requirement.filter_by_framework'|trans({}, 'compliance') }}</label>
-                    <select name="framework" id="framework" class="form-select" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                    <select name="framework" id="framework" class="form-select fa-cyber-input__field" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                         <option value="">{{ 'compliance.requirement.all_frameworks'|trans({}, 'compliance') }}</option>
                         {% for framework in frameworks %}
                             <option value="{{ framework.id }}" {% if selected_framework == framework.id %}selected{% endif %}>
@@ -36,7 +38,7 @@
                 </div>
                 <div class="col-md-3">
                     <label for="absicherungs_stufe" class="form-label">{{ 'compliance.requirement.filter_by_absicherungs_stufe'|trans({}, 'compliance') }}</label>
-                    <select name="absicherungs_stufe" id="absicherungs_stufe" class="form-select" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                    <select name="absicherungs_stufe" id="absicherungs_stufe" class="form-select fa-cyber-input__field" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                         <option value="">{{ 'compliance.requirement.all_stufen'|trans({}, 'compliance') }}</option>
                         <option value="basis" {% if selected_absicherungs_stufe == 'basis' %}selected{% endif %}>{{ 'compliance.requirement.absicherungs_stufe.basis'|trans({}, 'compliance') }}</option>
                         <option value="standard" {% if selected_absicherungs_stufe == 'standard' %}selected{% endif %}>{{ 'compliance.requirement.absicherungs_stufe.standard'|trans({}, 'compliance') }}</option>
@@ -45,7 +47,7 @@
                 </div>
                 <div class="col-md-3">
                     <label for="anforderungs_typ" class="form-label">{{ 'compliance.requirement.filter_by_anforderungs_typ'|trans({}, 'compliance') }}</label>
-                    <select name="anforderungs_typ" id="anforderungs_typ" class="form-select" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                    <select name="anforderungs_typ" id="anforderungs_typ" class="form-select fa-cyber-input__field" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                         <option value="">{{ 'compliance.requirement.all_typen'|trans({}, 'compliance') }}</option>
                         <option value="MUSS" {% if selected_anforderungs_typ == 'MUSS' %}selected{% endif %}>MUSS</option>
                         <option value="SOLLTE" {% if selected_anforderungs_typ == 'SOLLTE' %}selected{% endif %}>SOLLTE</option>

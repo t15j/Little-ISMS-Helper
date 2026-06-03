@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'compliance.requirement.new.title'|trans({}, 'compliance') }}{% endblock %}
 
@@ -7,20 +8,20 @@
     {# Breadcrumb Navigation #}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.compliance'|trans({}, 'nav'), url: path('app_compliance_index'), icon: 'bi-shield-check' },
+            { label: 'nav.compliance'|trans({}, 'nav'), url: path('app_compliance_index'), icon: 'shield-check' },
             { label: 'compliance.requirement.list.title'|trans({}, 'compliance'), url: path('app_compliance_requirement_index') },
             { label: 'compliance.requirement.new.title'|trans({}, 'compliance') }
         ]
     } %}
 
     {# Page Header #}
-    {% include '_components/_page_header.html.twig' with {
+    {{ _fa_page_header.render({
         title: 'compliance.requirement.new.title'|trans({}, 'compliance'),
-        icon: 'bi-plus-circle',
+        badge: { icon: 'plus', label: '' },
         actions: [
-            { label: 'common.back'|trans({}, 'messages'), url: path('app_compliance_requirement_index'), variant: 'secondary', icon: 'bi-arrow-left' }
+            { label: 'common.back'|trans({}, 'messages'), href: path('app_compliance_requirement_index'), variant: 'secondary', icon: 'util-arrow-left' }
         ]
-    } %}
+    }) }}
 
     <div class="row">
         <div class="col-md-8">
@@ -74,7 +75,7 @@
         <div class="col-md-4">
             {% embed '_components/_card.html.twig' with { 'class': 'bg-body-secondary' } %}
                 {% block card_header %}
-                    <div class="card-header"><h2 class="mb-0"><i class="fa-icon fa-icon--status-info" aria-hidden="true"></i> {{ 'common.help'|trans({}, 'messages') }}</h2></div>
+                    <div class="card-header"><h2 class="mb-0"><i class="fa-icon fa-icon--status-info" aria-hidden="true"></i> {{ 'common.help_label'|trans({}, 'messages') }}</h2></div>
                 {% endblock %}
                 {% block card_body %}
                     <h3>{{ 'compliance.requirement.help.types.title'|trans({}, 'compliance') }}</h3>

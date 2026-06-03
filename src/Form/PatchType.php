@@ -6,6 +6,7 @@ namespace App\Form;
 
 use App\Entity\Asset;
 use App\Entity\Patch;
+use App\Form\SectionMapInterface;
 use App\Entity\Vulnerability;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
@@ -17,8 +18,9 @@ use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\Extension\Core\Type\UrlType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
+use Symfony\Component\Validator\Constraints\Url;
 
-class PatchType extends AbstractType
+final class PatchType extends AbstractType implements SectionMapInterface
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -113,12 +115,15 @@ class PatchType extends AbstractType
                 'required' => false,
                 'help' => 'patch.help.affected_assets',
                 'attr' => [
-                    'class' => 'form-select',
                     'size' => 5,
                 ],
             ])
+            // ── Status field is READ-ONLY (Lifecycle-bypass fix, Sprint Y.5) ──
+            // Owned by `patch_lifecycle`. ISO 27001 A.8.32 + A.8.8, 4-eyes auf
+            // `approve`, `deploy`, `rollback`. Transitions via LifecycleService.
             ->add('status', ChoiceType::class, [
                 'label' => 'patch.field.status',
+                'help' => 'patch.help.status_readonly',
                 'choices' => [
                     'patch.status.pending' => 'pending',
                     'patch.status.testing' => 'testing',
@@ -128,8 +133,12 @@ class PatchType extends AbstractType
                     'patch.status.rolled_back' => 'rolled_back',
                     'patch.status.not_applicable' => 'not_applicable',
                 ],
-                'required' => true,
-                    'choice_translation_domain' => 'patches',
+                'required' => false,
+                'disabled' => true,
+                // mapped=false: entity status stays untouched regardless of POST value.
+                // Status transitions are owned exclusively by LifecycleService.
+                'mapped' => false,
+                'choice_translation_domain' => 'patches',
             ])
             ->add('releaseDate', DateType::class, [
                 'label' => 'patch.field.release_date',
@@ -221,18 +230,76 @@ class PatchType extends AbstractType
             ->add('downloadUrl', UrlType::class, [
                 'label' => 'patch.field.download_url',
                 'required' => false,
+                'default_protocol' => null,
                 'attr' => [
                     'placeholder' => 'https://vendor.com/patches/...',
+                ],
+                'constraints' => [
+                    new \Symfony\Component\Validator\Constraints\Url(protocols: ['https'], requireTld: false),
+                    new \App\Validator\Constraint\NoInternalIp(),
                 ],
             ])
             ->add('documentationUrl', UrlType::class, [
                 'label' => 'patch.field.documentation_url',
                 'required' => false,
+                'default_protocol' => null,
                 'attr' => [
                     'placeholder' => 'https://vendor.com/docs/...',
                 ],
+                'constraints' => [
+                    new \Symfony\Component\Validator\Constraints\Url(protocols: ['https'], requireTld: false),
+                    new \App\Validator\Constraint\NoInternalIp(),
+                ],
             ])
         ;
+    }
+
+    /**
+     * S4 Foundation P-2 SectionPolicy — ISO 27001 A.8.8 · Vulnerability Management / Patch.
+     * Sections: overview · vulnerability_link · affected_systems · testing · rollout · verification
+     *
+     * @return array<string, list<string>>
+     */
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview' => [
+                'patchId',
+                'title',
+                'description',
+                'patchType',
+                'priority',
+                'status',
+            ],
+            'vulnerability_link' => [
+                'vulnerability',
+                'vendor',
+                'product',
+                'version',
+                'downloadUrl',
+                'documentationUrl',
+            ],
+            'affected_systems' => [
+                'affectedAssets',
+            ],
+            'testing' => [
+                'testingNotes',
+                'requiresDowntime',
+                'estimatedDowntimeMinutes',
+                'requiresReboot',
+                'knownIssues',
+            ],
+            'rollout' => [
+                'releaseDate',
+                'deploymentDeadline',
+                'deployedDate',
+                'responsiblePerson',
+                'deploymentNotes',
+            ],
+            'verification' => [
+                'rollbackPlan',
+            ],
+        ];
     }
 
     public function configureOptions(OptionsResolver $resolver): void

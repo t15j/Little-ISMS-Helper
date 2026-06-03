@@ -7,6 +7,7 @@ namespace App\Entity;
 use DateTimeInterface;
 use DateTimeImmutable;
 use DateTime;
+use App\Enum\RiskTreatmentPlanStatus;
 use App\Repository\RiskTreatmentPlanRepository;
 use App\Service\OwnerResolver;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -49,19 +50,19 @@ class RiskTreatmentPlan
     #[ORM\ManyToOne(targetEntity: Risk::class)]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     #[Groups(['treatment_plan:read', 'treatment_plan:write'])]
-    #[Assert\NotNull(message: 'Risk is required')]
+    #[Assert\NotNull(message: 'risk_treatment_plan.validation.risk_required')]
     #[MaxDepth(1)]
     private ?Risk $risk = null;
 
     #[ORM\Column(length: 255)]
     #[Groups(['treatment_plan:read', 'treatment_plan:write'])]
-    #[Assert\NotBlank(message: 'Title is required')]
-    #[Assert\Length(max: 255, maxMessage: 'Title cannot exceed {{ limit }} characters')]
+    #[Assert\NotBlank(message: 'risk_treatment_plan.validation.title_required')]
+    #[Assert\Length(max: 255, maxMessage: 'risk_treatment_plan.validation.title_max_length')]
     private ?string $title = null;
 
     #[ORM\Column(type: Types::TEXT)]
     #[Groups(['treatment_plan:read', 'treatment_plan:write'])]
-    #[Assert\NotBlank(message: 'Description is required')]
+    #[Assert\NotBlank(message: 'risk_treatment_plan.validation.description_required')]
     private ?string $description = null;
 
     /**
@@ -74,22 +75,30 @@ class RiskTreatmentPlan
      */
     #[ORM\Column(length: 50)]
     #[Groups(['treatment_plan:read', 'treatment_plan:write'])]
-    #[Assert\NotBlank(message: 'Status is required')]
+    #[Assert\NotBlank(message: 'risk_treatment_plan.validation.status_required')]
     #[Assert\Choice(
         choices: ['planned', 'in_progress', 'completed', 'cancelled', 'on_hold'],
-        message: 'Status must be one of: {{ choices }}'
+        message: 'risk_treatment_plan.validation.status_invalid'
     )]
     private ?string $status = 'planned';
+
+    /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on risk_treatment_plan_lifecycle.
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
 
     /**
      * Priority level for implementation
      */
     #[ORM\Column(length: 20)]
     #[Groups(['treatment_plan:read', 'treatment_plan:write'])]
-    #[Assert\NotBlank(message: 'Priority is required')]
+    #[Assert\NotBlank(message: 'risk_treatment_plan.validation.priority_required')]
     #[Assert\Choice(
         choices: ['low', 'medium', 'high', 'critical'],
-        message: 'Priority must be one of: {{ choices }}'
+        message: 'risk_treatment_plan.validation.priority_invalid'
     )]
     private ?string $priority = 'medium';
 
@@ -99,7 +108,7 @@ class RiskTreatmentPlan
 
     #[ORM\Column(type: Types::DATE_MUTABLE)]
     #[Groups(['treatment_plan:read', 'treatment_plan:write'])]
-    #[Assert\NotNull(message: 'Target completion date is required')]
+    #[Assert\NotNull(message: 'risk_treatment_plan.validation.target_completion_date_required')]
     private ?DateTimeInterface $targetCompletionDate = null;
 
     #[ORM\Column(type: Types::DATE_MUTABLE, nullable: true)]
@@ -111,7 +120,7 @@ class RiskTreatmentPlan
      */
     #[ORM\Column(type: Types::DECIMAL, precision: 15, scale: 2, nullable: true)]
     #[Groups(['treatment_plan:read', 'treatment_plan:write'])]
-    #[Assert\PositiveOrZero(message: 'Budget must be positive or zero')]
+    #[Assert\PositiveOrZero(message: 'risk_treatment_plan.validation.budget_positive')]
     private ?string $budget = null;
 
     /**
@@ -179,7 +188,7 @@ class RiskTreatmentPlan
      */
     #[ORM\Column(type: Types::INTEGER)]
     #[Groups(['treatment_plan:read', 'treatment_plan:write'])]
-    #[Assert\Range(notInRangeMessage: 'Completion percentage must be between {{ min }} and {{ max }}', min: 0, max: 100)]
+    #[Assert\Range(notInRangeMessage: 'risk_treatment_plan.validation.completion_percentage_range', min: 0, max: 100)]
     private int $completionPercentage = 0;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
@@ -230,7 +239,7 @@ class RiskTreatmentPlan
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -241,7 +250,7 @@ class RiskTreatmentPlan
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -252,10 +261,18 @@ class RiskTreatmentPlan
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(RiskTreatmentPlanStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
         return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?RiskTreatmentPlanStatus
+    {
+        return $this->status !== null ? RiskTreatmentPlanStatus::tryFrom($this->status) : null;
     }
 
     public function getPriority(): ?string
@@ -263,7 +280,7 @@ class RiskTreatmentPlan
         return $this->priority;
     }
 
-    public function setPriority(string $priority): static
+    public function setPriority(?string $priority): static
     {
         $this->priority = $priority;
         return $this;
@@ -427,7 +444,7 @@ class RiskTreatmentPlan
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -574,5 +591,10 @@ class RiskTreatmentPlan
     {
         $this->evidenceDocuments->removeElement($document);
         return $this;
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

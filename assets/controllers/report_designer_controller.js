@@ -24,7 +24,9 @@ export default class extends Controller {
 
     static values = {
         reportId: Number,
-        saveUrl: String
+        saveUrl: String,
+        widgetDataUrl: String,
+        shareUrl: String
     };
 
     connect() {
@@ -77,7 +79,7 @@ export default class extends Controller {
         if (!contentEl) return;
 
         try {
-            const response = await fetch('/de/report-builder/api/widget-data', {
+            const response = await fetch(this.widgetDataUrlValue, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -88,6 +90,15 @@ export default class extends Controller {
                     filters: this.getFilters()
                 })
             });
+
+            if (!response.ok) {
+                const msg = response.status === 403
+                    ? 'Keine Berechtigung'
+                    : `Fehler ${response.status}`;
+                contentEl.innerHTML = `<div class="alert alert-danger">${msg}</div>`;
+                window.faToast(msg, 'danger');
+                return;
+            }
 
             const data = await response.json();
             this.renderWidgetContent(contentEl, widgetType, data);
@@ -120,7 +131,7 @@ export default class extends Controller {
                                data.status === 'amber' ? 'warning' : 'danger';
             container.innerHTML = `
                 <div class="text-center py-3">
-                    <i class="bi bi-circle-fill fs-1 text-${statusClass}"></i>
+                    <i class="fa-icon fa-icon--status-ok fs-1 text-${statusClass}"></i>
                     <div class="mt-2 fw-bold">${data.label}</div>
                 </div>
             `;
@@ -156,7 +167,7 @@ export default class extends Controller {
         if (widgetType.startsWith('chart_')) {
             container.innerHTML = `
                 <div class="text-center py-4 bg-light rounded">
-                    <i class="bi bi-bar-chart-fill fs-1 text-primary opacity-50"></i>
+                    <i class="fa-icon fa-icon--nav-bar-chart fs-1 text-primary opacity-50"></i>
                     <div class="small text-muted mt-2">${widgetType.replace('chart_', '').replace(/_/g, ' ')}</div>
                 </div>
             `;
@@ -254,17 +265,17 @@ export default class extends Controller {
                 <div class="widget-actions">
                     <button type="button" class="btn btn-sm btn-link p-0 text-muted"
                             data-action="click->report-designer#configureWidget">
-                        <i class="bi bi-gear"></i>
+                        <i class="fa-icon fa-icon--ui-settings"></i>
                     </button>
                     <button type="button" class="btn btn-sm btn-link p-0 text-danger"
                             data-action="click->report-designer#removeWidget">
-                        <i class="bi bi-trash"></i>
+                        <i class="fa-icon fa-icon--ui-trash"></i>
                     </button>
                 </div>
             </div>
             <div class="widget-content">
                 <div class="text-center py-4 text-muted">
-                    <i class="bi bi-hourglass-split"></i> Loading...
+                    <i class="fa-icon fa-icon--ui-hourglass"></i> Loading...
                 </div>
             </div>
         `;
@@ -289,7 +300,7 @@ export default class extends Controller {
                 placeholder.className = 'drop-placeholder text-center py-5';
                 placeholder.dataset.reportDesignerTarget = 'placeholder';
                 placeholder.innerHTML = `
-                    <i class="bi bi-plus-circle display-4 text-muted"></i>
+                    <i class="fa-icon fa-icon--ui-plus display-4 text-muted"></i>
                     <p class="mt-3 text-muted">Drag widgets here to build your report</p>
                 `;
                 this.canvasTarget.appendChild(placeholder);
@@ -340,12 +351,11 @@ export default class extends Controller {
 
         form.innerHTML = formHtml;
 
-        // Show modal
-        const modal = document.getElementById('widgetConfigModal');
-        if (modal && window.bootstrap) {
-            const bsModal = new window.bootstrap.Modal(modal);
-            bsModal.show();
-        }
+        // Open fa-modal shell
+        document.dispatchEvent(new CustomEvent('fa-modal:request-open', {
+            bubbles: true,
+            detail: { id: 'widgetConfigModal' },
+        }));
     }
 
     applyWidgetConfig() {
@@ -381,12 +391,10 @@ export default class extends Controller {
 
         this.isDirty = true;
 
-        // Close modal
+        // Close fa-modal shell
         const modal = document.getElementById('widgetConfigModal');
-        if (modal && window.bootstrap) {
-            const bsModal = window.bootstrap.Modal.getInstance(modal);
-            if (bsModal) bsModal.hide();
-        }
+        const faModal = modal ? this.application.getControllerForElementAndIdentifier(modal, 'fa-modal') : null;
+        faModal?.close();
     }
 
     changeLayout() {
@@ -446,7 +454,7 @@ export default class extends Controller {
         });
 
         try {
-            const response = await fetch(`/de/report-builder/${this.reportIdValue}/share`, {
+            const response = await fetch(this.shareUrlValue, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -454,15 +462,23 @@ export default class extends Controller {
                 body: JSON.stringify({ user_ids: selectedUsers })
             });
 
+            if (!response.ok) {
+                const msg = response.status === 403
+                    ? 'Keine Berechtigung'
+                    : `Fehler ${response.status}`;
+                window.faToast(msg, 'danger');
+                return;
+            }
+
             const result = await response.json();
 
             if (result.success) {
                 this.showNotification('Sharing settings saved', 'success');
                 const modal = document.getElementById('shareModal');
-                if (modal && window.bootstrap) {
-                    const bsModal = window.bootstrap.Modal.getInstance(modal);
-                    if (bsModal) bsModal.hide();
-                }
+                const faModal = modal ? this.application.getControllerForElementAndIdentifier(modal, 'fa-modal') : null;
+                faModal?.close();
+            } else {
+                this.showNotification(result.error || 'Failed to save sharing settings', 'danger');
             }
         } catch (error) {
             console.error('Share error:', error);

@@ -9,6 +9,7 @@ use App\Entity\Risk;
 use App\Entity\User;
 use App\Enum\IncidentSeverity;
 use App\Enum\IncidentStatus;
+use App\Enum\WorkflowInstanceStatus;
 use App\Repository\RiskRepository;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -81,7 +82,7 @@ class IncidentRiskFeedbackService
 
         foreach ($realizedRisks as $risk) {
             if ($this->shouldTriggerRiskReEvaluation($incident, $risk)) {
-                $this->triggerRiskReEvaluation($risk, $incident, $user);
+                $this->triggerRiskReEvaluation($risk, $incident);
                 $triggeredCount++;
             }
         }
@@ -134,7 +135,7 @@ class IncidentRiskFeedbackService
      * Starts a new risk assessment workflow for the risk
      * Records incident as trigger for audit trail
      */
-    private function triggerRiskReEvaluation(Risk $risk, Incident $incident, User $user): void
+    private function triggerRiskReEvaluation(Risk $risk, Incident $incident): void
     {
         $this->logger->info('Triggering risk re-evaluation due to incident', [
             'risk_id' => $risk->getId(),
@@ -149,7 +150,7 @@ class IncidentRiskFeedbackService
         // Check if risk already has an active workflow
         $existingWorkflow = $this->workflowService->getWorkflowInstance('Risk', $risk->getId());
 
-        if ($existingWorkflow && $existingWorkflow->getStatus() === 'in_progress') {
+        if ($existingWorkflow && $existingWorkflow->getStatus() === WorkflowInstanceStatus::InProgress->value) {
             $this->logger->info('Risk already has active workflow - not starting new one', [
                 'risk_id' => $risk->getId(),
                 'workflow_id' => $existingWorkflow->getId(),

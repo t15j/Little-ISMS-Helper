@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% trans_default_domain 'patches' %}
 {% import '_macros/inheritance_badge.html.twig' as inheritance %}
 {% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
@@ -16,12 +17,19 @@
     } %}
 
     {{ _fa_page_header.render({
-        badge: { icon: 'patch-check', label: 'nav.patches'|trans({}, 'nav') },
+        badge: { icon: 'nav-patch-check', label: 'nav.patches'|trans({}, 'nav') },
         title: 'patch.title'|trans({}, 'patches'),
         actions: [
-            { label: 'patch.new'|trans({}, 'patches'), variant: 'primary', icon: 'plus-circle', href: path('app_patch_new') }
+            { label: 'patch.new'|trans({}, 'patches'), variant: 'primary', icon: 'plus', href: path('app_patch_new') }
         ]
     }) }}
+{% set _global_hints = alva_hints('patch_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 
     <main class="fa-aurora-surface">
 
@@ -35,7 +43,7 @@
                 <label for="view-filter" class="mb-0 fw-bold">
                     <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i> {{ 'common.view'|trans({}, 'messages') }}:
                 </label>
-                <select class="form-select form-select-sm w-auto" id="view-filter" name="view" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                <select class="form-select fa-cyber-input__field form-select-sm w-auto" id="view-filter" name="view" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                     <option value="own" {{ inheritanceInfo.currentView == 'own' ? 'selected' : '' }}>
                         {{ 'corporate.view.own_only'|trans({}, 'messages') }}
                     </option>
@@ -82,6 +90,7 @@
         }) }}
     {% else %}
         {% embed '_components/_card.html.twig' %}
+            {% block card_attrs %}data-controller="bulk-actions" data-bulk-actions-endpoint-value="/{{ app.request.locale }}/patch"{% endblock %}
             {% block card_body %}
                 {% embed '_components/_table.html.twig' with {
                     'noMargin': true
@@ -89,6 +98,13 @@
                     {% import '_macros/inheritance_badge.html.twig' as inheritance %}
                     {% block table_head %}
                         <tr>
+                            <th scope="col" class="bulk-select-column">
+                                <input type="checkbox"
+                                       class="form-check-input"
+                                       data-action="bulk-actions#selectAll"
+                                       data-bulk-actions-target="selectAllCheckbox"
+                                       aria-label="{{ 'bulk_actions.select_all'|trans({}, 'messages') }}">
+                            </th>
                             <th scope="col">{{ 'patch.field.patch_id'|trans({}, 'patches') }}</th>
                             <th scope="col">{{ 'patch.field.title'|trans({}, 'patches') }}</th>
                             <th scope="col">{{ 'patch.field.patch_type'|trans({}, 'patches') }}</th>
@@ -100,6 +116,14 @@
                         {% import '_macros/inheritance_badge.html.twig' as inheritance %}
                         {% for patch in patches %}
                             <tr>
+                                <td class="bulk-select-column">
+                                    <input type="checkbox"
+                                           class="form-check-input"
+                                           data-bulk-actions-target="item"
+                                           data-action="bulk-actions#selectItem"
+                                           value="{{ patch.id }}"
+                                           aria-label="{{ 'common.select'|trans({}, 'messages') }} {{ patch.title }}">
+                                </td>
                                 <td><code>{{ patch.patchId }}</code></td>
                                 <td>
                                     <strong>{{ patch.title }}</strong>
@@ -121,6 +145,11 @@
                         {% endfor %}
                     {% endblock %}
                 {% endembed %}
+
+                {# Bulk Action Bar #}
+                {% include '_components/_bulk_action_bar.html.twig' with {
+                    actions: ['export', 'delete']
+                } %}
             {% endblock %}
         {% endembed %}
     {% endif %}

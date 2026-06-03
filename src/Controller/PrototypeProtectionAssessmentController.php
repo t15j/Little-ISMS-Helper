@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Controller\Trait\ModuleGatedControllerTrait;
 use App\Entity\PrototypeProtectionAssessment;
 use App\Form\PrototypeProtectionAssessmentType;
 use App\Repository\PrototypeProtectionAssessmentRepository;
+use App\Service\ModuleConfigurationService;
 use App\Service\PdfExportService;
 use App\Service\TenantContext;
 use DateTimeImmutable;
@@ -25,14 +27,18 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  *   draft → in_review → approved/rejected → expired
  */
 #[IsGranted('ROLE_MANAGER')]
+// @no-methods-required — class-level path prefix, methods declared per action
 #[Route('/prototype-protection', name: 'app_prototype_protection_')]
 class PrototypeProtectionAssessmentController extends AbstractController
 {
+    use ModuleGatedControllerTrait;
+
     public function __construct(
         private readonly PrototypeProtectionAssessmentRepository $repository,
         private readonly EntityManagerInterface $entityManager,
         private readonly TenantContext $tenantContext,
         private readonly TranslatorInterface $translator,
+        private readonly ModuleConfigurationService $moduleService,
         private readonly ?PdfExportService $pdfExportService = null,
     ) {
     }
@@ -40,6 +46,8 @@ class PrototypeProtectionAssessmentController extends AbstractController
     #[Route('/', name: 'index', methods: ['GET'])]
     public function index(): Response
     {
+        if ($redirect = $this->checkModuleActive('tisax')) return $redirect;
+
         $tenant = $this->tenantContext->getCurrentTenant();
         $assessments = $tenant
             ? $this->repository->findForTenant($tenant)
@@ -57,6 +65,8 @@ class PrototypeProtectionAssessmentController extends AbstractController
     #[Route('/new', name: 'new', methods: ['GET', 'POST'])]
     public function new(Request $request): Response
     {
+        if ($redirect = $this->checkModuleActive('tisax')) return $redirect;
+
         $assessment = new PrototypeProtectionAssessment();
         $assessment->setTenant($this->tenantContext->getCurrentTenant());
 
@@ -72,15 +82,21 @@ class PrototypeProtectionAssessmentController extends AbstractController
             return $this->redirectToRoute('app_prototype_protection_show', ['id' => $assessment->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('prototype_protection/new.html.twig', [
             'assessment' => $assessment,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
     #[Route('/{id}', name: 'show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(PrototypeProtectionAssessment $assessment): Response
     {
+        if ($redirect = $this->checkModuleActive('tisax')) return $redirect;
+
         $this->assertAccess($assessment);
         return $this->render('prototype_protection/show.html.twig', [
             'assessment' => $assessment,
@@ -90,6 +106,8 @@ class PrototypeProtectionAssessmentController extends AbstractController
     #[Route('/{id}/edit', name: 'edit', requirements: ['id' => '\d+'], methods: ['GET', 'POST'])]
     public function edit(Request $request, PrototypeProtectionAssessment $assessment): Response
     {
+        if ($redirect = $this->checkModuleActive('tisax')) return $redirect;
+
         $this->assertAccess($assessment);
 
         $form = $this->createForm(PrototypeProtectionAssessmentType::class, $assessment);
@@ -103,15 +121,21 @@ class PrototypeProtectionAssessmentController extends AbstractController
             return $this->redirectToRoute('app_prototype_protection_show', ['id' => $assessment->getId()]);
         }
 
+        $status = ($form->isSubmitted() && !$form->isValid())
+            ? Response::HTTP_UNPROCESSABLE_ENTITY
+            : Response::HTTP_OK;
+
         return $this->render('prototype_protection/edit.html.twig', [
             'assessment' => $assessment,
             'form' => $form,
-        ]);
+        ], new Response(status: $status));
     }
 
     #[Route('/{id}/pdf', name: 'pdf', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function pdf(PrototypeProtectionAssessment $assessment): Response
     {
+        if ($redirect = $this->checkModuleActive('tisax')) return $redirect;
+
         $this->assertAccess($assessment);
         if ($this->pdfExportService === null) {
             throw $this->createNotFoundException('PDF export service is not available.');
@@ -143,6 +167,8 @@ class PrototypeProtectionAssessmentController extends AbstractController
     #[IsGranted('ROLE_ADMIN')]
     public function delete(Request $request, PrototypeProtectionAssessment $assessment): Response
     {
+        if ($redirect = $this->checkModuleActive('tisax')) return $redirect;
+
         $this->assertAccess($assessment);
 
         if ($this->isCsrfTokenValid('delete' . $assessment->getId(), (string) $request->request->get('_token'))) {

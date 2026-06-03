@@ -1,0 +1,79 @@
+framework:
+    workflows:
+        document_lifecycle:
+            type: state_machine
+            marking_store:
+                type: method
+                property: status
+            supports:
+                - App\Entity\Document
+            initial_marking: draft
+            places:
+                - draft
+                - in_review
+                - approved
+                - published
+                - archived
+                - deleted
+            transitions:
+                submit_for_review:
+                    from: draft
+                    to: in_review
+                    metadata:
+                        roles: [ROLE_USER, ROLE_MANAGER]
+                        tone_target: info
+                approve:
+                    from: in_review
+                    to: approved
+                    metadata:
+                        roles: [ROLE_MANAGER]
+                        reason_required: false
+                request_changes:
+                    from: in_review
+                    to: draft
+                    metadata:
+                        roles: [ROLE_MANAGER]
+                        reason_required: true
+                publish:
+                    from: approved
+                    to: published
+                    metadata:
+                        roles: [ROLE_MANAGER]
+                        four_eyes: true
+                        module: documents
+                archive:
+                    from: published
+                    to: archived
+                    metadata:
+                        roles: [ROLE_MANAGER]
+                        reason_required: true
+                restore:
+                    from: archived
+                    to: published
+                    metadata:
+                        roles: [ROLE_MANAGER]
+                        reason_required: true
+                # X.6: policy supersession — archive the current (approved or published) doc
+                # when a previous version is restored. Reason required for audit trail.
+                archive_on_supersession:
+                    from: [draft, in_review, approved, published, archived]
+                    to: archived
+                    metadata:
+                        roles: [ROLE_MANAGER, ROLE_CISO]
+                        reason_required: true
+                # X.6: restore archived policy doc back to approved state (not published).
+                # Used by PolicyDiffController::restorePrevious when supersession is undone.
+                restore_to_approved:
+                    from: archived
+                    to: approved
+                    metadata:
+                        roles: [ROLE_MANAGER, ROLE_CISO]
+                        reason_required: true
+                # X.6: soft-delete terminal state — ADMIN only, reason required, irreversible.
+                # Replaces direct setStatus('deleted') in DocumentController::delete().
+                soft_delete:
+                    from: [draft, in_review, approved, published, archived]
+                    to: deleted
+                    metadata:
+                        roles: [ROLE_ADMIN]
+                        reason_required: true

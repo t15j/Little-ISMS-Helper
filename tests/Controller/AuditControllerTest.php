@@ -175,7 +175,7 @@ class AuditControllerTest extends WebTestCase
     #[Test]
     public function testIndexWithoutAuthentication(): void
     {
-        $this->client->request('GET', '/en/audit/');
+        $this->client->request('GET', '/en/audit');
 
         $this->assertResponseRedirects();
     }
@@ -185,7 +185,7 @@ class AuditControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/audit/');
+        $crawler = $this->client->request('GET', '/en/audit');
 
         $this->assertResponseIsSuccessful();
         $this->assertSelectorExists('html');
@@ -196,7 +196,7 @@ class AuditControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/audit/', [
+        $crawler = $this->client->request('GET', '/en/audit', [
             'status' => 'planned'
         ]);
 
@@ -208,7 +208,7 @@ class AuditControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/audit/', [
+        $crawler = $this->client->request('GET', '/en/audit', [
             'scope_type' => 'full_isms'
         ]);
 
@@ -220,7 +220,7 @@ class AuditControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/audit/', [
+        $crawler = $this->client->request('GET', '/en/audit', [
             'date_from' => '2025-01-01',
             'date_to' => '2025-12-31'
         ]);
@@ -233,7 +233,7 @@ class AuditControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/audit/', [
+        $crawler = $this->client->request('GET', '/en/audit', [
             'date_from' => '2025-01-01'
         ]);
 
@@ -245,7 +245,7 @@ class AuditControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/audit/', [
+        $crawler = $this->client->request('GET', '/en/audit', [
             'date_to' => '2025-12-31'
         ]);
 
@@ -257,7 +257,7 @@ class AuditControllerTest extends WebTestCase
     {
         $this->loginAsUser($this->testUser);
 
-        $crawler = $this->client->request('GET', '/en/audit/', [
+        $crawler = $this->client->request('GET', '/en/audit', [
             'status' => 'planned',
             'scope_type' => 'full_isms',
             'date_from' => '2025-01-01',
@@ -307,21 +307,16 @@ class AuditControllerTest extends WebTestCase
 
         $crawler = $this->client->request('GET', '/en/audit/new');
 
-        // The form might have different button text, let's find the submit button
-        $submitButton = $crawler->filter('button[type="submit"]');
-        if ($submitButton->count() === 0) {
-            // Try finding by form name and submitting directly
-            $form = $crawler->selectButton('Save')->form();
-        } else {
-            $form = $submitButton->form();
-        }
-
-        $form['internal_audit[title]'] = 'New Audit Test';
-        $form['internal_audit[scope]'] = 'Test audit scope description';
-        $form['internal_audit[scopeType]'] = 'full_isms';
-        $form['internal_audit[status]'] = 'planned';
-        $form['internal_audit[plannedDate]'] = '2025-12-15';
-        $form['internal_audit[leadAuditor]'] = 'Test Lead Auditor';
+        // Select form by name (avoids grabbing the mega-menu/notifications form
+        // when the first <button type=submit> on the page belongs to chrome).
+        $form = $crawler->filter('form[name="internal_audit"]')->form([
+            'internal_audit[title]' => 'New Audit Test',
+            'internal_audit[scope]' => 'Test audit scope description',
+            'internal_audit[scopeType]' => 'full_isms',
+            'internal_audit[status]' => 'planned',
+            'internal_audit[plannedDate]' => '2025-12-15',
+            'internal_audit[leadAuditor]' => 'Test Lead Auditor',
+        ]);
 
         // CRITICAL: Re-login immediately before form submission to maintain authentication
         $this->loginAsUser($this->testUser);
@@ -488,7 +483,10 @@ class AuditControllerTest extends WebTestCase
         $form = $crawler->filter('form[name="internal_audit"]')->form();
 
         $form['internal_audit[title]'] = 'Updated Audit Title';
-        $form['internal_audit[status]'] = 'in_progress';
+        // Status is intentionally NOT submitted: InternalAuditType marks `status`
+        // as `disabled => true` (Lifecycle-bypass fix). Status changes flow through
+        // LifecycleService::transition() via dedicated /audit/{id}/submit-report,
+        // /approve, /reject etc. endpoints — not via the generic edit form.
 
         // Re-authenticate before form submission to ensure session persists
         $this->loginAsUser($this->testUser);
@@ -501,7 +499,9 @@ class AuditControllerTest extends WebTestCase
         $updatedAudit = $auditRepository->find($this->testAudit->getId());
         $this->assertNotNull($updatedAudit);
         $this->assertEquals('Updated Audit Title', $updatedAudit->getTitle());
-        $this->assertEquals('in_progress', $updatedAudit->getStatus());
+        // Status MUST remain at the seed value — proves the form's disabled-status
+        // field cannot be used to bypass the lifecycle.
+        $this->assertEquals('planned', $updatedAudit->getStatus());
     }
 
     #[Test]
@@ -547,7 +547,7 @@ class AuditControllerTest extends WebTestCase
         ]);
 
         // Admin user can access the delete route and gets redirected
-        $this->assertResponseRedirects('/en/audit/');
+        $this->assertResponseRedirects('/en/audit');
     }
 
     #[Test]
@@ -562,7 +562,7 @@ class AuditControllerTest extends WebTestCase
         ]);
 
         // Should redirect but not delete
-        $this->assertResponseRedirects('/en/audit/');
+        $this->assertResponseRedirects('/en/audit');
 
         // Verify audit was NOT deleted - fetch from database
         $auditRepository = $this->entityManager->getRepository(InternalAudit::class);
@@ -812,7 +812,7 @@ class AuditControllerTest extends WebTestCase
         // Login first to establish user context
         $this->loginAsUser($user);
         // Make a request to initialize session in browser context
-        $this->client->request('GET', '/en/audit/');
+        $this->client->request('GET', '/en/audit');
         // Get session from the last request and generate token directly
         $session = $this->client->getRequest()->getSession();
         // Generate a random token and store it in session

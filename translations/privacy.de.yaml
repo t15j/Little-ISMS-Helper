@@ -92,13 +92,19 @@ privacy:
             subjects: Betroffene
             unknown: Unbekannt
         section:
-            status_workflow: 'Status & Workflow'
+            status_workflow: 'Status & Lifecycle'
             linked_incident: 'Verknüpfter Sicherheitsvorfall'
             detection_links: 'Erkennung & Verknüpfungen'
             authority: 'Art. 33 - Aufsichtsbehörde'
             subjects: 'Art. 34 - Betroffene Personen'
             nature: 'Art. 33(3) - Art der Verletzung'
             consequences: 'Art. 33(3)(b-d) - Folgen & Maßnahmen'
+            basic_info: 'Grundinformationen'
+            notification_content: 'Art. 33(3) – Inhalt der Meldung'
+            risk_assessment: 'Risikobewertung'
+            notification_requirements: 'Meldepflichten'
+            investigation: 'Untersuchung & Nachverfolgung'
+            responsible_persons: 'Verantwortliche Personen'
         standalone_breach: 'Eigenständige Datenschutzverletzung (kein Sicherheitsvorfall)'
         severity:
             low: 'Niedrig'
@@ -216,6 +222,12 @@ privacy:
         title: 'DSGVO Datenschutzverletzungs-Assistent'
         subtitle: 'Schritt-für-Schritt-Bewertung gemäß Art. 33 DSGVO'
 
+        # Stepper labels (short form for header navigation)
+        step1_short: 'Bezug'
+        step2_short: 'Datentyp'
+        step3_short: 'Umfang'
+        step4_short: 'Ergebnis'
+
         # Step 1
         step1_title: 'Sind personenbezogene Daten betroffen?'
         personal_data_question: 'Sind bei diesem Vorfall personenbezogene Daten betroffen (Daten, die sich auf identifizierte oder identifizierbare natürliche Personen beziehen)?'
@@ -279,9 +291,45 @@ privacy:
         conductor_required_user_or_person: 'Durchführender: Benutzer oder Person aus Stammdaten erforderlich (Freitext allein reicht nicht).'
         approver_required_user_or_person: 'Genehmiger: Benutzer oder Person aus Stammdaten erforderlich (Freitext allein reicht nicht).'
         contact_person_required_user_or_person: 'Kontaktperson: Benutzer oder Person aus Stammdaten erforderlich (Freitext allein reicht nicht).'
+    sdm:
+        title: 'Standard-Datenschutzmodell (SDM 3.1)'
+        description: 'Bewertung der sieben Gewährleistungsziele der Datenschutzkonferenz (DSK) für diese Verarbeitung.'
+        coverage: 'Bewertete Ziele'
+        highest_risk: 'Höchstes Risiko'
+        summary: 'Bewertungszusammenfassung'
+        risk_level:
+            low: 'Niedrig'
+            medium: 'Mittel'
+            high: 'Hoch'
+        goal:
+            verfuegbarkeit: 'Verfügbarkeit'
+            integritaet: 'Integrität'
+            vertraulichkeit: 'Vertraulichkeit'
+            transparenz: 'Transparenz'
+            intervenierbarkeit: 'Intervenierbarkeit'
+            nichtverkettung: 'Nichtverkettung'
+            datenminimierung: 'Datenminimierung'
+        goal_help:
+            verfuegbarkeit: 'Personenbezogene Daten stehen den Berechtigten zeitgerecht zur Verfügung.'
+            integritaet: 'Daten und Verarbeitungsprozesse sind unversehrt, vollständig und aktuell.'
+            vertraulichkeit: 'Nur Befugte haben Zugriff auf personenbezogene Daten.'
+            transparenz: 'Verarbeitung ist für Betroffene, Aufsicht und Verantwortlichen nachvollziehbar.'
+            intervenierbarkeit: 'Betroffenenrechte (Auskunft, Berichtigung, Löschung) sind effektiv umsetzbar.'
+            nichtverkettung: 'Daten werden nicht über den ursprünglichen Zweck hinaus verknüpft.'
+            datenminimierung: 'Verarbeitung beschränkt sich auf das für den Zweck Erforderliche.'
 
 
 processing_activity:
+    error:
+        invalid_csrf: 'Ungültiges CSRF-Token.'
+    clone_suffix: '(Kopie)'
+    kpi:
+        completeness: 'Vollständigkeit'
+        status: 'Status'
+        risk_level: 'Risikostufe'
+        dpia_status: 'DSFA-Status'
+        required: 'Erforderlich'
+        not_required: 'Nicht erforderlich'
     title: 'VVT - Verzeichnis von Verarbeitungstätigkeiten'
     subtitle: 'Art. 30 DSGVO - Verzeichnis von Verarbeitungstätigkeiten'
     page:
@@ -301,6 +349,16 @@ processing_activity:
         export_pdf: 'PDF exportieren'
         export_csv: 'CSV exportieren'
         new: 'Neue Verarbeitungstätigkeit'
+    export:
+        badge: 'VVT-Export'
+        progress_title: 'VVT als CSV exportieren'
+        progress_subtitle: 'Der Export läuft im Hintergrund. Diese Seite aktualisiert sich automatisch.'
+        download_button: 'VVT-Export herunterladen'
+        file_not_found: 'Export-Datei nicht gefunden (möglicherweise bereits heruntergeladen oder abgelaufen).'
+        modal:
+            title: 'VVT als CSV exportieren'
+            body: 'Erstellt eine CSV-Datei mit allen Verarbeitungstätigkeiten (Art. 30 DSGVO). Der Export läuft im Hintergrund.'
+            start: 'Export starten'
     confirm:
         clone: 'Möchten Sie diese Verarbeitungstätigkeit duplizieren?'
     stat:
@@ -368,6 +426,32 @@ processing_activity:
     dpia:
         required: 'Erforderlich'
         not_required: 'Nicht erforderlich'
+    sdm:
+        title: 'Standard-Datenschutzmodell (SDM 3.1)'
+        description: 'Bewertung der sieben Gewährleistungsziele der Datenschutzkonferenz (DSK) für diese Verarbeitung.'
+        coverage: 'Bewertete Ziele'
+        highest_risk: 'Höchstes Risiko'
+        summary: 'Bewertungszusammenfassung'
+        risk_level:
+            low: 'Niedrig'
+            medium: 'Mittel'
+            high: 'Hoch'
+        goal:
+            verfuegbarkeit: 'Verfügbarkeit'
+            integritaet: 'Integrität'
+            vertraulichkeit: 'Vertraulichkeit'
+            transparenz: 'Transparenz'
+            intervenierbarkeit: 'Intervenierbarkeit'
+            nichtverkettung: 'Nichtverkettung'
+            datenminimierung: 'Datenminimierung'
+        goal_help:
+            verfuegbarkeit: 'Personenbezogene Daten stehen den Berechtigten zeitgerecht zur Verfügung.'
+            integritaet: 'Daten und Verarbeitungsprozesse sind unversehrt, vollständig und aktuell.'
+            vertraulichkeit: 'Nur Befugte haben Zugriff auf personenbezogene Daten.'
+            transparenz: 'Verarbeitung ist für Betroffene, Aufsicht und Verantwortlichen nachvollziehbar.'
+            intervenierbarkeit: 'Betroffenenrechte (Auskunft, Berichtigung, Löschung) sind effektiv umsetzbar.'
+            nichtverkettung: 'Daten werden nicht über den ursprünglichen Zweck hinaus verknüpft.'
+            datenminimierung: 'Verarbeitung beschränkt sich auf das für den Zweck Erforderliche.'
     compliance:
         pass: 'Bestanden'
         fail: 'Nicht bestanden'
@@ -391,11 +475,14 @@ processing_activity:
         third_countries: 'Drittländer (außerhalb EU/EWR)'
         transfer_safeguards: 'Garantien für Drittlandübermittlung (z.B. Standardvertragsklauseln, BCR)'
         retention_period: Aufbewahrungsfrist
+        retention_reason: 'Begründung der Aufbewahrung'
         retention_period_days: 'Aufbewahrungsfrist in Tagen'
         retention_legal_basis: 'Rechtsgrundlage für Aufbewahrung'
-        technical_organizational_measures: 'Technische und organisatorische Maßnahmen (TOMs, Art. 32 DSGVO)'
+        technical_organizational_measures: 'Technische und organisatorische Maßnahmen — qualitative Beschreibung (TOMs, Art. 32 DSGVO)'
         implemented_controls: 'Implementierte Kontrollen'
+        assets: 'Verknüpfte Assets'
         responsible_department: 'Verantwortliche Abteilung'
+        responsible_department_entity: 'Verantwortliche Abteilung (strukturiert)'
         contact_person: Ansprechperson
         contact_person_person: 'Ansprechperson (Personenstammdaten)'
         contact_deputies: 'Ansprechperson-Vertretungen'
@@ -404,6 +491,7 @@ processing_activity:
         data_protection_officer_deputies: 'DSB-Vertretungen'
         involves_processors: 'Auftragsverarbeiter eingebunden (Art. 28 DSGVO)'
         is_joint_controller: 'Gemeinsame Verantwortlichkeit (Art. 26 DSGVO)'
+        joint_controller_details: 'Gemeinsam Verantwortliche (Art. 26 DSGVO)'
         is_high_risk: 'Hohes Risiko für Rechte und Freiheiten'
         dpia_completed: 'Datenschutz-Folgenabschätzung (DSFA) durchgeführt'
         dpia_date: 'Datum der DSFA'
@@ -417,6 +505,15 @@ processing_activity:
     placeholder:
         contact_person_person: 'Person aus Stammdaten auswählen...'
         data_protection_officer_person: 'Person aus Stammdaten auswählen...'
+        joint_controller_details: |-
+            [
+              {
+                "name": "Partner-Organisation GmbH",
+                "contact": "datenschutz@partner.example",
+                "responsibilities": "Empfang und Beauskunftung von Betroffenenrechten gem. Art. 15-22",
+                "arrangement_reference": "Vereinbarung vom 2026-01-15"
+              }
+            ]
     field:
         name: 'Bezeichnung der Verarbeitungstätigkeit'
         status: Status
@@ -437,15 +534,20 @@ processing_activity:
         third_countries: 'Drittländer (außerhalb EU/EWR)'
         transfer_safeguards: 'Garantien für Drittlandübermittlung (z.B. Standardvertragsklauseln, BCR)'
         retention_period: Aufbewahrungsfrist
+        retention_reason: 'Begründung der Aufbewahrung'
         retention_period_days: 'Aufbewahrungsfrist in Tagen'
         retention_legal_basis: 'Rechtsgrundlage für Aufbewahrung'
-        technical_organizational_measures: 'Technische und organisatorische Maßnahmen (TOMs, Art. 32 DSGVO)'
+        technical_organizational_measures: 'Technische und organisatorische Maßnahmen — qualitative Beschreibung (TOMs, Art. 32 DSGVO)'
         implemented_controls: 'Implementierte Kontrollen'
+        assets: 'Verknüpfte Assets'
         responsible_department: 'Verantwortliche Abteilung'
+        responsible_department_entity: 'Verantwortliche Abteilung (strukturiert)'
         contact_person: Ansprechperson
         data_protection_officer: 'Datenschutzbeauftragter (DSB)'
         involves_processors: 'Auftragsverarbeiter eingebunden (Art. 28 DSGVO)'
+        processor_suppliers: Auftragsverarbeiter
         is_joint_controller: 'Gemeinsame Verantwortlichkeit (Art. 26 DSGVO)'
+        joint_controller_details: 'Gemeinsam Verantwortliche (Art. 26 DSGVO)'
         is_high_risk: 'Hohes Risiko für Rechte und Freiheiten'
         dpia_completed: 'Datenschutz-Folgenabschätzung (DSFA) durchgeführt'
         dpia_date: 'Datum der DSFA'
@@ -472,14 +574,19 @@ processing_activity:
         third_countries: 'Welche Länder erhalten die Daten?'
         transfer_safeguards: 'Rechtsgrundlage für Drittlandübermittlung (Art. 44-49)'
         retention_period: 'Aufbewahrungsfrist/Löschfrist (Art. 30(1)(f))'
-        retention_period_days: 'Aufbewahrungsfrist in Tagen (optional, für automatisierte Löschung)'
+        retention_reason: 'Begründung der Aufbewahrungsdauer (z.B. gesetzliche Frist, Vertrag). Strukturierter Wert: siehe „Aufbewahrungsfrist in Tagen". (Art. 30(1)(f) DSGVO)'
+        retention_period_days: 'Numerische Aufbewahrungsdauer in Tagen (kanonisch, für automatisierte Löschung). Begründung: siehe „Begründung der Aufbewahrung".'
         retention_legal_basis: 'Rechtsgrundlage für Aufbewahrungsfrist (z.B. HGB §257, Abgabenordnung)'
-        technical_organizational_measures: 'Beschreibung der technischen und organisatorischen Sicherheitsmaßnahmen (Art. 32 DSGVO)'
-        implemented_controls: 'Verknüpfung zu ISO 27001 Kontrollen (optional)'
-        legal_basis: 'Rechtsgrundlage für die Verarbeitung (Art. 6(1) DSGVO)'
+        technical_organizational_measures: 'Technische und organisatorische Maßnahmen — qualitative Beschreibung (Art. 32 DSGVO). Strukturierte Nachweise: siehe „Implementierte Kontrollen". Mindestens EINE der beiden Nachweisformen muss vorhanden sein.'
+        implemented_controls: 'Wählen Sie die ISO 27001 Controls aus, die diese Verarbeitung schützen (strukturierte Nachweise). Qualitative Beschreibung: siehe TOMs-Feld.'
+        assets: 'Assets, die diese Verarbeitungstätigkeit nutzt (Server, Datenbanken,
+            Anwendungen). Bei Datenklassifizierung „vertraulich"/„restricted" eines
+            verknüpften Assets wird automatisch eine DSFA-Empfehlung ausgelöst (Art. 35 DSGVO).'
+        legal_basis: 'Rechtsgrundlage für die Verarbeitung (Art. 6(1) DSGVO). Werte: a) Einwilligung — Betroffener willigt aktiv ein. b) Vertrag — Verarbeitung zur Vertragserfüllung erforderlich. c) Rechtliche Verpflichtung — gesetzlich vorgeschrieben. d) Lebenswichtige Interessen — Schutz von Leben/Gesundheit. e) Öffentliche Aufgabe — Wahrnehmung hoheitlicher Befugnisse. f) Berechtigtes Interesse — Abwägung Verantwortlicher vs. Betroffener (Details-Feld unten obligatorisch).'
         legal_basis_details: 'Detaillierte Erläuterung (obligatorisch bei berechtigtem Interesse)'
         legal_basis_special_categories: 'Rechtsgrundlage für Verarbeitung besonderer Kategorien (Art. 9(2) DSGVO)'
         responsible_department: 'Abteilung/Einheit, die für diese Verarbeitung verantwortlich ist'
+        responsible_department_entity: 'Strukturierte Auswahl aus den Abteilungsstammdaten — das Freitextfeld darunter ist veraltet und nur noch für Altdaten sichtbar.'
         contact_person: 'Ansprechperson für diese Verarbeitungstätigkeit'
         contact_person_person: 'Ansprechperson aus Personenstammdaten (alternativ zum Benutzerkonto)'
         contact_deputies: 'Stellvertretende Personen für den Ansprechperson-Slot'
@@ -487,7 +594,9 @@ processing_activity:
         data_protection_officer_person: 'Datenschutzbeauftragter aus Personenstammdaten (alternativ zum Benutzerkonto)'
         data_protection_officer_deputies: 'Stellvertretende Personen für den DSB-Slot'
         involves_processors: 'Sind Auftragsverarbeiter eingebunden (Art. 28)?'
+        processor_suppliers: 'Externe Auftragsverarbeiter, die in dieser Verarbeitungstätigkeit für Sie tätig sind (Art. 28 DSGVO).'
         is_joint_controller: 'Liegt eine gemeinsame Verantwortlichkeit vor (Art. 26)?'
+        joint_controller_details_json: 'Liste der gemeinsam Verantwortlichen als JSON-Array mit Feldern: name, contact, responsibilities (Aufgabenverteilung gem. Art. 26(1)), arrangement_reference (Verweis auf die Vereinbarung). Die wesentlichen Inhalte sind den Betroffenen zugänglich zu machen (Art. 26(2)).'
         is_high_risk: 'Gilt dies als Hochrisiko-Verarbeitung?'
         dpia_completed: 'Wurde eine Datenschutz-Folgenabschätzung (DSFA) durchgeführt?'
         dpia_date: 'Datum der DSFA-Fertigstellung'
@@ -599,17 +708,36 @@ processing_activity:
         third_parties: 'Von Dritten'
         public_sources: 'Öffentliche Quellen'
         other: 'Sonstige Quellen'
+    # Junior-ISB-Audit-2026-05-22 C2-03: cross-field TOMs OR Controls evidence requirement.
+    validation:
+        tom_or_controls_required: 'Mindestens eine Nachweisform ist erforderlich (DSGVO Art. 32): entweder eine qualitative TOM-Beschreibung (≥ 50 Zeichen) ODER mindestens eine implementierte ISO 27001 Kontrolle.'
+        processor_suppliers_required: 'Mindestens ein Auftragsverarbeiter muss strukturiert verlinkt sein (DSGVO Art. 28(1) + Art. 30(1)(d)). Wenn "Auftragsverarbeiter involviert" markiert ist, sind die konkreten Lieferanten als Empfänger-Disclosure pflichtig.'
+    # S3 P-4: canonical 5-stage lifecycle (draft → in_review → approved → published → archived).
+    # Legacy `active` key kept as fallback label for any historical row not yet migrated.
     status:
         draft: 'Entwurf'
-        active: 'Aktiv'
+        in_review: 'In Prüfung'
+        approved: 'Freigegeben'
+        published: 'Veröffentlicht'
         archived: 'Archiviert'
+        active: 'Aktiv (Legacy)'
     permanently_delete: 'Dauerhaft löschen'
     view_all_activities: 'Alle Verarbeitungstätigkeiten anzeigen'
     confirm_delete: 'Möchten Sie diese Verarbeitungstätigkeit wirklich löschen?'
     dashboard:
         incomplete_activities: 'Unvollständige Aktivitäten (%count%)'
+        overall_score: 'VVT Compliance Score (gesamt)'
+        activities_complete: '%complete% von %total% Verarbeitungstätigkeiten vollständig'
+        dpias_completed: '%done%/%required% DSFAs abgeschlossen'
+        kpi:
+            total_activities: 'Verarbeitungstätigkeiten gesamt'
+            active: '%count% aktiv'
+            high_risk: 'Hohes Risiko'
+            missing_dpia: '%count% ohne DSFA'
+            completeness_rate: 'Vollständigkeitsquote'
     show:
         linked_controls: 'Verknüpfte ISO-27001-Maßnahmen'
+        linked_assets: 'Verknüpfte Assets'
         not_documented: 'Nicht dokumentiert'
         subtitle: 'Details zur Verarbeitungstätigkeit (Art. 30 DSGVO)'
         tab:
@@ -634,6 +762,78 @@ common:
     no: 'Nein'
 
 data_breach:
+    dashboard:
+        title: 'Datenpannen-Dashboard'
+        subtitle: 'DSGVO Art. 33/34 Compliance-Überblick'
+        overall_score: 'Gesamt DSGVO Art. 33/34 Compliance Score'
+        breadcrumb:
+            privacy: 'Datenschutz'
+            data_breaches: 'Datenpannen'
+            dashboard: 'Dashboard'
+        action:
+            view_all: 'Alle Datenpannen ansehen'
+            new: 'Neue Datenpanne'
+        kpi:
+            notification_compliance: 'Meldungs-Compliance'
+            notified: '%done% / %total% gemeldet'
+            timeliness: 'Pünktlichkeit (72h-Frist)'
+            overdue_notifications: '%count% überfällige Meldungen'
+            completeness: 'Vollständigkeit'
+            avg_completeness: 'Durchschnittliche Datenpannen-Vollständigkeit'
+            total_breaches: '%count% Datenpannen gesamt'
+            affected_subjects: '%count% betroffene Datensubjekte'
+        action_items: 'Aktionen erforderlich'
+        under_assessment: 'In Bewertung'
+        badge:
+            overdue: 'ÜBERFÄLLIG'
+            urgent: 'DRINGEND'
+            pending: 'OFFEN'
+        action_msg:
+            overdue_authority: 'Aufsichtsbehörden-Meldung hat die 72-Stunden-Frist um %hours% Stunden überschritten.'
+            pending_authority: 'Noch %hours% Stunden bis zur 72-Stunden-Frist.'
+            pending_subject: 'Benachrichtigung der betroffenen Personen erforderlich (Art. 34).'
+            incomplete: 'Datenpannen-Dokumentation unvollständig.'
+        empty_state: '<strong>Alle Aktionen erledigt!</strong> Keine ausstehenden Meldungen oder überfälligen Fristen.'
+        stats_status_title: 'Statistik nach Status'
+        status:
+            draft: 'Entwurf'
+            under_assessment: 'In Bewertung'
+            authority_notified: 'Behörde gemeldet'
+            subjects_notified: 'Personen benachrichtigt'
+            closed: 'Geschlossen'
+        risk_section_title: 'Nach Risikostufe'
+        risk_level:
+            low: 'Niedrig'
+            medium: 'Mittel'
+            high: 'Hoch'
+            critical: 'Kritisch'
+        special_categories_title: 'Besondere Kategorien'
+        special_categories_label: 'Art. 9 DSGVO-Daten:'
+        special_categories_help: 'Datenpannen mit Bezug zu Herkunft, politischer Meinung, religiöser Überzeugung, Gesundheitsdaten, sexueller Orientierung oder biometrischen/genetischen Daten.'
+        recent_title: 'Aktuelle Datenpannen (letzte 30 Tage)'
+        col:
+            reference: 'Referenz'
+            title: 'Titel'
+            detected: 'Erkannt'
+            status: 'Status'
+            risk: 'Risiko'
+            affected_subjects: 'Betroffene Personen'
+    success:
+        updated: 'Datenschutzverletzung wurde aktualisiert.'
+        deleted: 'Datenschutzverletzung wurde gelöscht.'
+        submitted_for_assessment: 'Datenschutzverletzung zur Bewertung eingereicht.'
+        authority_notification_recorded: 'Meldung an die Aufsichtsbehörde dokumentiert.'
+        subject_notification_recorded: 'Benachrichtigung der betroffenen Personen dokumentiert.'
+        exemption_recorded: 'Ausnahme von der Benachrichtigungspflicht dokumentiert.'
+        closed: 'Datenschutzverletzung erfolgreich geschlossen.'
+        reopened: 'Datenschutzverletzung erfolgreich wiedereröffnet.'
+    error:
+        cannot_edit_in_status: 'Datenschutzverletzung kann im aktuellen Status nicht bearbeitet werden.'
+        invalid_csrf: 'Ungültiges CSRF-Token.'
+        authority_notification_fields_required: 'Behördenname und Meldemethode sind erforderlich.'
+        subject_notification_fields_required: 'Meldemethode und Anzahl der Betroffenen sind erforderlich.'
+        exemption_reason_required: 'Begründung für die Ausnahme ist erforderlich.'
+        reopen_reason_required: 'Begründung für die Wiedereröffnung ist erforderlich.'
     index:
         view_all_breaches: 'Alle Datenschutzverletzungen anzeigen'
         no_breaches_found: 'Keine Datenschutzverletzungen gefunden'
@@ -797,6 +997,10 @@ data_breach:
         trigger_hint: 'Verwenden Sie den Assistenten, um zu ermitteln, ob eine DSGVO-Meldung erforderlich ist (Art. 33)'
         title: 'DSGVO Datenschutzverletzungs-Assistent'
         subtitle: 'Schrittweise Bewertung gemäß DSGVO Art. 33'
+        step1_short: 'Bezug'
+        step2_short: 'Datentyp'
+        step3_short: 'Umfang'
+        step4_short: 'Ergebnis'
         step1_title: 'Sind personenbezogene Daten betroffen?'
         personal_data_question: 'Sind bei diesem Vorfall personenbezogene Daten betroffen (Daten, die sich auf identifizierte oder identifizierbare natürliche Personen beziehen)?'
         personal_data_yes: 'Personenbezogene Daten sind betroffen'
@@ -831,6 +1035,10 @@ data_breach:
         deadline_date: 'Meldefrist (72h ab jetzt)'
         recommendation_label: 'Empfehlung'
         legal_references: 'Rechtsgrundlagen'
+        legal_ref:
+            gdpr_art_33: 'DSGVO Art. 33 (Meldung an die Aufsichtsbehörde)'
+            gdpr_art_34: 'DSGVO Art. 34 (Benachrichtigung der betroffenen Personen)'
+            iso_27001_a_16_1_6: 'ISO 27001 A.16.1.6 (Lernen aus Informationssicherheitsvorfällen)'
         complete_and_create: 'Abschließen & Vorfall erstellen'
         risk_level:
             low: 'Niedriges Risiko'
@@ -847,7 +1055,31 @@ data_breach:
         yes_reportable: 'JA - Meldepflichtig an Aufsichtsbehörde'
         no_not_reportable: 'NEIN - Nicht meldepflichtig'
         step_of: 'von'
+        new_title: 'Datenpanne erfassen'
+        new_subtitle: 'DSGVO Art. 33 · Frist 72h ab Kenntnisnahme'
+        title_72h_warning: '72-Stunden-Meldefrist läuft!'
+        subtitle_72h_warning: 'Meldung an die Aufsichtsbehörde gemäß DSGVO Art. 33 muss innerhalb von 72 Stunden nach Kenntnisnahme erfolgen.'
+        step:
+            detection: 'Erkennung'
+            detection_title: 'Schritt 1 · Vorfall identifizieren'
+            notification: 'Meldepflicht'
+            notification_title: 'Schritt 2 · Meldungs-Entscheidung'
+            record: 'Dokumentation'
+            record_title: 'Schritt 3 · Vorfall dokumentieren'
+            review: 'Überprüfung'
+            review_title: 'Schritt 4 · Abschließende Prüfung'
+        action:
+            submit: 'Datenpanne registrieren'
 dpia:
+    error:
+        invalid_csrf: 'Ungültiges CSRF-Token.'
+        rejection_reason_required: 'Begründung für Ablehnung ist erforderlich.'
+        revision_reason_required: 'Begründung für Überarbeitung ist erforderlich.'
+        dpo_advice_required: 'DSB-Stellungnahme ist erforderlich.'
+        authority_feedback_required: 'Rückmeldung der Aufsichtsbehörde ist erforderlich.'
+        review_reason_required: 'Begründung für Überprüfung ist erforderlich.'
+    warning:
+        cannot_edit_in_status: 'Nur DSFAs im Status Entwurf oder Überarbeitung erforderlich können bearbeitet werden.'
     dashboard:
         title: 'DSFA Dashboard'
         subtitle: 'Art. 35 DSGVO Compliance-Übersicht'
@@ -893,7 +1125,7 @@ dpia:
         section_measures: 'Art. 35(7)(d) - Maßnahmen zur Bewältigung der Risiken'
         section_consultation: 'Konsultation von Interessenträgern (Art. 35(4), 35(9))'
         section_supervisory: 'Konsultation der Aufsichtsbehörde (Art. 36)'
-        section_workflow: 'Workflow & Überprüfung'
+        section_workflow: 'Lifecycle & Überprüfung'
         button_create: 'DSFA erstellen'
         button_cancel_bottom: 'Abbrechen'
     index:
@@ -1056,7 +1288,7 @@ dpia:
         cancel_button: 'Abbrechen'
         page_title: 'DSFA - %ref%'
         section:
-            status_workflow: 'Status & Workflow'
+            status_workflow: 'Status & Lifecycle'
             risk_assessment: 'Risikobewertung'
             consultations: 'Konsultationen'
         field:
@@ -1355,3 +1587,17 @@ dpia:
 'privacy.chart.by_legal_basis': 'Nach Rechtsgrundlage'
 
 # GDPR Breach Wizard
+# ─── DPIA Lifecycle/Event Messages (TODO_2026-05-22 S12) ─────
+dpia.approved: 'DPIA freigegeben.'
+dpia.cloned: 'DPIA dupliziert.'
+dpia.created: 'DPIA angelegt.'
+dpia.deleted: 'DPIA gelöscht.'
+dpia.dpo_consulted: 'DSB-Konsultation dokumentiert.'
+dpia.marked_for_review: 'Für Review markiert.'
+dpia.rejected: 'DPIA abgelehnt.'
+dpia.reopened: 'DPIA wieder geöffnet.'
+dpia.review_completed: 'Review abgeschlossen.'
+dpia.revision_requested: 'Überarbeitung angefordert.'
+dpia.submitted_for_review: 'Zur Prüfung eingereicht.'
+dpia.supervisory_consulted: 'Aufsichtsbehörde konsultiert.'
+dpia.updated: 'DPIA aktualisiert.'

@@ -22,7 +22,7 @@
             {% set all_frameworks = get_compliance_frameworks_quick() %}
             {% if all_frameworks|length > 1 %}
             <div class="framework-switcher">
-                <select id="framework-switcher" class="form-select form-select-sm"
+                <select id="framework-switcher" class="form-select form-select-sm fa-cyber-input__field"
                         data-controller="ui-actions"
                         data-action="change->ui-actions#navigateTo"
                         aria-label="{{ 'compliance.switch_framework'|trans({}, 'compliance') }}">
@@ -53,14 +53,14 @@
                        class="fa-cyber-btn fa-cyber-btn--primary"
                        data-bs-toggle="tooltip" data-bs-placement="top"
                        title="{{ 'compliance_wizard.delta.action.download_excel'|trans({}, 'compliance_wizard') }}">
-                        <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                        <i class="fa-icon fa-icon--nav-file-check" aria-hidden="true"></i>
                         {{ 'compliance_wizard.delta.action.download_excel'|trans({}, 'compliance_wizard') }}
                     </a>
                 {% else %}
                     <button type="button" class="fa-cyber-btn fa-cyber-btn--primary" disabled
                             data-bs-toggle="tooltip" data-bs-placement="top"
                             title="{{ 'compliance_wizard.delta.action.baseline_required'|trans({}, 'compliance_wizard') }}">
-                        <i class="bi bi-file-earmark-excel" aria-hidden="true"></i>
+                        <i class="fa-icon fa-icon--nav-file-check" aria-hidden="true"></i>
                         {{ 'compliance_wizard.delta.action.download_excel'|trans({}, 'compliance_wizard') }}
                     </button>
                 {% endif %}
@@ -104,8 +104,8 @@
                  title="{{ 'common.tooltip.framework_loaded_success'|trans({}, 'messages') }}">
                 <div class="step-icon">{% if dashboard.statistics.total > 0 %}<i class="fa-icon fa-icon--status-ok" aria-hidden="true"></i>{% else %}<span class="step-number">1</span>{% endif %}</div>
                 <div class="step-content">
-                    <p class="fw-bold">Framework Loaded</p>
-                    <p>{{ dashboard.statistics.total }} requirements loaded</p>
+                    <p class="fw-bold">{{ 'compliance.dashboard.framework_loaded'|trans({}, 'compliance') }}</p>
+                    <p>{{ 'compliance.dashboard.loaded_count'|trans({'%count%': dashboard.statistics.total}, 'compliance') }}</p>
                 </div>
             </div>
 
@@ -228,7 +228,6 @@
             'priority': 'medium'
         } %}
     {% elseif dashboard.gaps.total > 0 %}
-        {# TODO(aurora-v4-icons): icon string in dict — bi-exclamation-triangle; migrate when template refactored to avoid inline HTML strings #}
         {% set next_action = {
             'title': 'Fill Compliance Gaps',
             'description': dashboard.gaps.total ~ ' requirements need controls or improved implementation',

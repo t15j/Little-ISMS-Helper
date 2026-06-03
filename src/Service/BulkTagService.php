@@ -14,7 +14,6 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\Proxy;
-use InvalidArgumentException;
 
 /**
  * Bulk tagging service (WS-5, DATA_REUSE_IMPROVEMENT_PLAN.md v1.1).
@@ -26,7 +25,7 @@ use InvalidArgumentException;
  *
  * Every write produces an AuditLogger entry ("tag.applied", "tag.removed").
  */
-class BulkTagService
+final class BulkTagService
 {
     public const AUDIT_APPLIED = 'tag.applied';
     public const AUDIT_REMOVED = 'tag.removed';
@@ -56,7 +55,7 @@ class BulkTagService
 
         $tags = $this->tagRepository->findBy(['id' => $tagIds]);
         if (count($tags) !== count(array_unique($tagIds))) {
-            throw new InvalidArgumentException('One or more tag ids are invalid.');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('One or more tag ids are invalid.', 'tagIds');
         }
 
         $added = 0;
@@ -137,7 +136,7 @@ class BulkTagService
     ): void {
         $reason = trim($reason);
         if ($reason === '') {
-            throw new InvalidArgumentException('Removal reason must not be empty.');
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException('Removal reason must not be empty.', 'reason');
         }
 
         $link = $this->entityTagRepository->findActiveOne($tag, $entityClass, $entityId);

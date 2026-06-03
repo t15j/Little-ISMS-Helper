@@ -8,11 +8,14 @@ use App\Entity\BusinessContinuityPlan;
 use App\Entity\CrisisTeam;
 use App\Entity\Person;
 use App\Entity\User;
+use App\Form\SectionMapInterface;
+use App\Form\Type\JsonStructuredType;
 use Symfony\Bridge\Doctrine\Form\Type\EntityType;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\DateTimeType;
 use Symfony\Component\Form\Extension\Core\Type\EmailType;
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Form\Extension\Core\Type\TelType;
 use Symfony\Component\Form\Extension\Core\Type\TextareaType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
@@ -20,9 +23,10 @@ use Symfony\Component\Form\Extension\Core\Type\UrlType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints\Callback;
+use Symfony\Component\Validator\Constraints\Url;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
-class CrisisTeamType extends AbstractType
+final class CrisisTeamType extends AbstractType implements SectionMapInterface
 {
     public function buildForm(FormBuilderInterface $builder, array $options): void
     {
@@ -80,7 +84,6 @@ class CrisisTeamType extends AbstractType
                 'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
                 'placeholder' => 'crisis_team.placeholder.team_leader_person',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'crisis_team.help.team_leader_person',
             ])
             ->add('teamLeaderDeputyPersons', EntityType::class, [
@@ -91,7 +94,6 @@ class CrisisTeamType extends AbstractType
                 'multiple' => true,
                 'expanded' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'crisis_team.help.team_leader_deputy_persons',
@@ -110,7 +112,6 @@ class CrisisTeamType extends AbstractType
                 'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
                 'placeholder' => 'crisis_team.placeholder.deputy_leader_person',
                 'required' => false,
-                'attr' => ['class' => 'form-select'],
                 'help' => 'crisis_team.help.deputy_leader_person',
             ])
             ->add('deputyLeaderDeputyPersons', EntityType::class, [
@@ -121,7 +122,6 @@ class CrisisTeamType extends AbstractType
                 'multiple' => true,
                 'expanded' => false,
                 'attr' => [
-                    'class' => 'form-select',
                     'data-controller' => 'tom-select',
                 ],
                 'help' => 'crisis_team.help.deputy_leader_deputy_persons',
@@ -163,10 +163,15 @@ class CrisisTeamType extends AbstractType
             ->add('virtualMeetingUrl', UrlType::class, [
                 'label' => 'crisis_team.field.virtual_meeting_url',
                 'required' => false,
+                'default_protocol' => null,
                 'attr' => [
                     'placeholder' => 'crisis_team.placeholder.virtual_meeting_url',
                 ],
                 'help' => 'crisis_team.help.virtual_meeting_url',
+                'constraints' => [
+                    new \Symfony\Component\Validator\Constraints\Url(protocols: ['https'], requireTld: false),
+                    new \App\Validator\Constraint\NoInternalIp(),
+                ],
             ])
             ->add('alertProcedures', TextareaType::class, [
                 'label' => 'crisis_team.field.alert_procedures',
@@ -225,8 +230,21 @@ class CrisisTeamType extends AbstractType
                 'required' => false,
                 'help' => 'crisis_team.help.business_continuity_plans',
                 'attr' => [
-                    'class' => 'form-select',
                     'size' => 5,
+                ],
+            ])
+            ->add('personMembers', EntityType::class, [
+                'label' => 'crisis_team.field.person_members',
+                'help' => 'crisis_team.help.person_members',
+                'class' => Person::class,
+                'choice_label' => fn(Person $p): string => $p->getFullName() ?? '',
+                'multiple' => true,
+                'expanded' => false,
+                // Required for ManyToMany so add/remove methods are used.
+                'by_reference' => false,
+                'required' => false,
+                'attr' => [
+                    'data-controller' => 'tom-select',
                 ],
             ])
             ->add('notes', TextareaType::class, [
@@ -236,7 +254,84 @@ class CrisisTeamType extends AbstractType
                     'rows' => 3,
                 ],
             ])
+            // C-06: JsonStructuredType bakes in the JsonArrayTransformer so
+            // invalid JSON surfaces as TransformationFailedException.
+            ->add('escalationMatrix', JsonStructuredType::class, [
+                'label' => 'crisis_team.field.escalation_matrix',
+                'required' => false,
+                'attr' => [
+                    'rows' => 6,
+                    'placeholder' => 'crisis_team.placeholder.escalation_matrix',
+                ],
+                'help' => 'crisis_team.help.escalation_matrix_json',
+            ])
+            ->add('activationCount', IntegerType::class, [
+                'label' => 'crisis_team.field.activation_count',
+                'required' => false,
+                'attr' => ['min' => 0],
+                'help' => 'crisis_team.help.activation_count',
+            ])
+            ->add('lastActivatedAt', DateTimeType::class, [
+                'label' => 'crisis_team.field.last_activated_at',
+                'required' => false,
+                'widget' => 'single_text',
+                'input' => 'datetime_immutable',
+                'help' => 'crisis_team.help.last_activated_at',
+            ])
         ;
+
+        // JsonArrayTransformer is now applied automatically by JsonStructuredType.
+    }
+
+    /**
+     * S4 Foundation P-2 SectionPolicy — ISO 22301 Cl. 8.4 Crisis Team.
+     * Sections: overview · members · communication · escalation · activation · testing · audit_metadata
+     *
+     * @return array<string, list<string>>
+     */
+    public static function getSectionMap(): array
+    {
+        return [
+            'overview' => [
+                'teamName',
+                'description',
+                'teamType',
+                'isActive',
+            ],
+            'members' => [
+                'teamLeader',
+                'teamLeaderPerson',
+                'teamLeaderDeputyPersons',
+                'deputyLeader',
+                'deputyLeaderPerson',
+                'deputyLeaderDeputyPersons',
+                'personMembers',
+            ],
+            'communication' => [
+                'primaryPhone',
+                'primaryEmail',
+                'meetingLocation',
+                'backupMeetingLocation',
+                'virtualMeetingUrl',
+                'communicationProtocols',
+            ],
+            'escalation' => [
+                'alertProcedures',
+                'decisionAuthority',
+                'escalationMatrix',
+            ],
+            'activation' => [
+                'businessContinuityPlans',
+                'activationCount',
+                'lastActivatedAt',
+                'notes',
+            ],
+            'testing' => [
+                'trainingSchedule',
+                'lastTrainingAt',
+                'nextTrainingAt',
+            ],
+        ];
     }
 
     public function configureOptions(OptionsResolver $resolver): void

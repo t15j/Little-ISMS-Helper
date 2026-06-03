@@ -36,23 +36,29 @@
                     <div class="evidence-item d-flex justify-content-between align-items-center py-2 border-bottom">
                         <div>
                             <a href="{{ path('app_document_show', {id: doc.id}) }}">
-                                <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                                <i class="fa-icon fa-icon--nav-document" aria-hidden="true"></i>
                                 {{ doc.originalFilename }}
                             </a>
                             <small class="text-muted ms-2">{{ doc.fileSizeFormatted }}</small>
                             <small class="text-muted ms-2">{{ doc.uploadedAt|date('d.m.Y') }}</small>
                         </div>
                         <div class="d-flex gap-1">
+                            <a href="{{ path('app_document_show', {id: doc.id}) }}"
+                               class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost"
+                               title="{{ 'common.preview'|trans({}, 'messages') }}">
+                                <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i>
+                            </a>
                             <a href="{{ path('app_document_download', {id: doc.id}) }}"
                                class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost"
+                               data-turbo="false"
                                title="{{ 'common.download'|trans({}, 'messages') }}">
-                                <i class="bi bi-download" aria-hidden="true"></i>
+                                <i class="fa-icon fa-icon--nav-download" aria-hidden="true"></i>
                             </a>
                             <button type="button"
                                     class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--ghost text-danger"
                                     title="{{ 'evidence.unlink'|trans({}, 'evidence') }}"
                                     onclick="unlinkEvidence({{ doc.id }}, '{{ entityType }}', {{ entityId }})">
-                                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                <i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i>
                             </button>
                         </div>
                     </div>
@@ -60,7 +66,7 @@
             </div>
         {% else %}
             <p class="text-muted mb-3">
-                <i class="bi bi-info-circle" aria-hidden="true"></i>
+                <i class="fa-icon fa-icon--status-info" aria-hidden="true"></i>
                 {{ 'evidence.widget.empty'|trans({}, 'evidence') }}
             </p>
         {% endif %}
@@ -76,7 +82,7 @@
                         {{ 'evidence.widget.upload_here'|trans({}, 'evidence') }}
                     </label>
                     <input type="file" name="evidence_file" id="evidence_file_{{ entityType }}_{{ entityId }}"
-                           class="form-control form-control-sm" required
+                           class="form-control form-control-sm fa-cyber-input__field" required
                            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.zip,.7z">
                 </div>
                 <button type="submit" class="fa-cyber-btn fa-cyber-btn--sm fa-cyber-btn--primary">
@@ -88,8 +94,11 @@
 {% endembed %}
 
 <script>
-function unlinkEvidence(documentId, entityType, entityId) {
-    if (!confirm('{{ 'evidence.unlink_confirm'|trans({}, 'evidence') }}')) {
+// window-assignment (not `function …`) so Turbo re-running this in-body script
+// on navigation re-assigns instead of throwing "already declared"; the inline
+// onclick handler still reaches it via the global.
+window.unlinkEvidence = async function (documentId, entityType, entityId) {
+    if (!await window.faConfirm('{{ 'evidence.unlink_confirm'|trans({}, 'evidence') }}', { tone: 'danger' })) {
         return;
     }
 
@@ -108,11 +117,11 @@ function unlinkEvidence(documentId, entityType, entityId) {
         if (data.success) {
             window.location.reload();
         } else {
-            alert(data.error || 'Error unlinking evidence');
+            window.faToast(data.error || 'Error unlinking evidence', 'danger');
         }
     })
     .catch(error => {
-        alert('Network error: ' + error.message);
+        window.faToast('Network error: ' + error.message, 'danger');
     });
 }
 </script>

@@ -96,7 +96,7 @@ class ScheduledTask
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
 
@@ -120,7 +120,7 @@ class ScheduledTask
         return $this->cronExpression;
     }
 
-    public function setCronExpression(string $cronExpression): static
+    public function setCronExpression(?string $cronExpression): static
     {
         $this->cronExpression = $cronExpression;
 
@@ -132,7 +132,7 @@ class ScheduledTask
         return $this->command;
     }
 
-    public function setCommand(string $command): static
+    public function setCommand(?string $command): static
     {
         $this->command = $command;
 
@@ -216,7 +216,7 @@ class ScheduledTask
         return $this->tenantId;
     }
 
-    public function setTenantId(int $tenantId): static
+    public function setTenantId(?int $tenantId): static
     {
         $this->tenantId = $tenantId;
 
@@ -228,7 +228,7 @@ class ScheduledTask
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
 
@@ -240,7 +240,7 @@ class ScheduledTask
         return $this->updatedAt;
     }
 
-    public function setUpdatedAt(DateTimeInterface $updatedAt): static
+    public function setUpdatedAt(?DateTimeInterface $updatedAt): static
     {
         $this->updatedAt = $updatedAt;
 

@@ -6,6 +6,7 @@ namespace App\Repository;
 
 use App\Entity\Tenant;
 use App\Entity\Asset;
+use App\Enum\AssetStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -39,7 +40,7 @@ class AssetRepository extends ServiceEntityRepository
             ->where('a.tenant = :tenant')
             ->andWhere('a.status = :status')
             ->setParameter('tenant', $tenant)
-            ->setParameter('status', 'active')
+            ->setParameter('status', AssetStatus::Active->value)
             ->orderBy('a.name', 'ASC')
             ->getQuery()
             ->getResult();
@@ -57,7 +58,7 @@ class AssetRepository extends ServiceEntityRepository
             ->where('a.tenant = :tenant')
             ->andWhere('a.status = :status')
             ->setParameter('tenant', $tenant)
-            ->setParameter('status', 'active')
+            ->setParameter('status', AssetStatus::Active->value)
             ->groupBy('a.assetType')
             ->getQuery()
             ->getResult();
@@ -74,6 +75,29 @@ class AssetRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('a')
             ->where('a.tenant = :tenant')
             ->setParameter('tenant', $tenant)
+            ->orderBy('a.name', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * DORA Phase 1 — RoI scope filter.
+     *
+     * Returns only assets flagged as DORA-relevant (isDoraRelevant = true)
+     * for the given tenant. Used by DoraRoiXbrlExporter::generate() to
+     * restrict the XBRL export to Art. 28 ICT assets explicitly scoped
+     * by the operator.
+     *
+     * @param Tenant $tenant The tenant to find assets for
+     * @return Asset[] Array of DORA-scoped Asset entities
+     */
+    public function findByTenantAndDoraRelevant(Tenant $tenant): array
+    {
+        return $this->createQueryBuilder('a')
+            ->where('a.tenant = :tenant')
+            ->andWhere('a.isDoraRelevant = :dora')
+            ->setParameter('tenant', $tenant)
+            ->setParameter('dora', true)
             ->orderBy('a.name', 'ASC')
             ->getQuery()
             ->getResult();
@@ -128,7 +152,7 @@ class AssetRepository extends ServiceEntityRepository
             ->where('a.tenant = :tenant')
             ->andWhere('a.status = :status')
             ->setParameter('tenant', $tenant)
-            ->setParameter('status', 'active')
+            ->setParameter('status', AssetStatus::Active->value)
             ->getQuery()
             ->getSingleScalarResult();
 
@@ -151,7 +175,7 @@ class AssetRepository extends ServiceEntityRepository
             ->where('a.tenant = :tenant')
             ->andWhere('a.status = :status')
             ->setParameter('tenant', $tenant)
-            ->setParameter('status', 'active')
+            ->setParameter('status', AssetStatus::Active->value)
             ->orderBy('a.name', 'ASC')
             ->getQuery()
             ->getResult();
@@ -223,6 +247,29 @@ class AssetRepository extends ServiceEntityRepository
                 ->getQuery()
                 ->getResult()
         );
+    }
+
+    /**
+     * Count assets for a tenant that are flagged as DORA-relevant.
+     *
+     * Returns 0 gracefully when the isDoraRelevant field is not yet present
+     * (e.g. when the entity-level DORA flag migration has not yet run).
+     * Once feat/dora-roi-scope-entity-flag is merged this returns a real count.
+     */
+    public function countByTenantAndDoraRelevant(Tenant $tenant): int
+    {
+        try {
+            return (int) $this->createQueryBuilder('a')
+                ->select('COUNT(a.id)')
+                ->where('a.tenant = :tenant')
+                ->andWhere('a.isDoraRelevant = true')
+                ->setParameter('tenant', $tenant)
+                ->getQuery()
+                ->getSingleScalarResult();
+        } catch (\Throwable) {
+            // isDoraRelevant column not yet available — safe default
+            return 0;
+        }
     }
 
     /**

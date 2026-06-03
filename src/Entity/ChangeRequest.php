@@ -13,6 +13,7 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\Metadata\Delete;
 
+use App\Enum\ChangeRequestStatus;
 use App\Repository\ChangeRequestRepository;
 use App\State\TenantAwareStateProcessor;
 use App\Entity\Tenant;
@@ -22,6 +23,9 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
+
+// Junior-ISB-Audit C4-05 — Lineage FKs from ChangeRequest back to the
+// AuditFinding / CorrectiveAction that triggered it (ISO 27001 Cl. 10.1).
 
 /**
  * Change Request Entity for ISMS Change Management
@@ -65,7 +69,7 @@ class ChangeRequest
     private ?string $changeNumber = null;
 
     #[ORM\Column(length: 255)]
-    #[Assert\NotBlank(message: 'Change title is required')]
+    #[Assert\NotBlank(message: 'change_request.validation.title_required')]
     #[Groups(['change_request:read', 'change_request:write'])]
     private ?string $title = null;
 
@@ -83,12 +87,12 @@ class ChangeRequest
     private ?string $changeType = 'other';
 
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Description is required')]
+    #[Assert\NotBlank(message: 'change_request.validation.description_required')]
     #[Groups(['change_request:read', 'change_request:write'])]
     private ?string $description = null;
 
     #[ORM\Column(type: Types::TEXT)]
-    #[Assert\NotBlank(message: 'Justification is required')]
+    #[Assert\NotBlank(message: 'change_request.validation.justification_required')]
     #[Groups(['change_request:read', 'change_request:write'])]
     private ?string $justification = null;
 
@@ -125,6 +129,23 @@ class ChangeRequest
     ])]
     #[Groups(['change_request:read', 'change_request:write'])]
     private ?string $status = 'draft';
+
+    /**
+     * Optimistic-locking version for Symfony Workflow / LifecycleService.
+     * Required for safe concurrent status-transitions on change_request_lifecycle
+     * (ISO 27001 A.8.32 — change-management audit-trail).
+     */
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer', options: ['default' => 0])]
+    private int $lockVersion = 0;
+
+    /**
+     * Optional ISO 27001 / DORA / NIS2 clause tag for §6.3/§8.1 differentiation.
+     * Examples: "ISO 27001 §6.3", "ISO 27001 §8.1", "DORA Art. 6"
+     */
+    #[ORM\Column(length: 100, nullable: true)]
+    #[Groups(['change_request:read', 'change_request:write'])]
+    private ?string $clauseReference = null;
 
     /**
      * Impact on ISMS
@@ -260,6 +281,30 @@ class ChangeRequest
     private ?string $closureNotes = null;
 
     /**
+     * Junior-ISB-Audit C4-05 — Lineage to upstream AuditFinding (nullable).
+     *
+     * Allows reporting "which change requests originated from audit
+     * findings?" without parsing free-text justification — ISO 27001
+     * Cl. 10.1 (continuous improvement traceability).
+     */
+    #[ORM\ManyToOne(targetEntity: AuditFinding::class)]
+    #[ORM\JoinColumn(name: 'related_finding_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['change_request:read', 'change_request:write'])]
+    private ?AuditFinding $relatedFinding = null;
+
+    /**
+     * Junior-ISB-Audit C4-05 — Lineage to upstream CorrectiveAction (nullable).
+     *
+     * When a CAPA's remediation requires an ISMS change (policy/scope/
+     * technology) the change-request is materialised here. The link
+     * preserves the chain "Finding → CAPA → Change → Implementation".
+     */
+    #[ORM\ManyToOne(targetEntity: CorrectiveAction::class)]
+    #[ORM\JoinColumn(name: 'related_corrective_action_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    #[Groups(['change_request:read', 'change_request:write'])]
+    private ?CorrectiveAction $relatedCorrectiveAction = null;
+
+    /**
      * Documents
      */
     #[ORM\ManyToMany(targetEntity: Document::class)]
@@ -317,7 +362,7 @@ class ChangeRequest
         return $this->changeNumber;
     }
 
-    public function setChangeNumber(string $changeNumber): static
+    public function setChangeNumber(?string $changeNumber): static
     {
         $this->changeNumber = $changeNumber;
         return $this;
@@ -328,7 +373,7 @@ class ChangeRequest
         return $this->title;
     }
 
-    public function setTitle(string $title): static
+    public function setTitle(?string $title): static
     {
         $this->title = $title;
         return $this;
@@ -339,7 +384,7 @@ class ChangeRequest
         return $this->changeType;
     }
 
-    public function setChangeType(string $changeType): static
+    public function setChangeType(?string $changeType): static
     {
         $this->changeType = $changeType;
         return $this;
@@ -350,7 +395,7 @@ class ChangeRequest
         return $this->description;
     }
 
-    public function setDescription(string $description): static
+    public function setDescription(?string $description): static
     {
         $this->description = $description;
         return $this;
@@ -361,7 +406,7 @@ class ChangeRequest
         return $this->justification;
     }
 
-    public function setJustification(string $justification): static
+    public function setJustification(?string $justification): static
     {
         $this->justification = $justification;
         return $this;
@@ -372,7 +417,7 @@ class ChangeRequest
         return $this->requestedBy;
     }
 
-    public function setRequestedBy(string $requestedBy): static
+    public function setRequestedBy(?string $requestedBy): static
     {
         $this->requestedBy = $requestedBy;
         return $this;
@@ -383,7 +428,7 @@ class ChangeRequest
         return $this->requestedDate;
     }
 
-    public function setRequestedDate(DateTimeInterface $requestedDate): static
+    public function setRequestedDate(?DateTimeInterface $requestedDate): static
     {
         $this->requestedDate = $requestedDate;
         return $this;
@@ -394,7 +439,7 @@ class ChangeRequest
         return $this->priority;
     }
 
-    public function setPriority(string $priority): static
+    public function setPriority(?string $priority): static
     {
         $this->priority = $priority;
         return $this;
@@ -405,9 +450,28 @@ class ChangeRequest
         return $this->status;
     }
 
-    public function setStatus(string $status): static
+    public function setStatus(ChangeRequestStatus|string $status): static
     {
-        $this->status = $status;
+        // Accept both enum and string so new code can pass the typed enum while
+        // existing string-passing callers keep working unchanged.
+        $this->status = is_string($status) ? $status : $status->value;
+        return $this;
+    }
+
+    /** Typed status surface for enum-aware code. */
+    public function getStatusEnum(): ?ChangeRequestStatus
+    {
+        return $this->status !== null ? ChangeRequestStatus::tryFrom($this->status) : null;
+    }
+
+    public function getClauseReference(): ?string
+    {
+        return $this->clauseReference;
+    }
+
+    public function setClauseReference(?string $clauseReference): static
+    {
+        $this->clauseReference = $clauseReference;
         return $this;
     }
 
@@ -708,12 +772,40 @@ class ChangeRequest
         return $this;
     }
 
+    /**
+     * Junior-ISB-Audit C4-05 — upstream AuditFinding (nullable).
+     */
+    public function getRelatedFinding(): ?AuditFinding
+    {
+        return $this->relatedFinding;
+    }
+
+    public function setRelatedFinding(?AuditFinding $finding): static
+    {
+        $this->relatedFinding = $finding;
+        return $this;
+    }
+
+    /**
+     * Junior-ISB-Audit C4-05 — upstream CorrectiveAction (nullable).
+     */
+    public function getRelatedCorrectiveAction(): ?CorrectiveAction
+    {
+        return $this->relatedCorrectiveAction;
+    }
+
+    public function setRelatedCorrectiveAction(?CorrectiveAction $ca): static
+    {
+        $this->relatedCorrectiveAction = $ca;
+        return $this;
+    }
+
     public function getCreatedAt(): ?DateTimeInterface
     {
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -817,5 +909,10 @@ class ChangeRequest
             'rejected', 'cancelled' => 'danger',
             default => 'secondary'
         };
+    }
+
+    public function getLockVersion(): int
+    {
+        return $this->lockVersion;
     }
 }

@@ -45,6 +45,8 @@ business_process:
     reputational_impact: Auswirkungen auf Reputation und Marke
     regulatory_impact: Regulatorische und Compliance-Auswirkungen
     operational_impact: Operative Auswirkungen auf Geschäftstätigkeit
+    upstream_processes: Upstream-Prozesse
+    downstream_processes: Downstream-Prozesse
     dependencies_upstream: Vorgelagerte Abhängigkeiten (was braucht dieser Prozess?)
     dependencies_downstream: Nachgelagerte Abhängigkeiten (wer ist abhängig von diesem
       Prozess?)
@@ -55,6 +57,7 @@ business_process:
     process_owner_person: 'Prozessverantwortlich (Person aus Stammdaten)'
     process_owner_deputies: 'Vertretungen (Personen)'
   help:
+    bia_optional: 'BIA-Impact-Werte (Reputational/Regulatory/Operational) sind optional — Sie können den Prozess zunächst speichern und die Bewertung später ergänzen. Empfehlung ISO 22301 Cl. 8.2.2: alle drei Dimensionen vor der Abnahme der BIA bewerten.'
     name: Eindeutiger Name des Geschäftsprozesses (z.B. "Kundenauftragsabwicklung")
     process_owner: Verantwortlicher für den Prozess (fachlicher und strategischer
       Eigentümer)
@@ -75,6 +78,10 @@ business_process:
     regulatory_impact: Regulatorische Konsequenzen (Bußgelder, Meldepflichten) bei
       Prozessausfall
     operational_impact: Auswirkungen auf andere Geschäftsprozesse und Betriebsabläufe
+    upstream_processes: 'Prozesse die diesen versorgen (Input). Strukturierte Alternative
+      zum Freitext-Feld unten.'
+    downstream_processes: 'Prozesse die von diesem abhängen (Output). Strukturierte
+      Alternative zum Freitext-Feld unten.'
     dependencies_upstream: Welche Prozesse, Systeme oder Dienstleistungen benötigt
       dieser Prozess zur Funktionsfähigkeit?
     dependencies_downstream: Welche anderen Prozesse oder Bereiche sind von diesem
@@ -87,6 +94,8 @@ business_process:
     process_owner_user: Prozesseigentümer aus der Benutzerverwaltung.
     process_owner_person: 'Person ohne System-Login als Prozessverantwortlichen wählen. Reihenfolge der Anzeige in Listen&#58; User &gt; Person &gt; Legacy-Freitext.'
     process_owner_deputies: 'Weitere Personen mit Vertretungs- oder Mitverantwortung. Mehrfachauswahl möglich.'
+    empty_link: /de/help/glossary#glossary-bia
+    a5_30_ict: 'ISO 27001 A.5.30 — ICT Readiness for Business Continuity. Verknüpfung zu BC-Planung (ISO 22301): ICT-Services müssen die im BIA festgelegten RTO/RPO-Ziele technisch erfüllen können.'
   tooltip:
     criticality: <strong>Geschäftskritikalität (ISO 22301)</strong><br><table class="table
       table-sm table-borderless mb-0 mt-1"><tr><td><strong>Niedrig</strong></td><td>Ausfall
@@ -103,34 +112,27 @@ business_process:
     mtpd: <strong>MTPD - Maximum Tolerable Period of Disruption</strong><br>⏱️ <em>Eingabe
       in Stunden</em><br><br>Maximale Unterbrechungsdauer bevor irreversible Schäden
       entstehen<br><br><em>Hinweis:</em> MTPD muss &gt; RTO sein!
-    reputational_impact: <strong>Reputationsauswirkung (BIA)</strong><br><table class="table
-      table-sm table-borderless mb-0 mt-1"><tr><td><strong>1</strong></td><td>Keine
-      Außenwirkung</td></tr><tr><td><strong>2</strong></td><td>Intern bekannt</td></tr><tr><td><strong>3</strong></td><td>Lokale
-      Medien</td></tr><tr><td><strong>4</strong></td><td>Nationale Medien</td></tr><tr><td><strong>5</strong></td><td>Internationale
-      Aufmerksamkeit</td></tr></table>
-    regulatory_impact: <strong>Regulatorische Auswirkung (BIA)</strong><br><table
-      class="table table-sm table-borderless mb-0 mt-1"><tr><td><strong>1</strong></td><td>Keine
-      Aufsicht</td></tr><tr><td><strong>2</strong></td><td>Hinweis/Empfehlung</td></tr><tr><td><strong>3</strong></td><td>Formelle
-      Mängelanzeige</td></tr><tr><td><strong>4</strong></td><td>Bußgeld/Sanktion</td></tr><tr><td><strong>5</strong></td><td>Lizenzentzug
-      möglich</td></tr></table>
-    operational_impact: <strong>Operative Auswirkung (BIA)</strong><br><table class="table
-      table-sm table-borderless mb-0 mt-1"><tr><td><strong>1</strong></td><td>Keine
-      anderen Prozesse betroffen</td></tr><tr><td><strong>2</strong></td><td>1-2 Prozesse
-      eingeschränkt</td></tr><tr><td><strong>3</strong></td><td>Abteilung eingeschränkt</td></tr><tr><td><strong>4</strong></td><td>Mehrere
-      Abteilungen betroffen</td></tr><tr><td><strong>5</strong></td><td>Gesamtbetrieb
-      gefährdet</td></tr></table>
+    reputational_impact: '<strong>Reputationsauswirkung (1-5)</strong><br>1=keine Außenwirkung · 2=intern bekannt · 3=lokale Medien · 4=nationale Medien · 5=internationale Aufmerksamkeit'
+    regulatory_impact: '<strong>Regulatorische Auswirkung (1-5)</strong><br>1=keine Aufsicht · 2=Hinweis/Empfehlung · 3=formelle Mängelanzeige · 4=Bußgeld/Sanktion · 5=Lizenzentzug möglich'
+    operational_impact: '<strong>Operative Auswirkung (1-5)</strong><br>1=keine anderen Prozesse betroffen · 2=1-2 Prozesse eingeschränkt · 3=Abteilung eingeschränkt · 4=mehrere Abteilungen · 5=Gesamtbetrieb gefährdet'
   placeholder:
+    name: 'z.B. Kundenauftragsabwicklung, Order-to-Cash, Zahlungsabwicklung'
     rto: z.B. 4 (Stunden)
     rpo: z.B. 2 (Stunden)
     mtpd: z.B. 24 (Stunden)
     process_owner_user: -- Prozesseigentümer --
     process_owner_person: '-- Person aus Stammdaten --'
+    impact_unset: '— noch nicht bewertet —'
   empty:
     title: Noch keine Geschäftsprozesse vorhanden
     description: Erstellen Sie Ihren ersten Geschäftsprozess, um mit der Business-Impact-Analyse
       zu beginnen.
+    body: 'Geschäftsprozesse bilden das Rückgrat der BIA (Business-Impact-Analyse) und der BC-Pläne. Erfassen Sie hier alle wertschöpfenden Prozesse mit RTO, RPO, MTPD und Kritikalität — Voraussetzung für ISO 22301 §8.2.2.'
   action:
     create: Prozess erstellen
+    create_first: Ersten Geschäftsprozess anlegen
+    # S14 Cluster A C1-01 — Asset-Quick-Create im BP-Formular
+    quick_create_asset: Asset schnell anlegen
   impact_level:
     very_low: Sehr niedrig
     low: Niedrig
@@ -204,3 +206,15 @@ business_process:
     no_risks: Keine Risiken verknüpft.
   error:
     owner_required_user_or_person: 'Verantwortlich: Benutzer oder Person aus Stammdaten erforderlich (Freitext allein reicht nicht).'
+    recovery_chain_rpo_gt_rto: 'RPO darf nicht größer als RTO sein (ISO 22301 Cl. 8.2.2 — der akzeptable Datenverlust liegt zwingend innerhalb der akzeptablen Ausfallzeit).'
+    recovery_chain_rto_gt_mtpd: 'RTO darf nicht größer als MTPD sein (ISO 22301 Cl. 8.3.2 — die Wiederherstellungszeit muss innerhalb der maximal tolerierbaren Ausfalldauer liegen).'
+  validation:
+    mtpd_below_rto: 'MTPD muss größer oder gleich RTO sein (ISO 22301 Cl. 8.2.2 — die maximal tolerierbare Ausfallzeit ist die äußere Grenze, RTO muss innerhalb dieser liegen).'
+    mtpd_below_rpo: 'MTPD muss größer oder gleich RPO sein (ISO 22301 Cl. 8.2.2 — der Datenverlust-Zeitraum darf nicht über der Maximaltoleranz liegen).'
+  validator:
+    rpo_greater_than_rto: 'RPO darf nicht größer als RTO sein (Recovery-Kette: RPO ≤ RTO ≤ MTPD)'
+    rto_greater_than_mtpd: 'RTO darf nicht größer als MTPD sein (Recovery-Kette: RPO ≤ RTO ≤ MTPD)'
+
+# Junior-ISB-Audit-2026-05-22 P-12 rollout — 9001-bridge keys for BP forms.
+iso_9001_bridge:
+  business_process: 'Identisch mit der "Prozesslandkarte" aus ISO 9001 Klausel 4.4 — Geschäftsprozesse mit Ein-/Ausgängen, Ressourcen (7.1) und Wechselwirkungen. ISO 22301 8.3 ergänzt die quantitativen Recovery-Ziele RTO/RPO/MTPD.'

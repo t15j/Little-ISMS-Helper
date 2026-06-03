@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Enum\MenuDensity;
 use DateTimeImmutable;
 use Deprecated;
 use App\Repository\UserRepository;
@@ -18,7 +19,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: 'users')]
 #[ORM\UniqueConstraint(name: 'UNIQ_IDENTIFIER_EMAIL', fields: ['email'])]
-#[UniqueEntity(fields: ['email'], message: 'There is already an account with this email')]
+#[UniqueEntity(fields: ['email'], message: 'user.validation.email_unique')]
 class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
     // -------------------------------------------------------------------------
@@ -142,6 +143,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: Types::JSON, options: ['default' => '[]'])]
     private array $completedTours = [];
 
+    /**
+     * Audit-S5 P-12 — previous QM-System background.
+     *
+     * Controls visibility of "Norm-Bridge" hints (ISO 27001 ↔ ISO 9001 etc.)
+     * underneath form-labels. Set to 'iso_9001' for the ~80 % of customers
+     * that join from an existing ISO-9001 QM-System; defaults to NULL =
+     * never show bridges. Allowed values: 'iso_9001' | 'iso_14001' |
+     * 'other' | 'none' | NULL.
+     */
+    #[ORM\Column(length: 32, nullable: true)]
+    private ?string $previousQmsBackground = null;
+
     // -------------------------------------------------------------------------
     // FairyAurora v4.0 — Alva Companion user preferences
     // -------------------------------------------------------------------------
@@ -167,6 +180,32 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 20, options: ['default' => 'bottom-right'])]
     private string $alvaCompanionPosition = 'bottom-right';
 
+    /**
+     * UI density preference for the mega-menu sidebar.
+     */
+    #[ORM\Column(type: 'string', length: 16, enumType: MenuDensity::class, options: ['default' => 'standard'])]
+    private MenuDensity $menuDensity = MenuDensity::STANDARD;
+
+    /**
+     * ISO 27001 §7.2 Competence — structured per-user competency tracking.
+     * JSON array: [{name, category: security|compliance|technical|leadership,
+     *   level: 1-5, certifiedBy: string|null, certifiedAt: ISO-date|null, expiresAt: ISO-date|null}]
+     *
+     * @var array<int, array<string, mixed>>|null
+     */
+    #[ORM\Column(type: Types::JSON, nullable: true)]
+    private ?array $competencies = null;
+
+    // -------------------------------------------------------------------------
+    // Sprint 6a — F3 Notification preferences
+    // -------------------------------------------------------------------------
+
+    #[ORM\Column(name: 'in_app_notifications_enabled')]
+    private bool $inAppNotificationsEnabled = true;
+
+    #[ORM\Column(name: 'last_seen_notifications', nullable: true)]
+    private ?DateTimeImmutable $lastSeenNotifications = null;
+
     #[ORM\ManyToOne(targetEntity: Tenant::class, inversedBy: 'users')]
     #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
     private ?Tenant $tenant = null;
@@ -177,10 +216,28 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\OneToMany(targetEntity: MfaToken::class, mappedBy: 'user', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $mfaTokens;
 
+    /**
+     * Inverse side of {@see Person::$linkedUser}. Read-only convenience
+     * accessor for the Person-Rollout (governance roles point to
+     * Person, not User; we still want to surface "is this User backed
+     * by a Person record?" cheaply). Lazy-loaded — Doctrine will only
+     * issue a SELECT when {@see self::getLinkedPerson()} is called.
+     *
+     * Person.linkedUser is `ManyToOne` (no unique constraint) so we
+     * model the inverse as a collection and treat the first row as the
+     * canonical link. Business-rule = at most one Person per User; if
+     * multiple rows show up, the first by id wins.
+     *
+     * @var Collection<int, Person>
+     */
+    #[ORM\OneToMany(targetEntity: Person::class, mappedBy: 'linkedUser')]
+    private Collection $linkedPersons;
+
     public function __construct()
     {
         $this->customRoles = new ArrayCollection();
         $this->mfaTokens = new ArrayCollection();
+        $this->linkedPersons = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
     }
 
@@ -194,7 +251,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->email;
     }
 
-    public function setEmail(string $email): static
+    public function setEmail(?string $email): static
     {
         $this->email = $email;
         return $this;
@@ -276,10 +333,9 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     /**
      * @see UserInterface
      */
+    #[\Deprecated(message: 'No transient credentials stored on User; method kept for BC only.', since: 'symfony/security-http 7.3')]
     public function eraseCredentials(): void
     {
-        // If you store any temporary, sensitive data on the user, clear it here
-        // $this->plainPassword = null;
     }
 
     public function getFirstName(): ?string
@@ -287,7 +343,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->firstName;
     }
 
-    public function setFirstName(string $firstName): static
+    public function setFirstName(?string $firstName): static
     {
         $this->firstName = $firstName;
         return $this;
@@ -298,7 +354,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->lastName;
     }
 
-    public function setLastName(string $lastName): static
+    public function setLastName(?string $lastName): static
     {
         $this->lastName = $lastName;
         return $this;
@@ -307,6 +363,32 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function getFullName(): string
     {
         return $this->firstName . ' ' . $this->lastName;
+    }
+
+    /**
+     * Read-only accessor for the canonical {@see Person} record linked
+     * to this User. Returns null when no Person profile exists yet.
+     *
+     * Used by Person-Rollout consumers (Asset/Risk/Control/Document
+     * owner-pickers, Policy-Wizard role validators) to decide whether
+     * a legacy User-id can be resolved to a Person without an
+     * additional repository call.
+     */
+    public function getLinkedPerson(): ?Person
+    {
+        if ($this->linkedPersons->isEmpty()) {
+            return null;
+        }
+
+        return $this->linkedPersons->first() ?: null;
+    }
+
+    /**
+     * @return Collection<int, Person>
+     */
+    public function getLinkedPersons(): Collection
+    {
+        return $this->linkedPersons;
     }
 
     public function isActive(): bool
@@ -565,6 +647,29 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     }
 
     /**
+     * Audit-S5 P-12 — read previous QM-System background.
+     *
+     * @return string|null One of 'iso_9001' | 'iso_14001' | 'other' | 'none' | NULL.
+     */
+    public function getPreviousQmsBackground(): ?string
+    {
+        return $this->previousQmsBackground;
+    }
+
+    public function setPreviousQmsBackground(?string $previousQmsBackground): static
+    {
+        $allowed = ['iso_9001', 'iso_14001', 'other', 'none', null];
+        if (!in_array($previousQmsBackground, $allowed, true)) {
+            throw new \App\Exception\InvalidArgument\InvalidArgumentException(\sprintf(
+                'Invalid previousQmsBackground "%s". Allowed: iso_9001, iso_14001, other, none, null.',
+                $previousQmsBackground,
+            ));
+        }
+        $this->previousQmsBackground = $previousQmsBackground;
+        return $this;
+    }
+
+    /**
      * Check if user has a specific permission
      */
     public function hasPermission(string $permission): bool
@@ -691,6 +796,56 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setAlvaCompanionPosition(string $alvaCompanionPosition): static
     {
         $this->alvaCompanionPosition = $alvaCompanionPosition;
+        return $this;
+    }
+
+    public function getMenuDensity(): MenuDensity
+    {
+        return $this->menuDensity;
+    }
+
+    public function setMenuDensity(MenuDensity $density): static
+    {
+        $this->menuDensity = $density;
+        return $this;
+    }
+
+    /** @return array<int, array<string, mixed>>|null */
+    public function getCompetencies(): ?array
+    {
+        return $this->competencies;
+    }
+
+    /** @param array<int, array<string, mixed>>|null $competencies */
+    public function setCompetencies(?array $competencies): static
+    {
+        $this->competencies = $competencies;
+        return $this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Sprint 6a — F3 Notification preferences
+    // -------------------------------------------------------------------------
+
+    public function isInAppNotificationsEnabled(): bool
+    {
+        return $this->inAppNotificationsEnabled;
+    }
+
+    public function setInAppNotificationsEnabled(bool $inAppNotificationsEnabled): static
+    {
+        $this->inAppNotificationsEnabled = $inAppNotificationsEnabled;
+        return $this;
+    }
+
+    public function getLastSeenNotifications(): ?DateTimeImmutable
+    {
+        return $this->lastSeenNotifications;
+    }
+
+    public function setLastSeenNotifications(?DateTimeImmutable $lastSeenNotifications): static
+    {
+        $this->lastSeenNotifications = $lastSeenNotifications;
         return $this;
     }
 }

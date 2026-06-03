@@ -113,6 +113,16 @@ export default class extends Controller {
         try {
             const url = `${this.urlValue}?period=${this.period}`;
             const response = await fetch(url);
+
+            if (!response.ok) {
+                const msg = response.status === 403
+                    ? 'Keine Berechtigung'
+                    : `Fehler ${response.status}`;
+                window.faToast(msg, 'danger');
+                this.showError();
+                return;
+            }
+
             const data = await response.json();
 
             this.renderRiskTrendChart(data.risks);
@@ -182,7 +192,7 @@ export default class extends Controller {
                 scales: {
                     y: {
                         beginAtZero: true,
-                        ticks: { stepSize: 1, color: colors.textMuted },
+                        ticks: { precision: 0, maxTicksLimit: 8, color: colors.textMuted },
                         grid: { color: colors.gridColor }
                     },
                     x: {
@@ -232,7 +242,7 @@ export default class extends Controller {
                 scales: {
                     y: {
                         beginAtZero: true,
-                        ticks: { stepSize: 1, color: colors.textMuted },
+                        ticks: { precision: 0, maxTicksLimit: 8, color: colors.textMuted },
                         grid: { color: colors.gridColor }
                     },
                     x: {

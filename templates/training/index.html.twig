@@ -1,4 +1,5 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_alva_hint.html.twig' as _fa_alva_hint %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% trans_default_domain 'training' %}
 {% import '_macros/inheritance_badge.html.twig' as inheritance %}
@@ -15,12 +16,19 @@
 } %}
 
 {{ _fa_page_header.render({
-    badge: { icon: 'mortarboard', label: 'nav.training'|trans({}, 'nav') },
+    badge: { icon: 'nav-mortarboard', label: 'nav.training'|trans({}, 'nav') },
     title: 'training.title'|trans({}, 'training'),
     actions: is_granted('ROLE_USER') ? [
-        { label: 'training.new'|trans({}, 'training'), variant: 'primary', icon: 'plus-lg', href: path('app_training_new') }
+        { label: 'training.new'|trans({}, 'training'), variant: 'primary', icon: 'plus', href: path('app_training_new') }
     ] : []
 }) }}
+{% set _global_hints = alva_hints('training_index') %}
+{% if _global_hints|length > 0 %}
+    {% for _h in _global_hints %}
+        {{ _fa_alva_hint.render(_h) }}
+    {% endfor %}
+{% endif %}
+
 
 <main class="fa-aurora-surface">
 <div class="container-fluid py-4">
@@ -35,7 +43,7 @@
                 <label for="view-filter" class="mb-0 fw-bold">
                     <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i> {{ 'common.view'|trans({}, 'messages') }}:
                 </label>
-                <select class="form-select form-select-sm w-auto" id="view-filter" name="view" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
+                <select class="form-select fa-cyber-input__field form-select-sm w-auto" id="view-filter" name="view" data-controller="ui-actions" data-action="change->ui-actions#autoSubmit">
                     <option value="own" {{ inheritanceInfo.currentView == 'own' ? 'selected' : '' }}>
                         {{ 'corporate.view.own_only'|trans({}, 'messages') }}
                     </option>
@@ -144,8 +152,8 @@
     {% if upcoming|length > 0 %}
     {% embed '_components/_card.html.twig' with {class: 'mb-4', borderColor: 'info'} %}
         {% block card_header %}
-            <div class="card-header bg-info text-white">
-                <h2 class="mb-0"><i class="fa-icon fa-icon--ui-calendar-event" aria-hidden="true"></i> {{ 'training.upcoming_trainings'|trans({}, 'training') }}</h2>
+            <div class="card-header">
+                <h2 class="mb-0"><i class="fa-icon fa-icon--ui-calendar-event text-info" aria-hidden="true"></i> {{ 'training.upcoming_trainings'|trans({}, 'training') }}</h2>
             </div>
         {% endblock %}
         {% block card_body %}
@@ -170,7 +178,7 @@
                             <strong>{{ training.title }}</strong>
                             {{ inheritance.small_badge(training, currentTenant) }}
                             {% if training.mandatory %}
-                            {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'bi-exclamation-circle', content: 'training.mandatory_label'|trans({}, 'training'), class: 'ms-1' } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'status-critical', content: 'training.mandatory_label'|trans({}, 'training'), class: 'ms-1' } %}
                             {% endif %}
                         </td>
                         <td>
@@ -205,10 +213,10 @@
 
     {# All Trainings Section #}
     {% embed '_components/_card.html.twig' %}
-        {% block card_attrs %}data-controller="bulk-actions" data-bulk-actions-endpoint-value="/training"{% endblock %}
+        {% block card_attrs %}data-controller="bulk-actions" data-bulk-actions-endpoint-value="/{{ app.request.locale }}/training"{% endblock %}
         {% block card_header %}
-            <div class="card-header bg-primary text-white">
-                <h2 class="mb-0"><i class="fa-icon fa-icon--ui-list" aria-hidden="true"></i> {{ 'training.all_trainings'|trans({}, 'training') }}</h2>
+            <div class="card-header">
+                <h2 class="mb-0"><i class="fa-icon fa-icon--ui-list text-primary" aria-hidden="true"></i> {{ 'training.all_trainings'|trans({}, 'training') }}</h2>
             </div>
         {% endblock %}
         {% block card_body %}
@@ -218,22 +226,23 @@
                 mood: 'sleeping',
                 title: 'training.no_trainings'|trans({}, 'training'),
                 actions: is_granted('ROLE_USER') ? [
-                    { label: 'training.create_first'|trans({}, 'training'), variant: 'primary', icon: 'plus-lg', href: path('app_training_new') }
+                    { label: 'training.create_first'|trans({}, 'training'), variant: 'primary', icon: 'plus', href: path('app_training_new') }
                 ] : []
             }) }}
             {% else %}
             {% embed '_components/_table.html.twig' with {
-                'variant': 'striped'
+                'variant': 'striped',
+                'class': 'table-bulk-selectable'
             } %}
                 {% import '_macros/inheritance_badge.html.twig' as inheritance %}
                 {% block table_head %}
                     <tr>
-                        <th scope="col" class="w-40px">
+                        <th scope="col" class="bulk-select-column">
                             <input type="checkbox"
                                    class="form-check-input"
                                    data-action="bulk-actions#selectAll"
                                    data-bulk-actions-target="selectAllCheckbox"
-                                   aria-label="{{ 'common.select_all'|trans({}, 'messages') }}">
+                                   aria-label="{{ 'bulk_actions.select_all'|trans({}, 'messages') }}">
                         </th>
                         <th scope="col">{{ 'training.title'|trans({}, 'training') }}</th>
                         <th scope="col">{{ 'training.type_label'|trans({}, 'training') }}</th>
@@ -247,18 +256,19 @@
                 {% block table_body %}
                     {% for training in trainings %}
                     <tr data-training-id="{{ training.id }}">
-                        <td>
+                        <td class="bulk-select-column">
                             <input type="checkbox"
                                    class="form-check-input"
                                    data-bulk-actions-target="item"
                                    data-action="bulk-actions#selectItem"
-                                   value="{{ training.id }}">
+                                   value="{{ training.id }}"
+                                   aria-label="{{ 'common.select'|trans({}, 'messages') }} {{ training.title }}">
                         </td>
                         <td>
                             <strong>{{ training.title }}</strong>
                             {{ inheritance.small_badge(training, currentTenant) }}
                             {% if training.mandatory %}
-                            {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'bi-exclamation-circle', class: 'ms-1', content: '' } %}
+                            {% include '_components/_badge.html.twig' with { variant: 'warning', icon: 'status-critical', class: 'ms-1', content: '' } %}
                             {% endif %}
                         </td>
                         <td>
@@ -293,9 +303,7 @@
                                 {% endif %}
                                 {% if is_granted('ROLE_ADMIN') %}
                                 <button type="button"
-                                        class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#deleteModal{{ training.id }}"
+                                        class="fa-cyber-btn fa-cyber-btn--danger fa-cyber-btn--sm" data-controller="fa-modal-dispatcher" data-action="click->fa-modal-dispatcher#open" data-fa-modal-id="deleteModal{{ training.id }}"
                                         title="{{ 'common.delete'|trans({}, 'messages') }}" aria-label="{{ 'common.delete'|trans({}, 'messages') }}">
                                     <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i>
                                 </button>
@@ -321,32 +329,26 @@
 
 {# Delete Modals #}
 {% for training in trainings %}
-<div class="modal fade" id="deleteModal{{ training.id }}" tabindex="-1" aria-labelledby="deleteModalLabel{{ training.id }}" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h3 class="modal-title h5" id="deleteModalLabel{{ training.id }}">
-                    <i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ 'training.confirm_delete'|trans({}, 'training') }}
-                </h3>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="{{ 'common.close'|trans({}, 'messages') }}"></button>
-            </div>
-            <div class="modal-body">
+<div class="fa-modal fa-modal--confirm fa-modal--danger" id="deleteModal{{ training.id }}"
+     data-controller="fa-modal" data-fa-modal-mode-value="confirm" data-fa-modal-tone-value="danger"
+     role="alertdialog" aria-modal="true" aria-labelledby="deleteModal{{ training.id }}Label" aria-hidden="true">
+    <div class="fa-modal__backdrop" data-fa-modal-target="backdrop" data-action="click->fa-modal#backdropClick" aria-hidden="true"></div>
+    <div class="fa-modal__container" data-fa-modal-target="dialog"><header class="fa-modal__header"><span class="fa-modal__icon" aria-hidden="true"><i class="fa-icon fa-icon--ui-trash"></i></span><div class="fa-modal__heading"><h3 class="fa-modal__title" id="deleteModalLabel{{ training.id }}">
+                    {{ 'training.confirm_delete'|trans({}, 'training') }}
+                </h3></div><button type="button" class="fa-modal__close" data-action="fa-modal#cancel" aria-label="{{ 'action.close'|trans({}, 'messages') }}"><i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i></button></header>
+            <div class="fa-modal__body">
                 <p>{{ 'training.delete_warning'|trans({'%title%': training.title}, 'training') }}</p>
                 <p class="text-muted"><small>{{ 'common.action_irreversible'|trans({}, 'messages') }}</small></p>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="fa-cyber-btn fa-cyber-btn--ghost" data-bs-dismiss="modal">
-                    {{ 'common.cancel'|trans({}, 'messages') }}
-                </button>
-                <form method="post" action="{{ path('app_training_delete', {id: training.id}) }}" class="d-inline">
+            <footer class="fa-modal__footer">
+                <button type="button" class="fa-cyber-btn fa-cyber-btn--ghost" data-action="fa-modal#cancel">{{ 'common.cancel'|trans({}, 'messages') }}</button>
+                <form method="post" action="{{ path('app_training_delete', {id: training.id}) }}" class="d-inline" data-fa-modal-target="form">
                     <input type="hidden" name="_token" value="{{ csrf_token('delete' ~ training.id) }}">
                     <button type="submit" class="fa-cyber-btn fa-cyber-btn--danger">
                         <i class="fa-icon fa-icon--ui-trash" aria-hidden="true"></i> {{ 'common.delete'|trans({}, 'messages') }}
                     </button>
-                </form>
-            </div>
-        </div>
-    </div>
+                </form></div>
+</div>
 </div>
 {% endfor %}
 </main>

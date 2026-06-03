@@ -15,9 +15,17 @@
     align-items: center;
     margin-bottom: 30px;
     padding-bottom: 20px;
-    border-bottom: 3px solid transparent;
-    border-image: linear-gradient(90deg, var(--primary), var(--accent)) 1;
     position: relative;
+}
+.page-header::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    pointer-events: none;
 }
 
 .page-header::after {
@@ -99,8 +107,8 @@
 .analytics-card {
     margin-bottom: 20px;
     border: 2px solid var(--primary-tint);
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 0 15px var(--primary-tint);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-sm), 0 0 15px var(--primary-tint);
     background: var(--surface);
     overflow: hidden;
     transition: all 0.3s ease;
@@ -108,7 +116,7 @@
 
 .analytics-card:hover {
     border-color: var(--primary);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06), 0 0 10px var(--primary-glow), 0 0 20px var(--primary-tint);
+    box-shadow: var(--shadow-md), 0 0 10px var(--primary-glow), 0 0 20px var(--primary-tint);
 }
 
 .analytics-card .card-header {
@@ -147,9 +155,14 @@
 }
 
 /* ===============================
-   Risk Heat Map
-   =============================== */
-.heat-map-loading,
+   Risk Heat Map (Aurora-rework)
+   ===============================
+   Junior-ISB-Audit-2026-05-22 Polish: Aurora-rework Risk-Heatmap
+   Cell colors driven by Aurora .isms-risk-cell[data-level] in
+   fairy-aurora-components.css. Only section-specific layout helpers
+   remain here. Legend / details panel / tooltip CSS removed —
+   replaced by .isms-risk-legend + fa-drawer (right) Aurora components.
+*/
 .radar-loading,
 .trend-loading {
     display: flex;
@@ -159,214 +172,33 @@
     padding: 60px 20px;
 }
 
-.heat-map-legend {
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
-    row-gap: 0.75rem;
-    margin-bottom: 20px;
-    padding: 15px;
+.heat-map-section__filters {
+    margin-bottom: 16px;
+    padding: 16px;
     background: var(--surface-2);
-    border-radius: 8px;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.5rem 1rem;
-    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    white-space: nowrap;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    border-radius: var(--r-lg);
 }
 
-.legend-color {
-    width: 20px;
-    height: 20px;
-    border-radius: 3px;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    flex-shrink: 0;
-}
-
-.legend-label {
-    font-size: 0.875rem;
-    color: var(--fg);
-    font-weight: 500;
-}
-
-.heat-map-container {
+.heat-map-section__container {
     display: flex;
     justify-content: center;
-    align-items: center;
-    position: relative;
-    padding: 50px 20px 40px 20px;
+    padding: 12px 0 4px;
+    transition: opacity 0.2s ease;
 }
 
-.heat-map-axes {
-    position: absolute;
+.heat-map-section--expanded .heat-map-section__container .isms-risk-matrix {
+    max-width: 920px;
     width: 100%;
-    height: 100%;
-    pointer-events: none;
 }
 
-.y-axis-label {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%) rotate(-90deg);
-    font-weight: 600;
-    color: var(--fg-2);
-}
-
-.x-axis-label {
-    position: absolute;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    font-weight: 600;
-    color: var(--fg-2);
-}
-
-.heat-map-matrix {
-    display: inline-grid;
-    grid-template-columns: auto 1fr;
-    grid-template-rows: 1fr auto;
-    gap: 10px;
-}
-
-.heat-map-y-labels {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-around;
-    gap: 5px;
-}
-
-.y-label {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 60px;
-    font-weight: 600;
-    color: var(--fg-2);
-}
-
-.heat-map-cells {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    grid-template-rows: repeat(5, 1fr);
-    gap: 5px;
-}
-
-.heat-map-cell {
-    width: 80px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 8px;
+/* Active-cell ring re-uses Aurora .isms-risk-cell--active token. */
+.isms-risk-cell.isms-risk-cell--has-items {
     cursor: pointer;
-    transition: all 0.2s;
-    border: 2px solid transparent;
 }
-
-.heat-map-cell:hover {
-    transform: scale(1.1);
-    border-color: var(--fg);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-
-.heat-map-cell .cell-count {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: white;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.3);
-}
-
-.heat-map-x-labels {
-    display: flex;
-    justify-content: space-around;
-    gap: 5px;
-    grid-column: 2;
-}
-
-.x-label {
-    width: 80px;
-    text-align: center;
-    font-weight: 600;
-    color: var(--fg-2);
-}
-
-.heat-map-details {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    width: 300px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-    z-index: 10;
-}
-
-.details-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px;
-    background: var(--surface-2);
-    border-bottom: 1px solid var(--border);
-}
-
-.details-header h6 {
-    margin: 0;
-    font-size: 1rem;
-}
-
-.details-body {
-    padding: 15px;
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.risk-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.risk-item {
-    padding: 10px;
-    margin-bottom: 8px;
-    background: var(--surface-2);
-    border-radius: 6px;
-    transition: background 0.2s;
-}
-
-.risk-item:hover {
-    background: var(--surface-3);
-}
-
-.risk-item a {
-    text-decoration: none;
-    color: inherit;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.risk-item strong {
-    flex: 1;
-    margin-right: 10px;
-}
-
-.risk-level {
-    flex-shrink: 0;
+.isms-risk-cell:not(.isms-risk-cell--has-items) {
+    cursor: default;
+    opacity: 0.7;
 }
 
 /* ===============================
@@ -380,10 +212,10 @@
     display: inline-block;
     padding: 20px 40px;
     background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-    border-radius: 12px;
-    color: white;
+    border-radius: var(--r-xl);
+    color: var(--on-primary);
     margin-bottom: 20px;
-    box-shadow: 0 0 10px var(--primary-glow), 0 0 20px var(--primary-tint), 0 8px 24px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 0 10px var(--primary-glow), 0 0 20px var(--primary-tint), var(--shadow-lg);
     border: 2px solid var(--accent);
 }
 
@@ -427,7 +259,7 @@
 
 .trend-tabs .nav-link {
     padding: 10px 20px;
-    border-radius: 8px;
+    border-radius: var(--r-lg);
     transition: all 0.2s;
 }
 
@@ -437,7 +269,7 @@
 
 .trend-tabs .nav-link.active {
     background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-    color: white;
+    color: var(--on-primary);
     box-shadow: 0 0 10px var(--primary-glow), 0 0 20px var(--primary-tint);
 }
 
@@ -465,7 +297,7 @@
     justify-content: space-around;
     padding: 20px;
     background: var(--surface-2);
-    border-radius: 8px;
+    border-radius: var(--r-lg);
 }
 
 .stat-item {
@@ -505,25 +337,6 @@
         flex: 1;
     }
 
-    .heat-map-cell {
-        width: 60px;
-        height: 50px;
-    }
-
-    .x-label,
-    .y-label {
-        width: 30px;
-    }
-
-    .heat-map-details {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 90%;
-        max-width: 400px;
-    }
-
     .chart-stats {
         flex-direction: column;
         gap: 15px;
@@ -537,13 +350,15 @@
     .page-header-actions,
     .analytics-tabs,
     .card-actions,
-    .heat-map-details {
+    .heat-map-section__filters,
+    .fa-drawer,
+    .fa-drawer-backdrop {
         display: none !important;
     }
 
     .analytics-card {
         break-inside: avoid;
-        page-break-inside: avoid;
+        break-inside: avoid;
     }
 
     .analytics-content .tab-pane {
@@ -551,481 +366,6 @@
     }
 }
 
-/* ===============================
-   Heat Map Legend Styling
-   =============================== */
-.heat-map-legend {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 1rem;
-    row-gap: 0.75rem;
-    justify-content: center;
-    align-items: center;
-    margin-bottom: 20px;
-    padding: 15px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    width: 100%;
-}
-
-.heat-map-legend .legend-item {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.5rem 1rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    white-space: nowrap;
-    position: relative;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-    margin: 0;
-    flex: 0 0 auto;
-    min-width: fit-content;
-}
-
-.heat-map-legend .legend-color {
-    width: 20px;
-    height: 20px;
-    display: inline-block;
-    flex-shrink: 0;
-    flex-grow: 0;
-    border-radius: 3px;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    position: static;
-}
-
-.heat-map-legend .legend-label {
-    display: inline-block;
-    font-size: 0.875rem;
-    font-weight: 500;
-    position: static;
-    flex-shrink: 0;
-    color: var(--fg);
-}
-
-/* Risk Level Colors - Bootstrap consistent */
-.heat-map-legend .legend-color-critical {
-    background: var(--danger-strong);
-}
-
-.heat-map-legend .legend-color-high {
-    background: var(--danger);
-}
-
-.heat-map-legend .legend-color-medium {
-    background: var(--warning);
-}
-
-.heat-map-legend .legend-color-low {
-    background: var(--success);
-}
-
-/* Dark Mode - Brighter colors for visibility */
-[data-theme="dark"] .heat-map-legend .legend-color-critical {
-    background: var(--danger-strong);
-}
-
-[data-theme="dark"] .heat-map-legend .legend-color-high {
-    background: var(--danger);
-}
-
-[data-theme="dark"] .heat-map-legend .legend-color-medium {
-    background: var(--warning);
-}
-
-[data-theme="dark"] .heat-map-legend .legend-color-low {
-    background: var(--success);
-}
-
-/* ===============================
-   Dark Mode Support
-   =============================== */
-[data-theme="dark"] .heat-map-cell {
-    border-color: rgba(255, 255, 255, 0.1);
-}
-
-[data-theme="dark"] .overall-compliance {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-[data-theme="dark"] .chart-stats {
-    background: var(--surface-2);
-}
-
-[data-theme="dark"] .heat-map-legend {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-[data-theme="dark"] .heat-map-legend .legend-item {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-[data-theme="dark"] .heat-map-legend .legend-color {
-    border-color: rgba(255, 255, 255, 0.2);
-}
-
-/* ===============================
-   Enhanced Heat Map Tooltips
-   =============================== */
-.heat-map-tooltip {
-    position: absolute;
-    z-index: 10000;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 16px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15),
-                0 0 20px var(--primary-tint);
-    max-width: 300px;
-    pointer-events: none;
-    opacity: 0;
-    transform: translateY(-5px);
-    transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.heat-map-tooltip.tooltip-visible {
-    opacity: 1;
-    transform: translateY(0);
-}
-
-.heat-map-tooltip.tooltip-below {
-    transform: translateY(5px);
-}
-
-.heat-map-tooltip.tooltip-below.tooltip-visible {
-    transform: translateY(0);
-}
-
-.heat-map-tooltip .tooltip-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border);
-}
-
-.heat-map-tooltip .tooltip-header strong {
-    color: var(--fg);
-    font-size: 0.875rem;
-}
-
-.heat-map-tooltip .badge {
-    font-size: 0.75rem;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-weight: 600;
-}
-
-.heat-map-tooltip .tooltip-risk-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    font-size: 0.8125rem;
-}
-
-.heat-map-tooltip .tooltip-risk-list li {
-    padding: 4px 0;
-    color: var(--fg-2);
-    line-height: 1.4;
-}
-
-.heat-map-tooltip .tooltip-risk-list strong {
-    color: var(--fg);
-    font-weight: 500;
-}
-
-/* Dark Mode */
-[data-theme="dark"] .heat-map-tooltip {
-    background: var(--bg);
-    border-color: var(--border);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4),
-                0 0 20px var(--primary-tint);
-}
-
-/* ===============================
-   Enhanced Heat Map Cell Interactions
-   =============================== */
-.heat-map-cell {
-    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-                box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-                opacity 0.2s ease;
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-}
-
-.heat-map-cell.has-risks::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.heat-map-cell:hover {
-    transform: scale(1.15);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2),
-                0 0 20px var(--primary-glow);
-    z-index: 10;
-}
-
-.heat-map-cell.has-risks:hover::before {
-    opacity: 1;
-}
-
-.heat-map-cell:active {
-    transform: scale(1.1);
-}
-
-.heat-map-cell .cell-count {
-    position: relative;
-    z-index: 1;
-    font-weight: 700;
-    font-size: 1.1rem;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-    transition: font-size 0.2s ease;
-}
-
-.heat-map-cell:hover .cell-count {
-    font-size: 1.3rem;
-}
-
-/* Focus State for Keyboard Navigation */
-.heat-map-cell:focus {
-    outline: 3px solid var(--primary);
-    outline-offset: 2px;
-    transform: scale(1.15);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2),
-                0 0 20px var(--primary-glow);
-}
-
-/* Animation for new cells */
-@keyframes cellAppear {
-    from {
-        opacity: 0;
-        transform: scale(0.8);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-
-.heat-map-cell.has-risks {
-    animation: cellAppear 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-/* Stagger animation for cells */
-.heat-map-cell:nth-child(1) { animation-delay: 0.02s; }
-.heat-map-cell:nth-child(2) { animation-delay: 0.04s; }
-.heat-map-cell:nth-child(3) { animation-delay: 0.06s; }
-.heat-map-cell:nth-child(4) { animation-delay: 0.08s; }
-.heat-map-cell:nth-child(5) { animation-delay: 0.10s; }
-.heat-map-cell:nth-child(6) { animation-delay: 0.12s; }
-.heat-map-cell:nth-child(7) { animation-delay: 0.14s; }
-.heat-map-cell:nth-child(8) { animation-delay: 0.16s; }
-.heat-map-cell:nth-child(9) { animation-delay: 0.18s; }
-.heat-map-cell:nth-child(10) { animation-delay: 0.20s; }
-
-/* ===============================
-   Heat Map Filter Panel
-   =============================== */
-.heat-map-filters {
-    display: flex;
-    gap: 15px;
-    align-items: flex-end;
-    padding: 15px;
-    background: var(--surface-2);
-    border-bottom: 1px solid var(--border);
-    animation: slideDown 0.3s ease;
-}
-
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.heat-map-filters .filter-group {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    flex: 1;
-    max-width: 200px;
-}
-
-.heat-map-filters .filter-label {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--fg);
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.heat-map-filters .filter-label i {
-    color: var(--primary);
-}
-
-.heat-map-filters .form-select-sm {
-    font-size: 0.875rem;
-    padding: 0.375rem 0.75rem;
-}
-
-[data-theme="dark"] .heat-map-filters {
-    background: var(--surface-2);
-}
-
-/* Responsive Filters */
-@media (max-width: 767.98px) {
-    .heat-map-filters {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .heat-map-filters .filter-group {
-        max-width: 100%;
-    }
-}
-
-/* ===============================
-   Enhanced Heat Map Details Panel
-   =============================== */
-.heat-map-details {
-    margin-top: 20px;
-    border-top: 2px solid var(--border);
-    padding-top: 20px;
-    opacity: 0;
-    transform: translateY(10px);
-    transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.heat-map-details.details-visible {
-    opacity: 1;
-    transform: translateY(0);
-}
-
-.heat-map-details .details-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 15px;
-}
-
-.heat-map-details .details-title-content h6 {
-    margin: 0 0 10px 0;
-    color: var(--fg);
-    font-size: 1.1rem;
-    font-weight: 600;
-}
-
-.heat-map-details .cell-context {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.heat-map-details .cell-context .badge {
-    font-size: 0.75rem;
-    padding: 4px 10px;
-}
-
-.heat-map-details .risk-list-enhanced {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.heat-map-details .risk-item-enhanced {
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 15px;
-    transition: all 0.2s ease;
-}
-
-.heat-map-details .risk-item-enhanced:hover {
-    background: var(--surface);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    border-color: var(--primary);
-    transform: translateX(3px);
-}
-
-.heat-map-details .risk-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 10px;
-    margin-bottom: 8px;
-}
-
-.heat-map-details .risk-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--fg);
-    text-decoration: none;
-    flex: 1;
-    transition: color 0.2s ease;
-}
-
-.heat-map-details .risk-title:hover {
-    color: var(--primary);
-}
-
-.heat-map-details .risk-title i {
-    color: var(--danger);
-    font-size: 0.9rem;
-}
-
-.heat-map-details .risk-meta {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    align-items: center;
-    margin-bottom: 6px;
-}
-
-.heat-map-details .risk-meta .badge {
-    font-size: 0.7rem;
-    padding: 2px 6px;
-}
-
-.heat-map-details .risk-description {
-    font-size: 0.85rem;
-    color: var(--fg-2);
-    margin: 8px 0 0 0;
-    line-height: 1.5;
-}
-
-/* Dark Mode */
-[data-theme="dark"] .heat-map-details .risk-item-enhanced {
-    background: var(--surface-2);
-    border-color: var(--border);
-}
-
-[data-theme="dark"] .heat-map-details .risk-item-enhanced:hover {
-    background: var(--bg);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
 
 @media (prefers-reduced-motion: reduce) {
     * {

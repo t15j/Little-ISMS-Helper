@@ -8,6 +8,8 @@ use DateTimeInterface;
 use DateTime;
 use DateTimeImmutable;
 use App\Entity\AuditLog;
+use App\Entity\Tenant;
+use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -46,6 +48,32 @@ class AuditLogRepository extends ServiceEntityRepository
     public function findAllOrdered(int $limit = 100, int $offset = 0): array
     {
         return $this->createQueryBuilder('a')
+            ->orderBy('a.createdAt', 'DESC')
+            ->setMaxResults($limit)
+            ->setFirstResult($offset)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Find audit logs scoped to a specific tenant.
+     *
+     * Symfony-BP audit #5 (2026-05-18): AuditLog now carries an explicit
+     * `tenant_id` FK captured at write time. The prior string-JOIN
+     * (userName → User.email → User.tenant_id) leaked rows whenever a
+     * user was renamed or moved between tenants. The legacy backfill
+     * migration sets the FK from the user lookup for historic rows.
+     *
+     * Rows with NULL tenant (system/CLI actions, deleted users) are
+     * excluded — surface them via {@see findSystemActions()} if needed.
+     *
+     * @return AuditLog[]
+     */
+    public function findAllOrderedForTenant(Tenant $tenant, int $limit = 100, int $offset = 0): array
+    {
+        return $this->createQueryBuilder('a')
+            ->andWhere('a.tenant = :tenant')
+            ->setParameter('tenant', $tenant)
             ->orderBy('a.createdAt', 'DESC')
             ->setMaxResults($limit)
             ->setFirstResult($offset)

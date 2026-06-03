@@ -1,6 +1,7 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% trans_default_domain 'audit' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'audit.edit'|trans({}, 'audit') }} - {{ audit.title }} - {{ parent() }}{% endblock %}
 
@@ -24,17 +25,13 @@
                 </ol>
             </nav>
 
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h1 class="h3 mb-0">
-                    <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i>
-                    {{ 'audit.edit'|trans({}, 'audit') }}: {{ audit.title }}
-                </h1>
-                <div>
-                    <a href="{{ path('app_audit_show', {id: audit.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost" data-turbo-action="advance">
-                        <i class="fa-icon fa-icon--ui-eye" aria-hidden="true"></i> {{ 'common.view'|trans({}, 'messages') }}
-                    </a>
-                </div>
-            </div>
+            {{ _fa_page_header.render({
+    title: ('audit.edit'|trans({}, 'audit')) ~ ': ' ~ (audit.title),
+    badge: { icon: 'ui-edit', label: '' },
+    actions: [
+        { label: 'common.view'|trans({}, 'messages'), href: path('app_audit_show', {id: audit.id}), variant: 'ghost', icon: 'util-arrow-left' }
+    ]
+}) }}
 
             {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-info', class: 'mb-4' } } %}
                 {% block alert_body %}<div class="fw-bold mb-2"> <i class="fa-icon fa-icon--status-info" aria-hidden="true"></i> {{ 'audit.iso_27001_requirement'|trans({}, 'audit') }} </div> <p class="mb-0 small"> {{ 'audit.iso_27001_clause_info'|trans({}, 'audit') }} </p>{% endblock %}
@@ -48,12 +45,14 @@
                 {% endblock %}
                 {% block card_body %}
                     {% import '_components/_fa_alert.html.twig' as _fa_alert %}
-                    {{ form_start(form, {'attr': {'novalidate': 'novalidate', 'id': 'audit-form'}}) }}
+                    {# C5-04 — `conditional-fields` controller toggles the scoped-assets row
+                       when scopeType=asset (ISO 19011 Cl. 5.5.2). #}
+                    {{ form_start(form, {'attr': {'novalidate': 'novalidate', 'id': 'audit-form', 'data-controller': 'conditional-fields'}}) }}
 
                     {# Basic Information Section #}
                     <fieldset class="mb-4">
                         <legend class="h3 mb-3">
-                            <i class="bi bi-info-square" aria-hidden="true"></i>
+                            <i class="fa-icon fa-icon--ui-info" aria-hidden="true"></i>
                             {{ 'audit.section.basic_info'|trans({}, 'audit') }}
                         </legend>
 
@@ -82,6 +81,14 @@
                                 {% include '_components/_form_field.html.twig' with {
                                     'field': form.auditedSubsidiaries,
                                     'label': 'audit.field.audited_subsidiaries'|trans({}, 'audit')
+                                } %}
+                            </div>
+                            {# C5-04 — scopedAssets row, toggled by conditional-fields controller when scopeType=asset (ISO 19011 Cl. 5.5.2). #}
+                            <div class="col-md-12">
+                                {% include '_components/_form_field.html.twig' with {
+                                    'field': form.scopedAssets,
+                                    'label_key': form.scopedAssets.vars.label,
+                                    'translation_domain': 'audit'
                                 } %}
                             </div>
                         </div>
@@ -117,7 +124,7 @@
                             'leadAuditor': 6,
                             'status': 6
                         },
-                        'exclude': ['title', 'scope', 'scopeType', 'scopedFramework', 'auditedSubsidiaries']
+                        'exclude': ['title', 'scope', 'scopeType', 'scopedFramework', 'auditedSubsidiaries', 'scopedAssets']
                     } %}
 
                     {# Form Actions #}
@@ -180,7 +187,9 @@
 </style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+// IIFE: Turbo re-eval guard — prevents re-declaration errors on body-swap
+(function () {
+function initAuditEditSubsidiaries() {
     const scopeTypeSelect = document.querySelector('[data-corporate-scope]');
     const subsidiariesContainer = document.getElementById('subsidiaries-container');
     const subsidiariesSelect = document.querySelector('[data-corporate-subsidiaries]');
@@ -218,12 +227,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Run on scope type change
     scopeTypeSelect.addEventListener('change', toggleSubsidiariesField);
-});
+}
 
-// Also handle Turbo navigation
-document.addEventListener('turbo:load', function() {
-    const event = new Event('DOMContentLoaded');
-    document.dispatchEvent(event);
-});
+document.addEventListener('DOMContentLoaded', initAuditEditSubsidiaries);
+document.addEventListener('turbo:load', initAuditEditSubsidiaries);
+})();
 </script>
 {% endblock %}

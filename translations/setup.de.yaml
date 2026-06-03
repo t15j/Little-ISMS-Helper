@@ -24,6 +24,8 @@ setup:
             db_test: 'Alva testet die Datenbank-Verbindung – einen Moment bitte.'
             admin: 'Alva legt den Admin-Benutzer an – einen Moment bitte.'
             frameworks: 'Alva richtet die Compliance-Frameworks ein – kann einige Sekunden dauern.'
+        success:
+            base_data: 'Stammdaten erfolgreich importiert.'
 
     # Index/Landing Page
     already_complete:
@@ -189,15 +191,15 @@ setup:
             error: 'Fehler bei der Wiederherstellung:'
         orphaned:
             title: 'Verwaiste Entitäten gefunden'
-            description: 'Nach der Wiederherstellung wurden <strong>%count%</strong> Entitäten ohne Mandanten-Zuordnung gefunden:'
+            description: 'Nach der Wiederherstellung wurden <strong>%count%</strong> Entitäten ohne Organisations-Zuordnung gefunden:'
             assets: 'Assets'
             risks: 'Risiken'
             incidents: 'Vorfälle'
             repair:
                 title: 'Verwaiste Entitäten reparieren'
-                description: 'Wählen Sie einen Mandanten, dem die verwaisten Entitäten zugewiesen werden sollen:'
-                target_tenant: 'Ziel-Mandant'
-                select_tenant: 'Bitte Mandanten auswählen...'
+                description: 'Wählen Sie eine Organisation, der die verwaisten Entitäten zugewiesen werden sollen:'
+                target_tenant: 'Ziel-Organisation'
+                select_tenant: 'Bitte Organisation auswählen...'
                 submit: 'Jetzt reparieren'
         asset_links:
             title: 'Asset-Zuordnungen reparieren'
@@ -370,6 +372,8 @@ setup:
         apply_baseline_hint: 'Erstellt vorkonfigurierte Risiken, Assets und markiert relevante Annex-A-Controls als anwendbar. Ideal für kleine Organisationen, die schnell starten wollen.'
         command: 'Befehl'
         modules: 'Module'
+        success:
+            master_data_imported: 'Stammdaten erfolgreich importiert.'
     can_delete_later: 'Daten können später gelöscht werden.'
 
     # Step 10: Sample Data
@@ -390,6 +394,34 @@ setup:
     sample_data:
         import_selected: 'Ausgewählte Daten importieren'
         no_data_available: 'Keine Beispieldaten verfügbar.'
+
+    # V4-EF-1: Industry-Preset Express-Path (between organisation-info and modules).
+    preset:
+        title: 'Branchen-Preset wählen — Setup-Wizard'
+        header: 'Express-Setup: Branchen-Preset'
+        intro: 'Spar dir das manuelle Klicken. Ich aktiviere passende Module + Frameworks in einem Schritt.'
+        info:
+            title: 'Was passiert hier?'
+            message: 'Ein Preset bündelt typische Module und Compliance-Frameworks für dein Branchen-Profil. Du kannst alles später noch anpassen — aber so kommst du in 1 Schritt statt 5 zum Ziel.'
+        section:
+            curated: 'Kuratierte Branchen-Profile'
+        stats:
+            modules: '%count% Module'
+            frameworks: '%count% Frameworks'
+            controls: '%count% Initial-Controls'
+            documents: '%count% Vorlagen'
+        includes: 'Enthält'
+        skip:
+            title: 'Lieber manuell konfigurieren'
+            description: 'Klick dich Schritt für Schritt durch Module + Frameworks. Volle Kontrolle, etwas mehr Zeit.'
+        actions:
+            apply: 'Preset anwenden & weiter'
+        applied: 'Preset angewendet: %modules% Module und %frameworks% Frameworks vorausgewählt.'
+        busy: 'Wende Preset an…'
+        aria:
+            group: 'Branchen-Preset auswählen'
+        error:
+            unknown: 'Unbekanntes Preset. Bitte erneut auswählen.'
 
     # Step 11: Complete
     complete:
@@ -476,3 +508,6 @@ setup:
             soc2: 'US-/SaaS-Markt-Standard — wird häufig vertraglich von US-Kunden verlangt.'
             nist_csf: 'US-Framework — primär relevant für Bundesvertrags-Zulieferer oder internationale Reports.'
             cis_controls: 'Operationalisierungshilfe mit Implementation Groups — gutes Werkzeug, keine formelle Anforderung.'
+
+setup.alva.success.restore: 'Restore erfolgreich abgeschlossen.'
+setup.alva.success.sample_data: 'Beispiel-Daten erfolgreich angelegt.'

@@ -14,6 +14,8 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 #[ORM\Entity(repositoryClass: BusinessProcessRepository::class)]
 class BusinessProcess
@@ -29,7 +31,7 @@ class BusinessProcess
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $description = null;
 
-    #[ORM\Column(length: 100)]
+    #[ORM\Column(length: 100, nullable: true)]
     private ?string $processOwner = null;
 
     #[ORM\Column(length: 50)]
@@ -52,23 +54,62 @@ class BusinessProcess
     #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2, nullable: true)]
     private ?string $financialImpactPerDay = null;
 
-    // Reputationsschaden
-    #[ORM\Column(type: Types::INTEGER)]
+    // Reputationsschaden — Junior-ISB-Audit T4.2: nullable for Save-as-Draft
+    // (BIA assessment is incremental work; require completion only when the
+    // process is promoted out of draft, not at first save).
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
     private ?int $reputationalImpact = null; // 1-5 Skala
 
-    // Rechtliche/Regulatorische Auswirkungen
-    #[ORM\Column(type: Types::INTEGER)]
+    // Rechtliche/Regulatorische Auswirkungen — same as above (T4.2 nullable).
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
     private ?int $regulatoryImpact = null; // 1-5 Skala
 
-    // Operationale Auswirkungen
-    #[ORM\Column(type: Types::INTEGER)]
+    // Operationale Auswirkungen — same as above (T4.2 nullable).
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
     private ?int $operationalImpact = null; // 1-5 Skala
 
+    /**
+     * @deprecated since 2026-05-25 — use upstreamProcesses (typed M2M collection).
+     *             Free-text dependency names had no referential integrity, no
+     *             graph visualization, no search. Kept as legacy fallback
+     *             during transition; will be dropped in a future migration
+     *             once data is backfilled.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $dependenciesUpstream = null;
 
+    /**
+     * @deprecated since 2026-05-25 — use downstreamProcesses (typed M2M collection).
+     *             See $dependenciesUpstream docblock for rationale.
+     */
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $dependenciesDownstream = null;
+
+    /**
+     * Typed upstream-process dependencies — processes that feed into this one.
+     * Replaces the legacy free-text `$dependenciesUpstream` field.
+     *
+     * @var Collection<int, BusinessProcess>
+     */
+    #[ORM\ManyToMany(targetEntity: self::class)]
+    #[ORM\JoinTable(name: 'business_process_dependencies_upstream',
+        joinColumns: [new ORM\JoinColumn(name: 'process_id', referencedColumnName: 'id', onDelete: 'CASCADE')],
+        inverseJoinColumns: [new ORM\JoinColumn(name: 'upstream_process_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    )]
+    private Collection $upstreamProcesses;
+
+    /**
+     * Typed downstream-process dependencies — processes that consume this one's
+     * output. Replaces the legacy free-text `$dependenciesDownstream` field.
+     *
+     * @var Collection<int, BusinessProcess>
+     */
+    #[ORM\ManyToMany(targetEntity: self::class)]
+    #[ORM\JoinTable(name: 'business_process_dependencies_downstream',
+        joinColumns: [new ORM\JoinColumn(name: 'process_id', referencedColumnName: 'id', onDelete: 'CASCADE')],
+        inverseJoinColumns: [new ORM\JoinColumn(name: 'downstream_process_id', referencedColumnName: 'id', onDelete: 'CASCADE')]
+    )]
+    private Collection $downstreamProcesses;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $recoveryStrategy = null;
@@ -99,9 +140,6 @@ class BusinessProcess
 
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $mbco = null;
-
-    #[ORM\Column(type: Types::INTEGER, nullable: true)]
-    private ?int $mbcoPercentage = null;
 
     /**
      * @var Collection<int, BusinessProcess>
@@ -134,6 +172,8 @@ class BusinessProcess
         $this->incidents = new ArrayCollection();
         $this->upstreamDependencies = new ArrayCollection();
         $this->dependentProcesses = new ArrayCollection();
+        $this->upstreamProcesses = new ArrayCollection();
+        $this->downstreamProcesses = new ArrayCollection();
         $this->createdAt = new DateTimeImmutable();
         $this->processOwnerDeputyPersons = new ArrayCollection();
     }
@@ -148,7 +188,7 @@ class BusinessProcess
         return $this->name;
     }
 
-    public function setName(string $name): static
+    public function setName(?string $name): static
     {
         $this->name = $name;
         return $this;
@@ -170,7 +210,7 @@ class BusinessProcess
         return $this->processOwner;
     }
 
-    public function setProcessOwner(string $processOwner): static
+    public function setProcessOwner(?string $processOwner): static
     {
         $this->processOwner = $processOwner;
         return $this;
@@ -181,7 +221,7 @@ class BusinessProcess
         return $this->criticality;
     }
 
-    public function setCriticality(string $criticality): static
+    public function setCriticality(?string $criticality): static
     {
         $this->criticality = $criticality;
         return $this;
@@ -192,7 +232,7 @@ class BusinessProcess
         return $this->rto;
     }
 
-    public function setRto(int $rto): static
+    public function setRto(?int $rto): static
     {
         $this->rto = $rto;
         return $this;
@@ -203,7 +243,7 @@ class BusinessProcess
         return $this->rpo;
     }
 
-    public function setRpo(int $rpo): static
+    public function setRpo(?int $rpo): static
     {
         $this->rpo = $rpo;
         return $this;
@@ -214,7 +254,7 @@ class BusinessProcess
         return $this->mtpd;
     }
 
-    public function setMtpd(int $mtpd): static
+    public function setMtpd(?int $mtpd): static
     {
         $this->mtpd = $mtpd;
         return $this;
@@ -247,7 +287,7 @@ class BusinessProcess
         return $this->reputationalImpact;
     }
 
-    public function setReputationalImpact(int $reputationalImpact): static
+    public function setReputationalImpact(?int $reputationalImpact): static
     {
         $this->reputationalImpact = $reputationalImpact;
         return $this;
@@ -258,7 +298,7 @@ class BusinessProcess
         return $this->regulatoryImpact;
     }
 
-    public function setRegulatoryImpact(int $regulatoryImpact): static
+    public function setRegulatoryImpact(?int $regulatoryImpact): static
     {
         $this->regulatoryImpact = $regulatoryImpact;
         return $this;
@@ -269,31 +309,79 @@ class BusinessProcess
         return $this->operationalImpact;
     }
 
-    public function setOperationalImpact(int $operationalImpact): static
+    public function setOperationalImpact(?int $operationalImpact): static
     {
         $this->operationalImpact = $operationalImpact;
         return $this;
     }
 
+    /** @deprecated since 2026-05-25 — use getUpstreamProcesses() */
     public function getDependenciesUpstream(): ?string
     {
         return $this->dependenciesUpstream;
     }
 
+    /** @deprecated since 2026-05-25 — use addUpstreamProcess() / removeUpstreamProcess() */
     public function setDependenciesUpstream(?string $dependenciesUpstream): static
     {
         $this->dependenciesUpstream = $dependenciesUpstream;
         return $this;
     }
 
+    /** @deprecated since 2026-05-25 — use getDownstreamProcesses() */
     public function getDependenciesDownstream(): ?string
     {
         return $this->dependenciesDownstream;
     }
 
+    /** @deprecated since 2026-05-25 — use addDownstreamProcess() / removeDownstreamProcess() */
     public function setDependenciesDownstream(?string $dependenciesDownstream): static
     {
         $this->dependenciesDownstream = $dependenciesDownstream;
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, BusinessProcess>
+     */
+    public function getUpstreamProcesses(): Collection
+    {
+        return $this->upstreamProcesses;
+    }
+
+    public function addUpstreamProcess(self $process): static
+    {
+        if ($process !== $this && !$this->upstreamProcesses->contains($process)) {
+            $this->upstreamProcesses->add($process);
+        }
+        return $this;
+    }
+
+    public function removeUpstreamProcess(self $process): static
+    {
+        $this->upstreamProcesses->removeElement($process);
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, BusinessProcess>
+     */
+    public function getDownstreamProcesses(): Collection
+    {
+        return $this->downstreamProcesses;
+    }
+
+    public function addDownstreamProcess(self $process): static
+    {
+        if ($process !== $this && !$this->downstreamProcesses->contains($process)) {
+            $this->downstreamProcesses->add($process);
+        }
+        return $this;
+    }
+
+    public function removeDownstreamProcess(self $process): static
+    {
+        $this->downstreamProcesses->removeElement($process);
         return $this;
     }
 
@@ -313,7 +401,7 @@ class BusinessProcess
         return $this->createdAt;
     }
 
-    public function setCreatedAt(DateTimeInterface $createdAt): static
+    public function setCreatedAt(?DateTimeInterface $createdAt): static
     {
         $this->createdAt = $createdAt;
         return $this;
@@ -353,11 +441,33 @@ class BusinessProcess
     }
 
     /**
-     * Berechnet den aggregierten Business Impact Score (1-5)
+     * Berechnet den aggregierten Business Impact Score (1-5).
+     *
+     * T4.2 Save-as-Draft: Individual impact-dimensions may be unset on a
+     * fresh draft. The score averages only the rated dimensions; returns 0
+     * when none are rated yet.
      */
     public function getBusinessImpactScore(): int
     {
-        return (int) round(($this->reputationalImpact + $this->regulatoryImpact + $this->operationalImpact) / 3);
+        $rated = array_filter(
+            [$this->reputationalImpact, $this->regulatoryImpact, $this->operationalImpact],
+            static fn($v): bool => $v !== null,
+        );
+        if ($rated === []) {
+            return 0;
+        }
+        return (int) round(array_sum($rated) / count($rated));
+    }
+
+    /**
+     * T4.2 — Are all three BIA-impact dimensions rated?
+     * Used by show-page progress indicator + auditors to flag pending BIAs.
+     */
+    public function isBiaComplete(): bool
+    {
+        return $this->reputationalImpact !== null
+            && $this->regulatoryImpact !== null
+            && $this->operationalImpact !== null;
     }
 
     /**
@@ -676,17 +786,6 @@ class BusinessProcess
         return $this;
     }
 
-    public function getMbcoPercentage(): ?int
-    {
-        return $this->mbcoPercentage;
-    }
-
-    public function setMbcoPercentage(?int $mbcoPercentage): static
-    {
-        $this->mbcoPercentage = $mbcoPercentage;
-        return $this;
-    }
-
     /**
      * @return Collection<int, BusinessProcess>
      */
@@ -859,6 +958,41 @@ class BusinessProcess
             $this->processOwner,
             $this->processOwnerDeputyPersons,
         );
+    }
+
+    // Junior-ISB-Audit-2026-05-22 M-01: ISO 22301 Cl. 8.2.2 / 8.3.2 Recovery-Kette RPO ≤ RTO ≤ MTPD
+    /**
+     * ISO 22301 Cl. 8.2.2 / 8.3.2 — enforce the full BIA recovery-chain
+     * RPO ≤ RTO ≤ MTPD on save.
+     *
+     * Maximum Tolerable Period of Disruption is the outer-bound; if a process
+     * cannot recover within MTPD the business cannot survive the disruption.
+     * Recovery Time Objective (when the process must be back) MUST fit inside
+     * MTPD. Recovery Point Objective (acceptable data loss measured in time
+     * before disruption) MUST be ≤ RTO — otherwise the process could be
+     * "recovered" but with data older than the recovery-target window, which
+     * defeats the BIA. Saving a violating ordering (e.g. mtpd=2h, rto=8h) is
+     * a direct ISO 22301 non-conformity during certification (Audit-NC).
+     */
+    #[Assert\Callback]
+    public function validateRecoveryChain(ExecutionContextInterface $context): void
+    {
+        $rpo  = $this->rpo;
+        $rto  = $this->rto;
+        $mtpd = $this->mtpd;
+
+        if ($rpo !== null && $rto !== null && $rpo > $rto) {
+            $context->buildViolation('business_process.validator.rpo_greater_than_rto')
+                ->setTranslationDomain('business_process')
+                ->atPath('rpo')
+                ->addViolation();
+        }
+        if ($rto !== null && $mtpd !== null && $rto > $mtpd) {
+            $context->buildViolation('business_process.validator.rto_greater_than_mtpd')
+                ->setTranslationDomain('business_process')
+                ->atPath('mtpd')
+                ->addViolation();
+        }
     }
 
 }

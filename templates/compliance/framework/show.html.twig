@@ -1,10 +1,21 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% import '_components/_fa_feature_card.html.twig' as _fa_feature_card %}
 {% trans_default_domain 'compliance' %}
 
 {% block title %}{{ framework.name }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid mt-4">
+    {# M-4 — module-gating: Multi-Framework Compliance #}
+    {% if not is_module_active('compliance') %}
+        {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+        {{ _fa_alert.render({
+            variant: 'info',
+            icon: 'nav-shield-alert',
+            body: 'common.module_not_active'|trans({'%module%': 'Compliance'}, 'messages')
+        }) }}
+    {% else %}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
             { label: 'nav.compliance'|trans({}, 'nav'), url: path('app_compliance_index') },
@@ -13,108 +24,150 @@
         ]
     } %}
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1>
-                <i class="fa-icon fa-icon--compliance-shield" aria-hidden="true"></i> {{ framework.name }}
-                {% if framework.active %}
-                    {% include '_components/_badge.html.twig' with { variant: 'success', content: 'common.active'|trans({}, 'messages') } %}
-                {% else %}
-                    {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'common.inactive'|trans({}, 'messages') } %}
-                {% endif %}
-                {% if framework.mandatory %}
-                    {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'compliance.framework.badge.mandatory'|trans({}, 'compliance') } %}
-                {% endif %}
-            </h1>
-            <p class="text-muted">
-                <code>{{ framework.code }}</code> | {{ 'compliance.framework.field.version'|trans({}, 'compliance') }}: {{ framework.version }}
-            </p>
-        </div>
-        <div>
-            <a href="{{ path('app_compliance_framework', {id: framework.id}) }}" class="fa-cyber-btn fa-cyber-btn--primary">
-                <i class="fa-icon fa-icon--nav-dashboard" aria-hidden="true"></i> {{ 'compliance.framework.action.dashboard'|trans({}, 'compliance') }}
-            </a>
-            {% if is_granted('ROLE_MANAGER') %}
-                <a href="{{ path('app_compliance_framework_migrate', {id: framework.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                    <i class="fa-icon fa-icon--learning-path" aria-hidden="true"></i>
-                    {{ 'compliance.framework.migrate.title'|trans({}, 'compliance') }}
-                </a>
+    {% set _show_actions = [
+        { label: 'compliance.framework.action.dashboard'|trans({}, 'compliance'), variant: 'primary', icon: 'nav-dashboard', href: path('app_compliance_framework', {id: framework.id}) }
+    ] %}
+    {% if is_granted('ROLE_MANAGER') %}
+        {% set _show_actions = _show_actions|merge([{ label: 'compliance.framework.migrate.title'|trans({}, 'compliance'), variant: 'ghost', icon: 'util-arrow-up', href: path('app_compliance_framework_migrate', {id: framework.id}) }]) %}
+    {% endif %}
+    {% if is_granted('ROLE_ADMIN') %}
+        {% set _show_actions = _show_actions|merge([{ label: 'common.edit'|trans({}, 'messages'), variant: 'accent', icon: 'ui-edit', href: path('app_compliance_framework_edit', {id: framework.id}) }]) %}
+    {% endif %}
+    {% if is_granted('ROLE_AUDITOR') %}
+        {% set _show_actions = _show_actions|merge([{ label: 'audit_workbook.action.export_xlsx'|trans({}, 'audit_workbook'), variant: 'success', icon: 'download', href: path('app_audit_workbook_compliance', {frameworkId: framework.id}) }]) %}
+    {% endif %}
+    {% set _show_actions = _show_actions|merge([{ label: 'common.back'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_compliance_framework_index') }]) %}
+    {{ _fa_page_header.render({
+        badge: { icon: 'shield-check', label: framework.code },
+        title: framework.name,
+        subtitle: 'compliance.framework.field.version'|trans({}, 'compliance') ~ ': ' ~ framework.version,
+        actions: _show_actions
+    }) }}
+
+    {# Status badges + POST forms (toggle/duplicate) kept below header (cannot be expressed via _fa_page_header GET-only actions) #}
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            {% if framework.active %}
+                {% include '_components/_badge.html.twig' with { variant: 'success', content: 'common.active'|trans({}, 'messages') } %}
+            {% else %}
+                {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'common.inactive'|trans({}, 'messages') } %}
             {% endif %}
-            {% if is_granted('ROLE_ADMIN') %}
-                <a href="{{ path('app_compliance_framework_edit', {id: framework.id}) }}" class="fa-cyber-btn fa-cyber-btn--warning">
-                    <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> {{ 'common.edit'|trans({}, 'messages') }}
-                </a>
+            {% if framework.mandatory %}
+                {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'compliance.framework.badge.mandatory'|trans({}, 'compliance') } %}
+            {% endif %}
+        </div>
+        {% if is_granted('ROLE_ADMIN') %}
+            <div class="d-flex gap-2">
                 <form method="post" action="{{ path('app_compliance_framework_toggle', {id: framework.id}) }}" class="d-inline">
                     <input type="hidden" name="_token" value="{{ csrf_token('toggle' ~ framework.id) }}">
                     <button type="submit" class="fa-cyber-btn fa-cyber-btn--{{ framework.active ? 'ghost' : 'success' }}">
-                        <i class="bi bi-{{ framework.active ? 'pause-circle' : 'play-circle' }}" aria-hidden="true"></i>
+                        <i class="fa-icon fa-icon--{{ framework.active ? 'pause' : 'play' }}" aria-hidden="true"></i>
                         {{ framework.active ? 'common.deactivate'|trans({}, 'messages') : 'common.activate'|trans({}, 'messages') }}
                     </button>
                 </form>
                 <form method="post" action="{{ path('app_compliance_framework_duplicate', {id: framework.id}) }}" class="d-inline">
                     <input type="hidden" name="_token" value="{{ csrf_token('duplicate' ~ framework.id) }}">
                     <button type="submit" class="fa-cyber-btn fa-cyber-btn--ghost">
-                        <i class="bi bi-copy" aria-hidden="true"></i> {{ 'common.duplicate'|trans({}, 'messages') }}
+                        <i class="fa-icon fa-icon--ui-copy" aria-hidden="true"></i> {{ 'common.duplicate'|trans({}, 'messages') }}
                     </button>
                 </form>
-            {% endif %}
-            <a href="{{ path('app_compliance_framework_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> {{ 'common.back'|trans({}, 'messages') }}
-            </a>
-        </div>
+            </div>
+        {% endif %}
     </div>
 
     {# Statistics Row #}
     <div class="row mb-4">
         <div class="col-md-3">
-            {% embed '_components/_card.html.twig' with { 'class': 'bg-primary text-white' } %}
-                {% block card_body %}
-                    <div class="text-center">
-                        <h2>{{ total_requirements }}</h2>
-                        <p class="mb-0">{{ 'compliance.framework.stats.total_requirements'|trans({}, 'compliance') }}</p>
-                    </div>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_feature_card.render({
+                label:   'compliance.framework.stats.total_requirements'|trans({}, 'compliance'),
+                value:   total_requirements,
+                variant: 'primary',
+                icon:    'nav-list-check'
+            }) }}
         </div>
         <div class="col-md-3">
-            {% embed '_components/_card.html.twig' with { 'class': 'bg-info text-white' } %}
-                {% block card_body %}
-                    <div class="text-center">
-                        <h2>{{ applicable_requirements }}</h2>
-                        <p class="mb-0">{{ 'compliance.framework.stats.applicable'|trans({}, 'compliance') }}</p>
-                    </div>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_feature_card.render({
+                label:   'compliance.framework.stats.applicable'|trans({}, 'compliance'),
+                value:   applicable_requirements,
+                variant: 'primary',
+                icon:    'status-info'
+            }) }}
         </div>
         <div class="col-md-3">
-            {% embed '_components/_card.html.twig' with { 'class': 'bg-success text-white' } %}
-                {% block card_body %}
-                    <div class="text-center">
-                        <h2>{{ fulfilled_requirements }}</h2>
-                        <p class="mb-0">{{ 'compliance.framework.stats.fulfilled'|trans({}, 'compliance') }}</p>
-                    </div>
-                {% endblock %}
-            {% endembed %}
+            {{ _fa_feature_card.render({
+                label:   'compliance.framework.stats.fulfilled'|trans({}, 'compliance'),
+                value:   fulfilled_requirements,
+                variant: 'success',
+                icon:    'status-ok'
+            }) }}
         </div>
         <div class="col-md-3">
-            {% set complianceColorClass = compliance_percentage >= 80 ? 'bg-success' : (compliance_percentage >= 50 ? 'bg-warning' : 'bg-danger') %}
-            {% embed '_components/_card.html.twig' with { 'class': complianceColorClass ~ ' text-white' } %}
-                {% block card_body %}
-                    <div class="text-center">
-                        <h2>{{ compliance_percentage|round }}%</h2>
-                        <p class="mb-0">{{ 'compliance.framework.stats.compliance'|trans({}, 'compliance') }}</p>
-                    </div>
-                {% endblock %}
-            {% endembed %}
+            {% set _kpiVariant = compliance_percentage >= 80 ? 'success' : (compliance_percentage >= 50 ? 'warning' : 'danger') %}
+            {{ _fa_feature_card.render({
+                label:   'compliance.framework.stats.compliance'|trans({}, 'compliance'),
+                value:   compliance_percentage|round,
+                unit:    '%',
+                variant: _kpiVariant,
+                icon:    'ui-bar-chart'
+            }) }}
         </div>
     </div>
+
+    {# TISAX per-tier assessment summary — only visible for TISAX VDA-ISA frameworks #}
+    {% if framework.code starts with 'TISAX' and tisax_tier_aggregate is defined and tisax_tier_aggregate|length > 0 %}
+    <div class="row mb-4">
+        {% for tier, tierData in tisax_tier_aggregate %}
+        <div class="col-md-4">
+            {% if tier == 'information_security' %}
+            {{ _fa_feature_card.render({
+                label: 'compliance.framework.tisax.tier_is_label'|trans({}, 'compliance'),
+                value: 'compliance.framework.tisax.tier_is_value'|trans({'%avg%': tierData.average, '%target%': 3, '%gap%': (3 - tierData.average)|round(1)}, 'compliance'),
+                variant: tierData.average >= 3 ? 'success' : (tierData.average >= 2 ? 'warning' : 'danger'),
+                icon: 'status-gauge'
+            }) }}
+            {% elseif tier == 'prototype_protection' %}
+            {{ _fa_feature_card.render({
+                label: 'compliance.framework.tisax.tier_pp_label'|trans({}, 'compliance'),
+                value: 'compliance.framework.tisax.tier_is_value'|trans({'%avg%': tierData.average, '%target%': 3, '%gap%': (3 - tierData.average)|round(1)}, 'compliance'),
+                variant: tierData.average >= 3 ? 'success' : (tierData.average >= 2 ? 'warning' : 'danger'),
+                icon: 'status-ok'
+            }) }}
+            {% elseif tier == 'data_protection' %}
+            {{ _fa_feature_card.render({
+                label: 'compliance.framework.tisax.tier_dp_label'|trans({}, 'compliance'),
+                value: 'compliance.framework.tisax.tier_dp_value'|trans({'%compliant%': tierData.compliant, '%total%': tierData.total, '%pct%': tierData.total > 0 ? ((tierData.compliant / tierData.total) * 100)|round : 0}, 'compliance'),
+                variant: tierData.total > 0 and tierData.compliant == tierData.total ? 'success' : 'warning',
+                icon: 'nav-shield-alert'
+            }) }}
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Schutzbedarf cascade banner — shown when tenant has high/very-high CIA assets and TISAX framework #}
+    {% if framework.code starts with 'TISAX' and schutzbedarf_cascade is defined and schutzbedarf_cascade is not empty %}
+    <div class="alert alert-warning d-flex align-items-start mb-4" role="alert">
+        <i class="fa-icon fa-icon--shield-exclamation me-2 mt-1 flex-shrink-0" aria-hidden="true"></i>
+        <div>
+            <strong>{{ 'compliance.framework.tisax.schutzbedarf_cascade_title'|trans({}, 'compliance') }}</strong>
+            <p class="mb-1">{{ 'compliance.framework.tisax.schutzbedarf_cascade_body'|trans({
+                '%high_asset_count%':          schutzbedarf_cascade.high_asset_count,
+                '%very_high_asset_count%':     schutzbedarf_cascade.very_high_asset_count,
+                '%high_control_count%':        schutzbedarf_cascade.controls_with_high_addendum,
+                '%very_high_control_count%':   schutzbedarf_cascade.controls_with_very_high_addendum
+            }, 'compliance') }}</p>
+            <small class="text-muted">{{ 'compliance.framework.tisax.schutzbedarf_cascade_byo'|trans({}, 'compliance') }}</small>
+        </div>
+    </div>
+    {% endif %}
 
     <div class="row">
         <div class="col-lg-8">
             {# Framework Details #}
             {% embed '_components/_card.html.twig' with {
                 'title': 'compliance.framework.details',
-                'headerIcon': 'bi-info-circle',
+                'headerIcon': 'status-info',
                 'class': 'mb-4'
             } %}
                 {% block card_body %}
@@ -154,12 +207,22 @@
             {# Requirements by Category #}
             {% embed '_components/_card.html.twig' with {
                 'title': 'compliance.framework.requirements_by_category',
-                'headerIcon': 'bi-list-check',
+                'headerIcon': 'nav-list-check',
                 'actions': '<a href="' ~ path('app_compliance_requirement_index', {framework: framework.id}) ~ '" class="fa-cyber-btn fa-cyber-btn--ghost fa-cyber-btn--sm"><i class="fa-icon fa-icon--ui-list" aria-hidden="true"></i> ' ~ 'common.view_all'|trans({}, 'messages') ~ '</a>',
                 'class': 'mb-4'
             } %}
                 {% block card_body %}
-                    {% if requirements_by_category|length > 0 %}
+                    {% if requirements_by_category|length == 0 and framework.code starts with 'TISAX' %}
+                        <div class="text-center py-4">
+                            <i class="fa-icon fa-icon--nav-shield-alert fs-1 text-warning" aria-hidden="true"></i>
+                            <p class="mt-2 text-muted">{{ 'compliance.framework_show.tisax_skeleton_hint'|trans({}, 'compliance') }}</p>
+                            <a href="{{ path('admin_library_index') }}"
+                               class="fa-cyber-btn fa-cyber-btn--primary">
+                                <i class="fa-icon fa-icon--nav-upload" aria-hidden="true"></i>
+                                {{ 'compliance.framework_show.action.open_byo_wizard'|trans({}, 'compliance') }}
+                            </a>
+                        </div>
+                    {% elseif requirements_by_category|length > 0 %}
                         <div class="accordion" id="categoryAccordion">
                             {% for category, requirements in requirements_by_category %}
                                 <div class="accordion-item">
@@ -217,45 +280,38 @@
             {# Priority Distribution #}
             {% embed '_components/_card.html.twig' with {
                 'title': 'compliance.framework.priority_distribution',
-                'headerIcon': 'bi-bar-chart',
+                'headerIcon': 'nav-bar-chart',
                 'class': 'mb-4'
             } %}
                 {% block card_body %}
+    {% import '_components/_fa_progress.html.twig' as _fa_progress %}
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'danger', content: 'compliance.requirement.priority.critical'|trans({}, 'compliance') } %}
                             <span>{{ priority_distribution.critical }}</span>
                         </div>
-                        <div class="progress progress-h-10">
-                            <div class="progress-bar bg-danger" style="width: {{ total_requirements > 0 ? (priority_distribution.critical / total_requirements * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: total_requirements > 0 ? (priority_distribution.critical / total_requirements * 100) : 0, tone: 'danger' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'warning', content: 'compliance.requirement.priority.high'|trans({}, 'compliance') } %}
                             <span>{{ priority_distribution.high }}</span>
                         </div>
-                        <div class="progress progress-h-10">
-                            <div class="progress-bar bg-warning" style="width: {{ total_requirements > 0 ? (priority_distribution.high / total_requirements * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: total_requirements > 0 ? (priority_distribution.high / total_requirements * 100) : 0, tone: 'warning' }) }}
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'info', content: 'compliance.requirement.priority.medium'|trans({}, 'compliance') } %}
                             <span>{{ priority_distribution.medium }}</span>
                         </div>
-                        <div class="progress progress-h-10">
-                            <div class="progress-bar bg-info" style="width: {{ total_requirements > 0 ? (priority_distribution.medium / total_requirements * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: total_requirements > 0 ? (priority_distribution.medium / total_requirements * 100) : 0, tone: 'info' }) }}
                     </div>
                     <div>
                         <div class="d-flex justify-content-between mb-1">
                             {% include '_components/_badge.html.twig' with { variant: 'secondary', content: 'compliance.requirement.priority.low'|trans({}, 'compliance') } %}
                             <span>{{ priority_distribution.low }}</span>
                         </div>
-                        <div class="progress progress-h-10">
-                            <div class="progress-bar bg-secondary" style="width: {{ total_requirements > 0 ? (priority_distribution.low / total_requirements * 100) : 0 }}%"></div>
-                        </div>
+                        {{ _fa_progress.render({ value: total_requirements > 0 ? (priority_distribution.low / total_requirements * 100) : 0, tone: 'neutral' }) }}
                     </div>
                 {% endblock %}
             {% endembed %}
@@ -263,7 +319,7 @@
             {# Quick Actions #}
             {% embed '_components/_card.html.twig' with {
                 'title': 'common.quick_actions',
-                'headerIcon': 'bi-lightning'
+                'headerIcon': 'status-warning'
             } %}
                 {% block card_body %}
                 <div class="d-grid gap-2">
@@ -284,5 +340,6 @@
             {% endembed %}
         </div>
     </div>
+    {% endif %} {# /M-4 compliance module gate #}
 </div>
 {% endblock %}

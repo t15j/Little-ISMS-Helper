@@ -1,59 +1,75 @@
 {% extends 'admin/layout.html.twig' %}
 {% trans_default_domain 'role_management' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'role_management.title.create'|trans({}, 'role_management')}} - Little ISMS Helper{% endblock %}
 
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{{ path('role_management_index') }}">{{ 'nav.roles'|trans({}, 'nav') }}</a></li>
+    <li class="breadcrumb-item active">{{ 'role_management.title.create'|trans({}, 'role_management') }}</li>
+{% endblock %}
+
 {% block admin_content %}
-<div class="container">
-    {% include '_components/_breadcrumb.html.twig' with {
-        breadcrumbs: [
-            { label: 'nav.admin'|trans({}, 'nav'), url: path('admin_dashboard') },
-            { label: 'nav.roles'|trans({}, 'nav'), url: path('role_management_index') },
-            { label: 'role_management.title.create'|trans({}, 'role_management')}
+    {{ _fa_page_header.render({
+        badge: { icon: 'nav-shield-lock', label: 'role_management.title.create'|trans({}, 'role_management') },
+        title: 'role_management.title.create'|trans({}, 'role_management'),
+        actions: [
+            { label: 'role_management.action.compare'|trans({}, 'role_management'), variant: 'ghost', icon: 'util-arrow-left', href: path('role_management_compare') },
+            { label: 'common.back_to_list'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('role_management_index') }
         ]
-    } %}
-</div>
+    }) }}
 
-<div class="page-header">
-    <div>
-        <h1>{{ 'role_management.title.create'|trans({}, 'role_management')}}</h1>
+    <div class="fa-alert fa-alert--info mb-3" role="alert">
+        <i class="fa-alert__icon fa-icon fa-icon--ui-info" aria-hidden="true"></i>
+        <div class="fa-alert__body">
+            <span class="fa-alert__message">
+                {{ 'role_management.help.compare_before_create'|trans({}, 'role_management') }}
+                <a href="{{ path('role_management_compare') }}" class="alert-link">{{ 'role_management.action.compare'|trans({}, 'role_management') }}</a>
+            </span>
+        </div>
     </div>
-    <div class="button-group">
-        <a href="{{ path('role_management_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-            <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> {{ 'common.back_to_list'|trans({}, 'messages') }}
-        </a>
-    </div>
-</div>
 
-{% embed '_components/_card.html.twig' %}
-    {% block card_body %}
-        {{ form_start(form, {'action': path('role_management_new')}) }}
+    <section class="fa-section">
+        <div class="fa-section__body">
+            {{ form_start(form, {'action': path('role_management_new')}) }}
 
-            {% include '_components/_auto_form.html.twig' with {
-                'form': form,
-                'sections': {
-                    'basic_info': {
-                        'label': 'role_management.section.basic_info'|trans({}, 'role_management'),
-                        'fields': ['name', 'description', 'isSystemRole']
+                {# H-03: strict_whitelist suppresses auto-form catch-all so
+                   `permissions` cannot be POST-injected even if the rich
+                   permissions table is bypassed via dev-tools. #}
+                {% include '_components/_auto_form.html.twig' with {
+                    form: form,
+                    strict_whitelist: true,
+                    sections: {
+                        'basic_info': {
+                            'label': 'role_management.section.basic_info'|trans({}, 'role_management'),
+                            fields: ['name', 'description', 'isSystemRole']
+                        }
                     },
-                    'permissions': {
-                        'label': 'role_management.section.permissions'|trans({}, 'role_management'),
-                        'fields': ['permissions']
-                    }
-                },
-                'translation_domain': 'role_management'
-            } %}
+                    exclude: ['permissions'],
+                    'translation_domain': 'role_management'
+                } %}
 
-            <div class="d-flex gap-2 mt-4">
-                <button type="submit" class="fa-cyber-btn fa-cyber-btn--success">
-                    <i class="fa-icon fa-icon--ui-check" aria-hidden="true"></i> {{ 'common.create'|trans({}, 'messages') }}
-                </button>
-                <a href="{{ path('role_management_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                    <i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i> {{ 'common.cancel'|trans({}, 'messages') }}
-                </a>
-            </div>
+                {# Rich permissions table — replaces flat checkbox list #}
+                <fieldset class="mb-4">
+                    <legend class="h5 mb-3">{{ 'role_management.section.permissions'|trans({}, 'role_management') }}</legend>
+                    <p class="text-muted small mb-3">{{ 'role_management.help.permissions'|trans({}, 'role_management') }}</p>
+                    {% include 'role_management/_permissions_rich_table.html.twig' with {
+                        form_field: form.permissions
+                    } %}
+                    {{ form_errors(form.permissions) }}
+                </fieldset>
 
-        {{ form_end(form) }}
-    {% endblock %}
-{% endembed %}
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="fa-cyber-btn fa-cyber-btn--success">
+                        <i class="fa-icon fa-icon--ui-check" aria-hidden="true"></i> {{ 'common.create'|trans({}, 'messages') }}
+                    </button>
+                    <a href="{{ path('role_management_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
+                        <i class="fa-icon fa-icon--ui-close" aria-hidden="true"></i> {{ 'common.cancel'|trans({}, 'messages') }}
+                    </a>
+                </div>
+
+            {{ form_row(form._token) }}
+            {{ form_end(form, {render_rest: false}) }}
+        </div>
+    </section>
 {% endblock admin_content %}

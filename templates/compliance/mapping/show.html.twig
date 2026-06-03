@@ -1,10 +1,21 @@
 {% extends 'base.html.twig' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
+{% from '_components/_fa_glossary_tooltip.html.twig' import fa_glossary_tooltip %}
 {% trans_default_domain 'compliance' %}
 
 {% block title %}Mapping: {{ mapping.sourceRequirement.requirementId }} → {{ mapping.targetRequirement.requirementId }}{% endblock %}
 
 {% block body %}
 <div class="container-fluid mt-4">
+    {# M-4 — module-gating: Compliance Mappings (depends on compliance module) #}
+    {% if not is_module_active('compliance') %}
+        {% import '_components/_fa_alert.html.twig' as _fa_alert %}
+        {{ _fa_alert.render({
+            variant: 'info',
+            icon: 'nav-shield-alert',
+            body: 'common.module_not_active'|trans({'%module%': 'Compliance'}, 'messages')
+        }) }}
+    {% else %}
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
             { label: 'nav.compliance'|trans({}, 'nav'), url: path('app_compliance_index') },
@@ -13,17 +24,15 @@
         ]
     } %}
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="fa-icon fa-icon--nav-workflow" aria-hidden="true"></i> Compliance Mapping</h1>
-        <div>
-            <a href="{{ path('app_compliance_mapping_edit', {id: mapping.id}) }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--ui-edit" aria-hidden="true"></i> Edit
-            </a>
-            <a href="{{ path('app_compliance_mapping_index') }}" class="fa-cyber-btn fa-cyber-btn--ghost">
-                <i class="fa-icon fa-icon--util-arrow-left" aria-hidden="true"></i> Back to List
-            </a>
-        </div>
-    </div>
+    {{ _fa_page_header.render({
+        badge: { icon: 'util-arrow-left', label: 'compliance.mapping.title'|trans({}, 'compliance') },
+        title: mapping.sourceRequirement.requirementId ~ ' → ' ~ mapping.targetRequirement.requirementId,
+        subtitle: 'Compliance Mapping',
+        actions: [
+            { label: 'common.edit'|trans({}, 'messages'), variant: 'primary', icon: 'ui-edit', href: path('app_compliance_mapping_edit', {id: mapping.id}) },
+            { label: 'common.back_to_list'|trans({}, 'messages'), variant: 'ghost', icon: 'util-arrow-left', href: path('app_compliance_mapping_index') }
+        ]
+    }) }}
 
     <div class="row">
         <div class="col-md-8">
@@ -35,6 +44,7 @@
                     </div>
                 {% endblock %}
                 {% block card_body %}
+                    {% from '_components/_fa_glossary_tooltip.html.twig' import fa_glossary_tooltip %}
                     <div class="row">
                         <div class="col-md-5">
                             <p class="fw-semibold text-muted small text-uppercase">{{ 'compliance.field.source_requirement'|trans({}, 'compliance') }}</p>
@@ -71,11 +81,27 @@
 
                     <div class="row">
                         <div class="col-md-4">
-                            <strong>Mapping Type:</strong>
-                            {% include '_components/_badge.html.twig' with { variant: mapping.mappingBadgeClass, content: mapping.mappingType } %}
+                            <strong>{{ 'compliance.mapping.field.mapping_type'|trans({}, 'compliance') }}:</strong>
+                            {% set _relType = mapping.relationship %}
+                            {% set _relKnown = _relType in ['equivalent', 'subset', 'superset', 'partial_overlap', 'related'] %}
+                            {% if _relKnown %}
+                                {{ fa_glossary_tooltip({
+                                    acronym: ('compliance.mapping.rel_type.' ~ _relType ~ '.label')|trans({}, 'compliance'),
+                                    fullText: ('compliance.mapping.rel_type.' ~ _relType ~ '.label')|trans({}, 'compliance'),
+                                    definition: ('compliance.mapping.rel_type.' ~ _relType ~ '.def')|trans({}, 'compliance'),
+                                    glossaryHref: path('app_help_glossary')
+                                }) }}
+                            {% else %}
+                                {% include '_components/_badge.html.twig' with { variant: mapping.mappingBadgeClass, content: mapping.mappingType } %}
+                            {% endif %}
                         </div>
                         <div class="col-md-4">
-                            <strong>Confidence:</strong>
+                            <strong>{{ fa_glossary_tooltip({
+                                acronym: 'compliance.mapping.field.confidence'|trans({}, 'compliance'),
+                                fullText: 'compliance.mapping.field.confidence'|trans({}, 'compliance'),
+                                definition: 'compliance.mapping.gloss.confidence'|trans({}, 'compliance'),
+                                glossaryHref: path('app_help_glossary')
+                            }) }}:</strong>
                             {% include '_components/_badge.html.twig' with { variant: 'secondary', content: mapping.confidence } %}
                         </div>
                         <div class="col-md-4">
@@ -105,6 +131,7 @@
                         </div>
                     {% endblock %}
                     {% block card_body %}
+                        {% from '_components/_fa_glossary_tooltip.html.twig' import fa_glossary_tooltip %}
                         <div class="row">
                             <div class="col-md-3">
                                 <strong>Calculated %:</strong><br>
@@ -119,7 +146,12 @@
                                 <span class="h4">{{ (mapping.textualSimilarity * 100)|number_format(1) }}%</span>
                             </div>
                             <div class="col-md-3">
-                                <strong>Quality Score:</strong><br>
+                                <strong>{{ fa_glossary_tooltip({
+                                    acronym: 'MQS',
+                                    fullText: 'compliance.mapping.field.mqs'|trans({}, 'compliance'),
+                                    definition: 'compliance.mapping.gloss.mqs'|trans({}, 'compliance'),
+                                    glossaryHref: path('app_help_glossary')
+                                }) }}:</strong><br>
                                 <span class="h4">{{ mapping.qualityScore|default('-') }}</span>
                             </div>
                         </div>
@@ -228,7 +260,7 @@
             {# Delete #}
             {% embed '_components/_card.html.twig' with { 'class': 'border-danger' } %}
                 {% block card_header %}
-                    <div class="card-header bg-danger text-white"><h5 class="mb-0"><i class="fa-icon fa-icon--status-warning" aria-hidden="true"></i> {{ 'common.danger_zone'|trans({}, 'messages') }}</h5></div>
+                    <div class="card-header"><h5 class="mb-0"><i class="fa-icon fa-icon--status-warning text-danger" aria-hidden="true"></i> {{ 'common.danger_zone'|trans({}, 'messages') }}</h5></div>
                 {% endblock %}
                 {% block card_body %}
                     <form method="post" action="{{ path('app_compliance_mapping_delete', {id: mapping.id}) }}"
@@ -244,5 +276,6 @@
             {% endembed %}
         </div>
     </div>
+    {% endif %} {# /M-4 compliance module gate #}
 </div>
 {% endblock %}

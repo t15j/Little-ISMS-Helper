@@ -17,12 +17,6 @@
 {% import '_components/_tech_backdrop.html.twig' as techBg %}
 {% import '_components/_onboarding_fairy.html.twig' as onFairy %}
 {% import '_components/_typewriter.html.twig' as tw %}
-{% import '_components/_step_header.html.twig' as step_header %}
-{% import '_components/_nav_bar.html.twig' as nav %}
-{% import '_components/_cyber_input.html.twig' as ci %}
-{% import '_components/_cyber_button.html.twig' as btn %}
-{% import '_components/_toggle_card.html.twig' as tc %}
-{% import '_components/_check_row.html.twig' as row %}
 
 {% set step = setup_flow(active_step|default('welcome')) %}
 {% set total = setup_flow_total() %}
@@ -39,8 +33,10 @@
     <meta name="theme-color" content="#0284c7" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#38bdf8" media="(prefers-color-scheme: dark)">
 
-    <link rel="preload" href="{{ asset('fonts/inter-500.woff2') }}" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="{{ asset('fonts/inter-600.woff2') }}" as="font" type="font/woff2" crossorigin>
+    {# Static paths to match @font-face src in fairy-aurora.css — avoids
+       AssetMapper URL mismatch that triggers "preload but not used" warnings. #}
+    <link rel="preload" href="/fonts/inter-500.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/inter-600.woff2" as="font" type="font/woff2" crossorigin>
 
     <script>
         (function () {
@@ -54,10 +50,11 @@
         })();
     </script>
 
-    {# Bootstrap zuerst — Aurora (via importmap) kommt danach und überschreibt. #}
+    {# Bootstrap zuerst — Aurora-Layer danach (Cascade-Order). #}
     <link href="{{ asset('vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
-    <link rel="stylesheet" href="{{ asset('vendor/bootstrap-icons/font/bootstrap-icons.min.css') }}">
-    {{ importmap(['app', 'styles']) }}
+    {# Aurora-Layer als parallele <link> (kein @import-Barrel → kein FOUC). #}
+    {{ include('_aurora_styles.html.twig') }}
+    {{ importmap(['app']) }}
     <meta name="turbo-cache-control" content="no-cache">
     {% block step_head %}{% endblock %}
 </head>

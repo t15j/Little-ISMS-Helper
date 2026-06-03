@@ -177,7 +177,7 @@ class ComplianceAnalyticsService
             'frameworks' => array_map(fn($f) => [
                 'code' => $f->getCode(),
                 'name' => $f->getName(),
-                'requirement_count' => count($this->requirementRepository->findByFramework($f)),
+                'requirement_count' => $this->requirementRepository->countTopLevelByFramework($f),
             ], $frameworks),
         ];
     }
@@ -394,7 +394,7 @@ class ComplianceAnalyticsService
 
             // Estimate time to completion based on current progress
             $remainingGaps = $stats['applicable'] - $stats['fulfilled'];
-            $estimatedWeeks = $this->estimateTimeToCompletion($remainingGaps, $compliance);
+            $estimatedWeeks = $this->estimateTimeToCompletion($remainingGaps);
 
             $roadmap[] = [
                 'framework' => $framework->getName(),
@@ -433,7 +433,7 @@ class ComplianceAnalyticsService
     /**
      * Estimate weeks to completion
      */
-    private function estimateTimeToCompletion(int $remainingGaps, float $currentCompliance): int
+    private function estimateTimeToCompletion(int $remainingGaps): int
     {
         if ($remainingGaps === 0) {
             return 0;
@@ -477,12 +477,36 @@ class ComplianceAnalyticsService
                 'highest_compliance' => null,
                 'lowest_compliance' => null,
                 'mandatory_compliance' => 0,
+                // V3 W2-M2: keys consumed by Compliance-Manager-Dashboard KPIs.
+                'at_risk' => 0,
+                'cross_mapping_coverage' => 0,
+                'total_frameworks' => 0,
+                'total_requirements' => 0,
+                'total_fulfilled' => 0,
             ];
         }
 
         $mandatoryFrameworks = array_filter($comparison, fn($f) => $f['mandatory']);
         $mandatoryCompliance = count($mandatoryFrameworks) > 0
             ? round(array_sum(array_column($mandatoryFrameworks, 'compliance_percentage')) / count($mandatoryFrameworks), 1)
+            : 0;
+
+        // V3 W2-M2: at-risk = mandatory frameworks with < 80 % coverage.
+        // Mirrors getExecutiveSummary frameworks.at_risk so CM-Dashboard
+        // KPI tile shows non-zero values.
+        $atRisk = count(array_filter(
+            $comparison,
+            static fn($f) => ($f['mandatory'] ?? false) && ($f['compliance_percentage'] ?? 0) < 80,
+        ));
+
+        // V3 W2-M2: cross-framework mapping coverage = % of frameworks with
+        // at least one fulfilled requirement (rough but stable proxy).
+        $withFulfilled = count(array_filter(
+            $comparison,
+            static fn($f) => ($f['fulfilled'] ?? 0) > 0,
+        ));
+        $crossMappingCoverage = count($comparison) > 0
+            ? (int) round(($withFulfilled / count($comparison)) * 100)
             : 0;
 
         return [
@@ -493,6 +517,9 @@ class ComplianceAnalyticsService
             'total_frameworks' => count($comparison),
             'total_requirements' => array_sum(array_column($comparison, 'total')),
             'total_fulfilled' => array_sum(array_column($comparison, 'fulfilled')),
+            // V3 W2-M2: keys consumed by Compliance-Manager-Dashboard KPIs.
+            'at_risk' => $atRisk,
+            'cross_mapping_coverage' => $crossMappingCoverage,
         ];
     }
 
@@ -541,5 +568,26 @@ class ComplianceAnalyticsService
             'change' => 2.5,
             'period' => 'last_month',
         ];
+    }
+
+    /**
+     * V4-EF-7 CM-Bucket — Frameworks with coverage below $thresholdPct (default 60 %).
+     * Returns enriched framework data shaped for the MyDay aggregator bucket.
+     *
+     * @param float $thresholdPct Percentage below which a framework is considered critically under-covered
+     * @return array<int, array{id: int, name: string, code: string, compliance_percentage: float, mandatory: bool, link: ?string}>
+     */
+    public function findFrameworkGapsCritical(float $thresholdPct = 60.0): array
+    {
+        $comparison = $this->getFrameworkComparison();
+        $critical = [];
+
+        foreach ($comparison['frameworks'] as $f) {
+            if ((float) $f['compliance_percentage'] < $thresholdPct) {
+                $critical[] = $f;
+            }
+        }
+
+        return $critical;
     }
 }

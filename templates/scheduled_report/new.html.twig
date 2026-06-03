@@ -1,6 +1,7 @@
 {% extends 'base.html.twig' %}
 {% import '_components/_fa_alert.html.twig' as _fa_alert %}
 {% trans_default_domain 'scheduled_reports' %}
+{% import '_components/_fa_page_header.html.twig' as _fa_page_header %}
 
 {% block title %}{{ 'scheduled_report.new.title'|trans({}, 'scheduled_reports') }} - {{ 'app.title'|trans({}, 'messages') }}{% endblock %}
 
@@ -8,20 +9,19 @@
 <div class="container-fluid py-4">
     {% include '_components/_breadcrumb.html.twig' with {
         breadcrumbs: [
-            { label: 'nav.reports'|trans({}, 'nav'), path: 'app_reports_index' },
-            { label: 'scheduled_report.title'|trans({}, 'scheduled_reports'), path: 'app_scheduled_report_index' },
+            { label: 'nav.reports'|trans({}, 'nav'), url: path('app_reports_index') },
+            { label: 'scheduled_report.title'|trans({}, 'scheduled_reports'), url: path('app_scheduled_report_index') },
             { label: 'scheduled_report.new.title'|trans({}, 'scheduled_reports') }
         ]
     } %}
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2 mb-0">
-            <i class="fa-icon fa-icon--ui-plus" aria-hidden="true"></i> {{ 'scheduled_report.new.title'|trans({}, 'scheduled_reports') }}
-        </h1>
-    </div>
+    {{ _fa_page_header.render({
+    title: ('scheduled_report.new.title'|trans({}, 'scheduled_reports')),
+    badge: { icon: 'plus', label: '' }
+}) }}
 
     {# Info Alert #}
-    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'bi-info-circle', class: 'mb-4' } } %}
+    {% embed '_components/_fa_alert.html.twig' with { props: { variant: 'info', icon: 'status-info', class: 'mb-4' } } %}
         {% block alert_body %}{{ 'scheduled_report.info.create_hint'|trans({}, 'scheduled_reports') }}{% endblock %}
     {% endembed %}
 
@@ -76,7 +76,7 @@
             <hr>
 
             <h4 class="h6 mb-3">
-                <i class="bi bi-file-earmark" aria-hidden="true"></i> {{ 'scheduled_report.form.output_settings'|trans({}, 'scheduled_reports') }}
+                <i class="fa-icon fa-icon--nav-document" aria-hidden="true"></i> {{ 'scheduled_report.form.output_settings'|trans({}, 'scheduled_reports') }}
             </h4>
 
             <div class="row">
@@ -91,7 +91,7 @@
             <hr>
 
             <h4 class="h6 mb-3">
-                <i class="bi bi-envelope" aria-hidden="true"></i> {{ 'scheduled_report.form.delivery_settings'|trans({}, 'scheduled_reports') }}
+                <i class="fa-icon fa-icon--ui-send" aria-hidden="true"></i> {{ 'scheduled_report.form.delivery_settings'|trans({}, 'scheduled_reports') }}
             </h4>
 
             <div class="row">
